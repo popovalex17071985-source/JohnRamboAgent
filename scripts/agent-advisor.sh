@@ -139,6 +139,20 @@ if [[ -n "$used" ]] && (( used >= 85 )); then
 Обычно жрут логи: journalctl --vacuum-time=7d освобождает прилично."
 fi
 
+# ── 5a. Итог недельной уборки диска (disk-cleanup.sh, понедельник 03:30) ─────
+# Хозяину одна строка, только если уборка этой недели что-то заметное освободила.
+CLEAN_LOG="${DASHI_CLEANUP_LOG:-/var/log/dashi-$AGENT-cleanup.log}"
+last_clean="$(tail -1 "$CLEAN_LOG" 2>/dev/null || true)"
+if [[ -n "$last_clean" ]]; then
+  c_date="${last_clean%% *}"
+  c_freed="$(sed -n 's/.*freed_mb=\([0-9]*\).*/\1/p' <<<"$last_clean")"
+  c_disk="$(sed -n 's/.*disk=\([0-9]*\)%.*/\1/p' <<<"$last_clean")"
+  c_age=$(( ( $(date +%s) - $(date -d "$c_date" +%s 2>/dev/null || echo 0) ) / 86400 ))
+  if [[ -n "$c_freed" ]] && (( c_freed >= 100 && c_age <= 2 )); then
+    advise "cleanup-$c_date" "Уборка диска: освобождено ${c_freed} МБ (старые образы, кэши, временные файлы). Диск сейчас ${c_disk}%."
+  fi
+fi
+
 # ── 6. Памяти нет вообще ─────────────────────────────────────────────────────
 # Агент живёт больше двух недель, а фактов ноль — значит человек не знает, что
 # память надо наполнять словами «запомни, что…».

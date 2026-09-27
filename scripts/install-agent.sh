@@ -964,6 +964,7 @@ case "\${1:-}" in
                  exec journalctl -u $UNIT -n "\$n" --no-pager ;;
   fix-owner)     exec chown -R $SERVICE_USER:$SERVICE_USER /home/$SERVICE_USER ;;
   vacuum)        exec journalctl --vacuum-size=500M ;;
+  cleanup)       CLEANUP_LOG=/var/log/dashi-$AGENT_NAME-cleanup.log exec /usr/local/bin/dashi-cleanup-$AGENT_NAME "$SERVICE_USER" "\${2:-}" ;;
   update-claude) exec npm install -g @anthropic-ai/claude-code ;;
   check)         # что нового в origin/main — список коммитов, пусто = свежий
                  runuser -u $SERVICE_USER -- git -C $REPO_DIR fetch -q --depth 30 origin $BRANCH
@@ -996,7 +997,7 @@ case "\${1:-}" in
                  else
                    rm -rf $REPO_DIR; mv $REPO_DIR.bak $REPO_DIR; echo ROLLBACK; exit 4
                  fi ;;
-  *) echo "usage: dashi-ctl-$AGENT_NAME restart|status|logs [N]|fix-owner|vacuum|update-claude|check|update [force]" >&2; exit 2 ;;
+  *) echo "usage: dashi-ctl-$AGENT_NAME restart|status|logs [N]|fix-owner|vacuum|cleanup [--dry-run]|update-claude|check|update [force]" >&2; exit 2 ;;
 esac
 EOF
 chmod 755 "$CTL"
@@ -1050,6 +1051,17 @@ cat > "/etc/cron.d/dashi-$AGENT_NAME-claude-update" <<EOF
 EOF
 chmod 644 "/etc/cron.d/dashi-$AGENT_NAME-claude-update"
 ok "еженедельное обновление Claude включено (понедельник 04:30)"
+
+# Еженедельная уборка диска: остановленные контейнеры, неиспользуемые образы,
+# кэши пакетов, старый /tmp, большие логи (обрезка). Живое не трогает. Root-копия
+# скрипта — root-крон не исполняет файлы, которые может переписать агент.
+# Итог пишется в журнал уборки; советник в понедельник шлёт его хозяину.
+install -o root -g root -m 755 "$REPO_DIR/scripts/disk-cleanup.sh" "/usr/local/bin/dashi-cleanup-$AGENT_NAME"
+cat > "/etc/cron.d/dashi-$AGENT_NAME-cleanup" <<EOF
+30 3 * * 1 root /usr/local/bin/dashi-ctl-$AGENT_NAME cleanup >/dev/null 2>&1
+EOF
+chmod 644 "/etc/cron.d/dashi-$AGENT_NAME-cleanup"
+ok "еженедельная уборка диска включена (понедельник 03:30)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 8d. Шифрованный бэкап (по желанию)
