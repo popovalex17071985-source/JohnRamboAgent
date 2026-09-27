@@ -26,7 +26,14 @@ command -v bun >/dev/null 2>&1 || exit 0
 
 # The live session is the most recently written transcript, and only while it is
 # fresh: an abandoned session must not be re-delivered hours later.
-TRANSCRIPT="$(find "$PROJECTS" -name '*.jsonl' -mmin -5 -printf '%T@ %p\n' 2>/dev/null \
+# Only the agent's own sessions (started inside its workspace). Background
+# `claude -p` probes run from /tmp and write transcripts too: 27.09.2026 the
+# 6-hourly login probe (auth-alive-watch.sh, «ответь одним словом: пинг») was the
+# freshest transcript, and the sweeper forwarded its «Понг» to the owner, twice.
+# Claude names a project dir after the cwd with every '/' and '.' turned into '-'.
+OWN_PREFIX="$(printf '%s' "$WORKSPACE" | tr '/.' '--')"
+TRANSCRIPT="$(find "$PROJECTS" -path "$PROJECTS/$OWN_PREFIX*" -name '*.jsonl' -mmin -5 \
+  -printf '%T@ %p\n' 2>/dev/null \
   | sort -rn | head -1 | cut -d' ' -f2-)"
 [ -n "$TRANSCRIPT" ] || exit 0
 
