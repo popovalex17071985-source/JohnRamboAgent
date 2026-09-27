@@ -27,4 +27,12 @@ grep -q "warm-bloat"      <<<"$loud" || fail "не заметил разросш
 quiet="$(DASHI_ENV_FILE="$(make_ws 3 10)" bash "$S" --dry-run)"
 grep -q "memory-semantic" <<<"$quiet" && fail "орёт на здоровом агенте"
 
+clog="$(mktemp)"
+echo "$(date +%F) freed_mb=3000 disk=48% образы кэш:bun" > "$clog"
+cl="$(DASHI_CLEANUP_LOG="$clog" DASHI_ENV_FILE="$(make_ws 3 10)" bash "$S" --dry-run)"
+grep -q "освобождено 3000 МБ" <<<"$cl" || fail "не сообщил итог уборки диска"
+echo "$(date +%F) freed_mb=12 disk=48%" > "$clog"
+cl="$(DASHI_CLEANUP_LOG="$clog" DASHI_ENV_FILE="$(make_ws 3 10)" bash "$S" --dry-run)"
+grep -q "Уборка диска" <<<"$cl" && fail "шумит про уборку, освободившую копейки"
+
 echo "✓ agent-advisor smoke ok"
