@@ -160,6 +160,8 @@ h2="$(grep "$T/bin/open-threads-digest.py" "$CRONTAB_FILE" | awk '{print $2}')"
 [[ "$h1" =~ ^[0-9]+$ && "$h2" =~ ^[0-9]+$ && "$h1" != "$h2" ]] || fail "смена --tz не переписала час крона ($h1 -> $h2)"
 dups="$(grep -F "$T/bin/" "$CRONTAB_FILE" | sort | uniq -d)"
 [[ -z "$dups" ]] || fail "смена --tz задвоила крон: $dups"
+# The heartbeat line lives under data/, not bin/ -- the check above misses it.
+[[ "$(grep -c "$T/data/cron-heartbeat" "$CRONTAB_FILE")" == 1 ]] || fail "перестройка крона задвоила канарейку"
 grep -q "/srv/other/bin/promise-sweeper.py" "$CRONTAB_FILE" || fail "смена --tz затёрла чужую строку"
 
 # Будильник, переживающий рестарт: разложен, исполняемый, время считает по Перми

@@ -236,6 +236,9 @@ else
     echo "  утренние задачи уже в кроне: 09:00 по $OWNER_TZ (на сервере $DIG_H:00)"
   else
     OWN=(); for s in "${CRON_SCRIPTS[@]}"; do OWN+=(-e "$WORKSPACE/bin/$s"); done
+    # The heartbeat line names no bin/ script: without it here every rewrite
+    # kept the old copy and appended a new one (Smith, 28.09.2026 -- two copies).
+    OWN+=(-e "$WORKSPACE/data/cron-heartbeat")
     if grep -qF "${OWN[@]}" <<<"$CUR"; then verb="переставлены на"; else verb="в кроне:"; fi
     { grep -vF "${OWN[@]}" <<<"$CUR" || true
       printf '%s\n' "${CRON_LINES[@]}"; } | "${SCHED[@]}" - \
