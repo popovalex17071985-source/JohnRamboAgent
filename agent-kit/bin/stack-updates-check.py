@@ -4,8 +4,8 @@ never updates anything (an OpenViking upgrade once hit 3 rakes -- a human decide
 not a cron).
 
 Sources: npm (Claude Code), GitHub releases (bun), git fetch (the agent's own
-dashi-plugin checkout vs origin/<DASHI_BRANCH>), docker digest (OpenViking ghcr,
-only when a container named `openviking` exists).
+dashi-plugin checkout vs origin/<DASHI_BRANCH>), OpenViking (/health version vs GitHub release,
+only when the memory service answers).
 
     bin/stack-updates-check.py            # print the digest
     bin/stack-updates-check.py --send     # ...and send it to the owner
@@ -27,11 +27,12 @@ ENV_FILE = pathlib.Path(
 NOTIFY = ROOT / "bin/tg-send.py"
 FRESH = "актуален"
 
-# OpenViking releases NOT to offer. 569193efd49a = v0.4.21: 28.09.2026 on Smith and
+# OpenViking releases NOT to offer. v0.4.21: 28.09.2026 on Smith and
 # on Jarvis every memory written before the upgrade stopped showing in search (files
 # intact, only new writes found); rolled back to v0.4.16. Drop a digest from here
 # only after a newer release passes the old-memory recall check on Smith.
-OV_HOLD = {"569193efd49a"}
+OV_HOLD = {"v0.4.21"}
+OV_HEALTH = "http://127.0.0.1:1933/health"  # installer pins the port (install-agent.sh)
 
 
 def http_json(url: str):
@@ -91,22 +92,17 @@ def rows() -> list[tuple[str, str, str]]:
             out.append(("dashi-plugin", "HEAD", f"origin/{br} +{behind} коммитов"))
         else:
             out.append(("dashi-plugin", "HEAD", FRESH if ok else "?"))
-    # OpenViking: only where the long-term memory container actually exists.
-    # What the RUNNING container uses, not the local :latest tag (28.09 a pulled
-    # :latest sat unused next to a container pinned to v0.4.16).
-    img = sh("docker inspect openviking --format '{{.Image}}' 2>/dev/null")
-    if img:
-        have = sh(f"docker image inspect '{img}' --format '{{{{index .RepoDigests 0}}}}' "
-                  "2>/dev/null | grep -oP 'sha256:\\K.{12}'") or "?"
+    # OpenViking: only where the memory service answers. Version comes from its own
+    # /health, not docker -- the agent user is not in the docker group, and 28.09 a
+    # docker-based probe silently dropped this row on Smith.
+    try:
+        have = http_json(OV_HEALTH).get("version") or "?"
+    except Exception:
+        have = ""
+    if have:
         try:
-            tok = http_json("https://ghcr.io/token?scope=repository:volcengine/openviking:pull")[
-                "token"]
-            req = urllib.request.Request(
-                "https://ghcr.io/v2/volcengine/openviking/manifests/latest",
-                headers={"Authorization": f"Bearer {tok}",
-                         "Accept": "application/vnd.oci.image.index.v1+json"})
-            with urllib.request.urlopen(req, timeout=30) as r:
-                remote = r.headers.get("Docker-Content-Digest", "?").replace("sha256:", "")[:12]
+            remote = http_json(
+                "https://api.github.com/repos/volcengine/OpenViking/releases/latest")["tag_name"]
         except Exception:
             remote = "?"
         if remote in OV_HOLD:
@@ -129,8 +125,6 @@ def human_line(name: str, have: str, latest: str) -> str:
     if latest.startswith("origin/"):
         n = latest.split("+")[1].split()[0] if "+" in latest else "?"
         return f"• {title}. В общей ветке накопилось {n} правок, у меня их ещё нет."
-    if len(have) == 12 and len(latest) == 12:  # docker digests: no versions, just "a new build"
-        return f"• {title}. Вышла новая сборка."
     return f"• {title}. У меня {have}, вышла {latest}."
 
 
@@ -139,39 +133,49 @@ def is_stale(have: str, latest: str) -> bool:
 
 
 def build_message(items: list[tuple[str, str, str]]) -> str:
-    stale_lines, fresh_names = [], []
+    stale_lines, fresh_names, unknown = [], [], []
     for name, have, latest in items:
-        if is_stale(have, latest):
+        label = HUMAN.get(name, (name, name))[1]
+        if "?" in (have, latest):
+            unknown.append(label)
+        elif is_stale(have, latest):
             stale_lines.append(human_line(name, have, latest))
         else:
-            fresh_names.append(HUMAN.get(name, (name, name))[1])
+            fresh_names.append(label)
+    # A failed lookup is not "fresh": say it, or the digest lies by omission.
+    tail = [f"Не смог проверить: {', '.join(unknown)}."] if unknown else []
     if not stale_lines:
-        return "Проверил обновления своих инструментов — всё свежее, обновлять нечего."
+        head = ("Проверил обновления своих инструментов — всё свежее, обновлять нечего."
+                if not unknown else "Проверил обновления своих инструментов — обновлять нечего.")
+        return "\n".join([head] + tail)
     lines = [f"Проверил обновления своих инструментов — можно обновить "
              f"{len(stale_lines)} шт.:", ""]
     lines += stale_lines
     if fresh_names:
         lines += ["", "Остальное свежее: " + ", ".join(fresh_names) + "."]
+    lines += tail
     lines += ["Сам ничего не трогал — решает хозяин. Мост обновляется командой /update."]
     return "\n".join(lines)
 
 
 def selftest() -> int:
-    fresh = build_message([("Claude Code", "2.1.0", "2.1.0"), ("bun", "1.2.0", "?")])
+    fresh = build_message([("Claude Code", "2.1.0", "2.1.0"), ("bun", "1.2.0", "1.2.0")])
     assert "всё свежее" in fresh, fresh
+    unk = build_message([("Claude Code", "2.1.0", "2.1.0"), ("bun", "1.2.0", "?")])
+    assert "всё свежее" not in unk and "Не смог проверить: среда bun" in unk, unk
     msg = build_message([
         ("Claude Code", "2.1.0", "2.2.0"),
         ("dashi-plugin", "HEAD", "origin/main +4 коммитов"),
-        ("OpenViking", "aaaaaaaaaaaa", "bbbbbbbbbbbb"),
+        ("OpenViking", "v0.4.16", "v0.4.22"),
         ("bun", "1.2.0", FRESH),
     ])
     assert "можно обновить 3 шт." in msg, msg
     assert "У меня 2.1.0, вышла 2.2.0" in msg
     assert "накопилось 4 правок" in msg
-    assert "новая сборка" in msg
+    assert "У меня v0.4.16, вышла v0.4.22" in msg
     assert "среда bun" in msg
     assert "Саня" not in msg and "Смит" not in msg
-    assert "569193efd49a" in OV_HOLD
+    assert "v0.4.21" in OV_HOLD
     assert not is_stale("HEAD", FRESH) and not is_stale("x", "?")
     print("stack-updates-check selftest ok")
     return 0
