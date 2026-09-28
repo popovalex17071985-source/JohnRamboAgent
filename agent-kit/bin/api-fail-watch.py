@@ -61,7 +61,7 @@ ERROR_CLASSES: dict[str, re.Pattern[str]] = {
     "auth": re.compile(r"HTTP Error 40[13]\b|\b40[13] (Unauthorized|Forbidden)\b|status(=|: ?)40[13]\b"
                        r"|\"[A-Z]+ [^\"]+\" 40[13] "),
     "empty": re.compile(r"пуст(ой|ая|ую) (ответ|таблиц)|<table></table>"
-                        r"|INCOMPLETE:|Quota exceeded|exceeds grid limits|empty (response|table)",
+                        r"|INCOMPLETE: ?[1-9]|Quota exceeded|exceeds grid limits|empty (response|table)",
                         re.I),
 }
 # A line after which an error streak counts as broken (the source is alive again).
@@ -101,9 +101,12 @@ def window_lines(path: pathlib.Path, since: dt.datetime) -> list[str]:
 
 
 def longest_streak(lines: list[str]) -> dict[str, tuple[int, str]]:
-    """{класс: (макс. серия подряд, последняя строка серии)}."""
-    streak: dict[str, int] = {}
-    best: dict[str, tuple[int, str]] = {}
+    """{class: (streak still running at the end of the window, its last line)}.
+
+    Only the CURRENT streak counts: a source that failed and then answered again
+    inside the window has recovered, and alerting on it would be a false alarm.
+    """
+    streak: dict[str, tuple[int, str]] = {}
     for ln in lines:
         if IGNORE.search(ln):
             continue
@@ -112,10 +115,8 @@ def longest_streak(lines: list[str]) -> dict[str, tuple[int, str]]:
             continue
         for cls, rx in ERROR_CLASSES.items():
             if rx.search(ln):
-                streak[cls] = streak.get(cls, 0) + 1
-                if streak[cls] >= best.get(cls, (0, ""))[0]:
-                    best[cls] = (streak[cls], ln.strip()[:160])
-    return best
+                streak[cls] = (streak.get(cls, (0, ""))[0] + 1, ln.strip()[:160])
+    return streak
 
 
 def load_state(path: pathlib.Path) -> dict:
@@ -161,6 +162,12 @@ def tg_send(text: str) -> None:
 
 
 def selftest() -> int:
+    # recovered inside the window -> no running streak -> no alert
+    e = "2026-09-28 10:00:00 GET x HTTP Error 403: Forbidden"
+    rec = longest_streak([e, e, e, "2026-09-28 10:05:00 Done at 10:05"])
+    assert "auth" not in rec, rec
+    assert longest_streak([e, e, e])["auth"][0] == 3
+    assert not ERROR_CLASSES["empty"].search("INCOMPLETE: 0 records")
     import tempfile
     now = dt.datetime.now(dt.timezone.utc)
 

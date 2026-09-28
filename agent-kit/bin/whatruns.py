@@ -71,7 +71,7 @@ def logs(word: str) -> list[str]:
     res = []
     for p in sorted((ROOT / "logs").glob(f"*{word}*")):
         age_h = (time.time() - p.stat().st_mtime) / 3600
-        mark = " ⚠️ давно" if age_h > STALE_H else ""
+        mark = " -- давно" if age_h > STALE_H else ""
         res.append(f"{p.name} — {age_h:.1f} ч назад, {p.stat().st_size} б{mark}")
     return res
 
