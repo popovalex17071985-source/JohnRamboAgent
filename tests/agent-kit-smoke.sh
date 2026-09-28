@@ -113,9 +113,13 @@ python3 "$T/bin/promise-sweeper.py" --selfcheck >/dev/null || fail "будиль
 python3 "$T/bin/open-threads-digest.py" --selfcheck >/dev/null || fail "утренняя сводка"
 # Сторож индекса памяти: без --apply обязан только смотреть и не падать
 python3 "$T/bin/memory-index-trim.py" >/dev/null || fail "сторож индекса памяти"
+# Ported watchers: selftests run on the RENDERED copy (placeholders substituted)
+for s in whatruns.py stack-updates-check.py api-fail-watch.py; do
+  python3 "$T/bin/$s" --selftest >/dev/null || fail "selftest: $s"
+done
 
 # Кроны: свои строки поставлены, чужая цела
-for s in promise-sweeper.py "open-threads-digest.py --send" update-notify.sh self-audit-morning.sh health-daily.sh "memory-index-trim.py --apply"; do
+for s in promise-sweeper.py "open-threads-digest.py --send" update-notify.sh self-audit-morning.sh health-daily.sh "memory-index-trim.py --apply" "stack-updates-check.py --send" api-fail-watch.py; do
   [[ "$(grep -c "$T/bin/$s" "$CRONTAB_FILE")" == 1 ]] || fail "не в кроне: $s"
 done
 grep -q "/srv/other/bin/promise-sweeper.py" "$CRONTAB_FILE" || fail "затёр чужую строку крона"
@@ -156,6 +160,8 @@ h2="$(grep "$T/bin/open-threads-digest.py" "$CRONTAB_FILE" | awk '{print $2}')"
 [[ "$h1" =~ ^[0-9]+$ && "$h2" =~ ^[0-9]+$ && "$h1" != "$h2" ]] || fail "смена --tz не переписала час крона ($h1 -> $h2)"
 dups="$(grep -F "$T/bin/" "$CRONTAB_FILE" | sort | uniq -d)"
 [[ -z "$dups" ]] || fail "смена --tz задвоила крон: $dups"
+# The heartbeat line lives under data/, not bin/ -- the check above misses it.
+[[ "$(grep -c "$T/data/cron-heartbeat" "$CRONTAB_FILE")" == 1 ]] || fail "перестройка крона задвоила канарейку"
 grep -q "/srv/other/bin/promise-sweeper.py" "$CRONTAB_FILE" || fail "смена --tz затёрла чужую строку"
 
 # Будильник, переживающий рестарт: разложен, исполняемый, время считает по Перми
