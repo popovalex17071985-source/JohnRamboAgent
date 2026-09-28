@@ -99,7 +99,7 @@ fi
 say "Система"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq curl git jq nano
+apt-get install -y -qq curl git jq nano poppler-utils python3-openpyxl python3-xlrd
 
 # На 1 ГБ памяти Codex упирается в потолок и падает молча.
 # Своп дешевле, чем объяснять человеку OOM.
@@ -325,6 +325,52 @@ while :; do
         [ -z "\$TEXT" ] && TEXT="Что на фото? Опиши и скажи, что с этим делать."
       else log "фото не скачалось"; fi
     fi
+    # Файл (PDF, Excel, Word, csv...): мост сам качает его в workspace/inbox и,
+    # где умеет, заранее вытаскивает текст -- Codex читает готовый .txt. Раньше
+    # вложения молча терялись, и агент отвечал «нет доступа к мосту» (28.09.2026).
+    DOC=\$(upd '.message.document.file_id // empty')
+    if [ -n "\$DOC" ]; then
+      DNAME=\$(upd '.message.document.file_name // "file"' | tr '/' '_' | tr -d '\000-\037' | cut -c1-120)
+      DSIZE=\$(upd '.message.document.file_size // 0')
+      mkdir -p "\$WORKDIR/inbox"; DPATH="\$WORKDIR/inbox/\$(date +%Y%m%d-%H%M%S)-\$DNAME"
+      FP=\$(curl -s "\$API/getFile?file_id=\$DOC" | jq -r '.result.file_path // empty')
+      if [ -n "\$FP" ] && curl -sf -o "\$DPATH" "https://api.telegram.org/file/bot\$TELEGRAM_TOKEN/\$FP"; then
+        DTXT=""
+        case "\${DNAME,,}" in
+          *.pdf) pdftotext -layout "\$DPATH" "\$DPATH.txt" 2>/dev/null && DTXT="\$DPATH.txt" ;;
+          *.xlsx|*.xlsm|*.xls) python3 - "\$DPATH" > "\$DPATH.txt" 2>/dev/null <<'XLS' && DTXT="\$DPATH.txt"
+import sys
+path = sys.argv[1]
+if path.lower().endswith(".xls"):
+    import xlrd
+    book = xlrd.open_workbook(path)
+    for sh in book.sheets():
+        print(f"=== лист: {sh.name}")
+        for r in range(sh.nrows):
+            print("\t".join(str(c.value) for c in sh.row(r)))
+else:
+    import openpyxl
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    for ws in wb.worksheets:
+        print(f"=== лист: {ws.title}")
+        for row in ws.iter_rows(values_only=True):
+            print("\t".join("" if v is None else str(v) for v in row))
+XLS
+          ;;
+        esac
+        [ -z "\$TEXT" ] && TEXT=\$(upd '.message.caption // empty')
+        [ -z "\$TEXT" ] && TEXT="Разбери присланный файл: что в нём и что с этим делать."
+        TEXT="\$TEXT
+
+[Мост: прислан файл \$DNAME, сохранён: \$DPATH\${DTXT:+; текст из него уже вытащен в \$DTXT -- читай его}]"
+      else
+        log "файл не скачался (\$DNAME, \$DSIZE байт)"
+        if [ "\$DSIZE" -gt 20000000 ] 2>/dev/null; then
+          send "Файл больше 20 МБ -- Telegram не отдаёт такие ботам. Сожми или разбей на части."
+        else send "Файл не скачался, пришли ещё раз."; fi
+        continue
+      fi
+    fi
     if [ -z "\$TEXT" ] && [ -n "\$VOICE" ] && [ -n "\${GROQ_API_KEY:-}" ]; then
       # голосовое -> текст через Groq Whisper
       FP=\$(curl -s "\$API/getFile?file_id=\$VOICE" | jq -r '.result.file_path // empty')
@@ -339,7 +385,7 @@ while :; do
     fi
     if [ -z "\$TEXT" ]; then
       if [ -n "\$VOICE" ]; then send "Не разобрал голосовое. Голосовые работают при заданном ключе Groq (см. гайд, раздел про голосовые)."
-      else send "Понимаю текст, голосовые и фото."; fi
+      else send "Понимаю текст, голосовые, фото и файлы (PDF, Excel)."; fi
       continue
     fi
     if [ "\$TEXT" = "/new" ]; then
