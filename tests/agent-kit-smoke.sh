@@ -113,9 +113,13 @@ python3 "$T/bin/promise-sweeper.py" --selfcheck >/dev/null || fail "будиль
 python3 "$T/bin/open-threads-digest.py" --selfcheck >/dev/null || fail "утренняя сводка"
 # Сторож индекса памяти: без --apply обязан только смотреть и не падать
 python3 "$T/bin/memory-index-trim.py" >/dev/null || fail "сторож индекса памяти"
+# Ported watchers: selftests run on the RENDERED copy (placeholders substituted)
+for s in whatruns.py stack-updates-check.py api-fail-watch.py; do
+  python3 "$T/bin/$s" --selftest >/dev/null || fail "selftest: $s"
+done
 
 # Кроны: свои строки поставлены, чужая цела
-for s in promise-sweeper.py "open-threads-digest.py --send" update-notify.sh self-audit-morning.sh health-daily.sh "memory-index-trim.py --apply"; do
+for s in promise-sweeper.py "open-threads-digest.py --send" update-notify.sh self-audit-morning.sh health-daily.sh "memory-index-trim.py --apply" "stack-updates-check.py --send" api-fail-watch.py; do
   [[ "$(grep -c "$T/bin/$s" "$CRONTAB_FILE")" == 1 ]] || fail "не в кроне: $s"
 done
 grep -q "/srv/other/bin/promise-sweeper.py" "$CRONTAB_FILE" || fail "затёр чужую строку крона"

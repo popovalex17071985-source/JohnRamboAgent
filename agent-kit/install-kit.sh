@@ -170,7 +170,7 @@ DIG_H="$(OWNER_TZ="$OWNER_TZ" python3 -c 'import os,datetime as dt,zoneinfo; own
 # (что вышло нового + напоминание про /update), 20 самопроверка (хуки, крон,
 # канарейка, модель, память — шлёт ТОЛЬКО подозрения), 30 будильник по срокам
 # и отчёт о сервере (диск, память, сервисы, вход в Claude — шлётся всегда).
-CRON_SCRIPTS=(promise-sweeper.py open-threads-digest.py update-notify.sh self-audit-morning.sh health-daily.sh job-watch.py job-fail-watch.py memory-index-trim.py fallback-reply-sweeper.sh claude-link-guard.sh auth-alive-watch.sh multichat-nudge.sh dead-letter-digest.py)
+CRON_SCRIPTS=(promise-sweeper.py open-threads-digest.py update-notify.sh self-audit-morning.sh health-daily.sh job-watch.py job-fail-watch.py memory-index-trim.py fallback-reply-sweeper.sh claude-link-guard.sh auth-alive-watch.sh multichat-nudge.sh dead-letter-digest.py stack-updates-check.py api-fail-watch.py)
 CRON_LINES=(
   "0 $DIG_H * * * /usr/bin/python3 $WORKSPACE/bin/open-threads-digest.py --send >> $WORKSPACE/logs/open-threads-digest.log 2>&1"
   "10 $DIG_H * * * /bin/bash $WORKSPACE/bin/update-notify.sh >> $WORKSPACE/logs/update-notify.log 2>&1"
@@ -205,6 +205,12 @@ CRON_LINES=(
   # Вопрос из группы лежит в inbox и ждёт, пока сессия освободится: у
   # координатора такой провисел полтора часа (29.08.2026). Толкаем сессию.
   "*/2 * * * * /bin/bash $WORKSPACE/bin/multichat-nudge.sh $WORKSPACE >> $WORKSPACE/logs/multichat-nudge.log 2>&1"
+  # Weekly versions digest (Monday, after the morning slots): Claude Code, bun,
+  # the bridge, long-term memory. REPORT-ONLY -- it never updates anything.
+  "50 $DIG_H * * 1 /usr/bin/python3 $WORKSPACE/bin/stack-updates-check.py --send >> $WORKSPACE/logs/stack-updates.log 2>&1"
+  # An external API answering 401/403 or empty three times in a row goes silent
+  # otherwise: one message to the owner per source per day. Minutes, no tz.
+  "*/30 * * * * /usr/bin/python3 $WORKSPACE/bin/api-fail-watch.py >> $WORKSPACE/logs/api-fail-watch.log 2>&1"
 )
 if [[ -n "${KIT_NO_CRON:-}" ]]; then
   echo "  крон не трогаю (KIT_NO_CRON)"
