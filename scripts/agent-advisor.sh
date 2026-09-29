@@ -170,10 +170,20 @@ fi
 REPO="$WS/dashi-plugin-claude-code"
 BRANCH="$(sed -n 's/^DASHI_BRANCH=//p' "$ENV_FILE" | head -1)"; BRANCH="${BRANCH:-main}"
 if [[ -d "$REPO/.git" ]] && git -C "$REPO" fetch -q --depth 30 origin "$BRANCH" 2>/dev/null; then
-  newlog="$(git -C "$REPO" log --oneline HEAD..FETCH_HEAD 2>/dev/null | head -15)"
+  # The advisor runs only on Claude agents (install-agent.sh). A commit whose every
+  # file is Codex-side (install-codex.sh, codex bridge) changes nothing here -- 29.09
+  # «Codex-мост принимает PDF» went to a Claude agent's owner: «а зачем мне такое?».
+  newlog=""
+  while read -r c; do
+    [[ -z "$c" ]] && continue
+    files="$(git -C "$REPO" diff-tree --no-commit-id --name-only -r -m "$c" 2>/dev/null | sort -u)"
+    [[ -n "$files" ]] && ! grep -qvi 'codex' <<<"$files" && continue
+    newlog+="$(git -C "$REPO" log -1 --oneline "$c")"$'\n'
+  done < <(git -C "$REPO" rev-list --no-merges HEAD..FETCH_HEAD 2>/dev/null | head -15)
+  newlog="${newlog%$'\n'}"
   if [[ -n "$newlog" ]]; then
     sha="$(git -C "$REPO" rev-parse --short FETCH_HEAD)"
-    n="$(git -C "$REPO" rev-list --count HEAD..FETCH_HEAD)"
+    n="$(grep -c . <<<"$newlog")"
     body="$(echo "$newlog" | sed -E 's/^[0-9a-f]+ /• /' | sed 's/&/\&amp;/g; s/</\&lt;/g')"
     advise "plugin-update-$sha" "🔄 Вышло обновление моста ($n коммит.):
 $body
