@@ -1542,6 +1542,56 @@
         <CaseFlaws>Без дефектов</CaseFlaws>
       <GoodsSubType>Смарт-часы</GoodsSubType></Ad>
 
+      <Ad>
+        <Id>1890677281</Id>
+        <DateBegin>2023-03-01</DateBegin>
+        <DateEnd>2033-03-31</DateEnd>
+        <ListingFee>Package</ListingFee>
+        <AdStatus>Free</AdStatus>
+        
+        <ManagerName>Тимофей</ManagerName>
+        <ContactPhone>+73422140020</ContactPhone>
+        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
+        <GoodsType>Планшеты</GoodsType>
+        <AdType>Товар приобретен на продажу</AdType>
+        <Category>Планшеты и электронные книги</Category>
+        <Title>Apple iPad Pro 10,5 64Gb WiFi + LTE Space gray бу</Title>
+        <Description><![CDATA[<p>iPad Pro 10,5 64GB WiFi + LTE Space gray бу</p>
+<p>✅Хорошее состояние, технически исправен<br>✅Аккумулятор 75%<br>✅Комплект: устройство<br>✅Гарантия 180 дней</p>
+<p>🔥 Более 100 единиц проверенной бу техники всегда в наличии</p>
+<p>👍🏼 Гарантия лучшей стоимости</p>
+<p>💰Возможна покупка в кредит и по банковской карте</p>
+<p>🔄 Сдайте своё старое устройство по программе TRADE IN и получите скидку до 70%</p>
+<p>🥇Работаем для Вас с 2008 года и дорожим своей репутацией</p>
+<p>☝🏼Вся Б/У техника является ОРИГИНАЛЬНОЙ, проверена по чек-листу из 27 пунктов</p>
+<p>Арт. 44684</p>]]></Description>
+        <Price>18990</Price>
+        
+        <Model>iPad Pro 10.5 (2-го поколения) (2017)</Model>
+        <Images>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/3097/3237587993/tempImageh4fcVZ.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/3113/3237588009/tempImagefeknDI.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/3121/3237588017/tempImage9FFdiM.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/3129/3237588025/tempImageHDWaqm.jpg"/>
+        </Images>
+        <MemorySize>64</MemorySize>
+        <Vendor>Apple</Vendor>
+        <Category>Планшеты и электронные книги</Category>
+        
+        
+        <Condition>Б/у</Condition>
+        <AdType>Товар приобретен на продажу</AdType>
+        <ProductsType>Планшет</ProductsType>
+        <Brand>Apple</Brand>
+        <SimSlot>Есть</SimSlot>
+        <Case_Condition>Без дефектов</Case_Condition>
+        <Screen_Condition>1–2 мелкие царапины</Screen_Condition>
+        <Devicework>Включается</Devicework>
+        <ScreenCondition>Без дефектов</ScreenCondition>
+        <CaseCondition>Без дефектов</CaseCondition>
+        <Akb>75</Akb>
+      <RamSize>4</RamSize><Color>Серый</Color></Ad>
+
 <Ad>
         <Id>426971203</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -3283,7 +3333,7 @@
         <Condition>новое</Condition>
         <MemorySize>256 ГБ</MemorySize>
         <AdType>Товар приобретен на продажу</AdType>
-      <Revalidate>2984445</Revalidate></Ad>
+      <Revalidate>2984449</Revalidate></Ad>
 <Ad>
         <Id>496127545</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -3481,7 +3531,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2984445</Revalidate></Ad>
+      <Revalidate>2984449</Revalidate></Ad>
 <Ad>
         <Id>1640714561</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -3631,7 +3681,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2984445</Revalidate></Ad>
+      <Revalidate>2984449</Revalidate></Ad>
 <Ad>
         <Id>1640726593</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -3781,7 +3831,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2984445</Revalidate></Ad>
+      <Revalidate>2984449</Revalidate></Ad>
 <Ad>
         <Id>1640736641</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4381,7 +4431,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2984445</Revalidate></Ad>
+      <Revalidate>2984449</Revalidate></Ad>
 <Ad>
         <Id>1642060329</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4481,7 +4531,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2984445</Revalidate></Ad>
+      <Revalidate>2984449</Revalidate></Ad>
 <Ad>
         <Id>1642061641</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4781,7 +4831,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2984445</Revalidate></Ad>
+      <Revalidate>2984449</Revalidate></Ad>
 <Ad>
         <Id>1645613473</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4931,7 +4981,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2984445</Revalidate></Ad>
+      <Revalidate>2984449</Revalidate></Ad>
 <Ad>
         <Id>1645614297</Id>
         <DateBegin>2023-03-01</DateBegin>
