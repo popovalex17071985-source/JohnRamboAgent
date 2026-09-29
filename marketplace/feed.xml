@@ -920,54 +920,6 @@
       <ScreenCondition>Без дефектов</ScreenCondition><CaseCondition>Без дефектов</CaseCondition><Devicework>Включается</Devicework><Akb>100</Akb></Ad>
 
       <Ad>
-        <Id>1877858201</Id>
-        <DateBegin>2023-03-01</DateBegin>
-        <DateEnd>2033-03-31</DateEnd>
-        <ListingFee>Package</ListingFee>
-        <AdStatus>Free</AdStatus>
-        
-        <ManagerName>Тимофей</ManagerName>
-        <ContactPhone>+73422140020</ContactPhone>
-        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
-        <GoodsType>Apple</GoodsType>
-        <AdType>Товар приобретен на продажу</AdType>
-        <Category>Ноутбуки</Category>
-        <Title>Apple MacBook Pro 13&quot; 2013 i5/2,4/4GB/128GB Silver бу</Title>
-        <Description><![CDATA[<p>Apple MacBook Pro 13" 2013 i5/2.4/4GB/128GB Silver бу</p>
-<p>✅Отличное состояние, общие следы эксплуатации, технически исправен<br>✅Комплект: устройство<br>✅Циклов перезарядки: 561<br>✅Гарантия 180 дней</p>
-<p>🔥 Более 100 единиц проверенной бу техники всегда в наличии</p>
-<p>👍🏼 Гарантия лучшей стоимости</p>
-<p>💰Возможна покупка в кредит и по банковской карте</p>
-<p>🔄 Сдайте своё старое устройство по программе TRADE IN и получите скидку до 70%</p>
-<p>⬇️ Сделаем скидку на предложение конкурента</p>
-<p>🥇Работаем для Вас с 2008 года и дорожим своей репутацией</p>
-<p>☝🏼Вся Б/У техника является ОРИГИНАЛЬНОЙ, проверена по чек-листу из 27 пунктов</p>
-<p>Арт. 1fgyy</p>]]></Description>
-        <Price>12990</Price>
-        
-        
-        <Images>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/6697/3187907113/IMG_2460.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/6657/3187907073/IMG_2459.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/6617/3187907033/IMG_2456.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/6633/3187907049/IMG_2457.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/6649/3187907065/IMG_2458.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/6609/3187907025/IMG_2463.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/6705/3187907121/IMG_2461.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/6721/3187907137/IMG_2462.jpg"/>
-        </Images>
-        <Category>Ноутбуки</Category>
-        
-        <Condition>Б/у</Condition>
-        <Devicework>Включается</Devicework>
-        <AkbH>Больше 30 минут</AkbH>
-        <KBLayout>Есть кириллица</KBLayout>
-        <ScreenCondition>Без дефектов</ScreenCondition>
-        <CaseCondition>Мелкие царапины</CaseCondition>
-        <KBCondition>Без дефектов</KBCondition>
-      <BoxSealed>Нет</BoxSealed></Ad>
-
-      <Ad>
         <Id>1877859129</Id>
         <DateBegin>2023-03-01</DateBegin>
         <DateEnd>2033-03-31</DateEnd>
@@ -3331,7 +3283,7 @@
         <Condition>новое</Condition>
         <MemorySize>256 ГБ</MemorySize>
         <AdType>Товар приобретен на продажу</AdType>
-      <Revalidate>2984437</Revalidate></Ad>
+      <Revalidate>2984443</Revalidate></Ad>
 <Ad>
         <Id>496127545</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -3529,7 +3481,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2984437</Revalidate></Ad>
+      <Revalidate>2984443</Revalidate></Ad>
 <Ad>
         <Id>1640714561</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -3679,7 +3631,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2984437</Revalidate></Ad>
+      <Revalidate>2984443</Revalidate></Ad>
 <Ad>
         <Id>1640726593</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -3829,7 +3781,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2984437</Revalidate></Ad>
+      <Revalidate>2984443</Revalidate></Ad>
 <Ad>
         <Id>1640736641</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4429,7 +4381,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2984437</Revalidate></Ad>
+      <Revalidate>2984443</Revalidate></Ad>
 <Ad>
         <Id>1642060329</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4529,7 +4481,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2984437</Revalidate></Ad>
+      <Revalidate>2984443</Revalidate></Ad>
 <Ad>
         <Id>1642061641</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4829,7 +4781,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2984437</Revalidate></Ad>
+      <Revalidate>2984443</Revalidate></Ad>
 <Ad>
         <Id>1645613473</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4979,7 +4931,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2984437</Revalidate></Ad>
+      <Revalidate>2984443</Revalidate></Ad>
 <Ad>
         <Id>1645614297</Id>
         <DateBegin>2023-03-01</DateBegin>
