@@ -36,14 +36,24 @@ COOLDOWN_MIN = 5
 MAX_PROMISE_CHARS = 180
 
 # Forward commitments: «I take it / I'll be back / next up / I'm starting».
+# Leading \b matters: without it «соберу»/«разберу» matched «беру» and armed
+# alarms for plain future-tense verbs (30.09.2026, three false wake-ups in a row).
 PROMISE_RE = re.compile(
-    r"(беру(сь)?\b|берусь\b|вернусь\b|возвращаюсь\b|продолж(у|аю)\b|"
+    r"\b(беру(сь)?\b|берусь\b|вернусь\b|возвращаюсь\b|продолж(у|аю)\b|"
     r"дальше\s+(правк|задач|пункт|шаг)|иду\s+(делать|копать|править)|"
     r"сейчас\s+(сделаю|займусь)|запустил,?\s+вернусь|отчитаюсь\b)",
     re.IGNORECASE,
 )
 # A turn that merely reports a finished thing is not a promise.
 DONE_ONLY_RE = re.compile(r"^(готово|сделано|закрыто)[.!]?$", re.IGNORECASE)
+# A commitment that waits on the owner («когда пришлёшь ссылку -- разберу»,
+# «ответит -- соберу сводку») is not mine to resume: the alarm would wake me to
+# a task that is blocked on him. Such sentences are skipped.
+CONDITIONAL_RE = re.compile(
+    r"^\W*(если|когда|как\s+только|после\s+(его|твоего|её|их)|"
+    r"ответит|ответишь|пришлёт|пришлёшь|кинет|кинешь|скажет|скажешь|назовёт|назовёшь)\b",
+    re.IGNORECASE,
+)
 
 
 def log(line: str) -> None:
@@ -100,7 +110,7 @@ def promise_sentence(text: str) -> str | None:
     # below and the pane got «Итог: тесты прошли\nВернусь…» as the commitment.
     for chunk in re.split(r"(?<=[.!?])\s+|\n+", text):
         chunk = chunk.strip()
-        if not chunk or DONE_ONLY_RE.match(chunk):
+        if not chunk or DONE_ONLY_RE.match(chunk) or CONDITIONAL_RE.match(chunk):
             continue
         if PROMISE_RE.search(chunk):
             return chunk[:MAX_PROMISE_CHARS]
