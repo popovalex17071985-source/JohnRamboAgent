@@ -305,6 +305,72 @@ send() {  # режем на куски ≤4000, Telegram больше не пр�
   done
 }
 
+# Текст из файла для агента: PDF и Excel разбираем заранее, агент читает .txt.
+# Печатает путь к .txt или ничего (формат не наш -- агент сам посмотрит файл).
+extract_text() {
+  local path="\$1" name="\$2"
+  case "\${name,,}" in
+    *.pdf) pdftotext -layout "\$path" "\$path.txt" 2>/dev/null && echo "\$path.txt" ;;
+    *.xlsx|*.xlsm|*.xls) python3 - "\$path" > "\$path.txt" 2>/dev/null <<'XLS' && echo "\$path.txt"
+import sys
+path = sys.argv[1]
+if path.lower().endswith(".xls"):
+    import xlrd
+    book = xlrd.open_workbook(path)
+    for sh in book.sheets():
+        print(f"=== лист: {sh.name}")
+        for r in range(sh.nrows):
+            print("\t".join(str(c.value) for c in sh.row(r)))
+else:
+    import openpyxl
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    for ws in wb.worksheets:
+        print(f"=== лист: {ws.title}")
+        for row in ws.iter_rows(values_only=True):
+            print("\t".join("" if v is None else str(v) for v in row))
+XLS
+    ;;
+  esac
+}
+
+# Файл больше 20 МБ Telegram боту не отдаёт -- его присылают ссылкой на Яндекс
+# Диск или Google Drive. Качаем сами в inbox. Печатает путь к файлу или ничего.
+LINK_MAX_BYTES=524288000   # 500 МБ: больше -- не качаем, диск VPS не резиновый
+fetch_link() {  # код возврата: 0 -- скачан, 1 -- нет доступа/не файл, 2 -- слишком большой
+  local url="\$1" dir tmp href="" id name="" size=0 meta f dest
+  dir="\$WORKDIR/inbox"; mkdir -p "\$dir"
+  case "\$url" in
+    *disk.yandex.*|*yadi.sk*)
+      # Имя и размер -- из описания ресурса: ссылка на скачивание имени не несёт
+      meta=\$(curl -s -m 30 --get "https://cloud-api.yandex.net/v1/disk/public/resources" \
+        --data-urlencode "public_key=\$url")
+      name=\$(printf '%s' "\$meta" | jq -r '.name // empty')
+      size=\$(printf '%s' "\$meta" | jq -r '.size // 0')
+      [ "\$(printf '%s' "\$meta" | jq -r '.type // empty')" = "dir" ] && name="\$name.zip"
+      href=\$(curl -s -m 30 --get "https://cloud-api.yandex.net/v1/disk/public/resources/download" \
+        --data-urlencode "public_key=\$url" | jq -r '.href // empty') ;;
+    *drive.google.com*|*docs.google.com*)
+      id=\$(printf '%s' "\$url" | grep -oE '(/d/|id=)[A-Za-z0-9_-]{20,}' | head -1 | sed -E 's#^(/d/|id=)##')
+      [ -n "\$id" ] && href="https://drive.usercontent.google.com/download?id=\$id&export=download&confirm=t" ;;
+  esac
+  [ -n "\$href" ] || return 1
+  [ "\$size" -gt "\$LINK_MAX_BYTES" ] 2>/dev/null && return 2
+  tmp=\$(mktemp -d "\$dir/.dl-XXXX")
+  if [ -n "\$name" ]; then
+    name=\$(printf '%s' "\$name" | tr '/' '_' | tr -d '\000-\037' | cut -c1-120)
+    curl -sfL -m 1800 --max-filesize "\$LINK_MAX_BYTES" -o "\$tmp/\$name" "\$href"
+  else
+    ( cd "\$tmp" && curl -sfL -m 1800 --max-filesize "\$LINK_MAX_BYTES" -OJ "\$href" )
+  fi
+  case \$? in 0) ;; 63) rm -rf "\$tmp"; return 2 ;; *) rm -rf "\$tmp"; return 1 ;; esac
+  f=\$(find "\$tmp" -maxdepth 1 -type f | head -1)
+  # Google отдаёт HTML-страницу вместо файла, если доступа по ссылке нет
+  if [ -z "\$f" ] || head -c 512 "\$f" | grep -qi '<html'; then rm -rf "\$tmp"; return 1; fi
+  dest="\$dir/\$(date +%Y%m%d-%H%M%S)-\$(basename "\$f" | tr -d '\000-\037' | cut -c1-120)"
+  mv "\$f" "\$dest"; rm -rf "\$tmp"
+  echo "\$dest"
+}
+
 while :; do
   UPDATES=\$(curl -s --max-time 40 "\$API/getUpdates?timeout=30&offset=\$OFFSET") || { log "getUpdates: сеть"; sleep 5; continue; }
   [ "\$(printf '%s' "\$UPDATES" | jq -r .ok 2>/dev/null)" = "true" ] || { log "getUpdates: \$UPDATES"; sleep 5; continue; }
@@ -335,29 +401,7 @@ while :; do
       mkdir -p "\$WORKDIR/inbox"; DPATH="\$WORKDIR/inbox/\$(date +%Y%m%d-%H%M%S)-\$DNAME"
       FP=\$(curl -s "\$API/getFile?file_id=\$DOC" | jq -r '.result.file_path // empty')
       if [ -n "\$FP" ] && curl -sf -o "\$DPATH" "https://api.telegram.org/file/bot\$TELEGRAM_TOKEN/\$FP"; then
-        DTXT=""
-        case "\${DNAME,,}" in
-          *.pdf) pdftotext -layout "\$DPATH" "\$DPATH.txt" 2>/dev/null && DTXT="\$DPATH.txt" ;;
-          *.xlsx|*.xlsm|*.xls) python3 - "\$DPATH" > "\$DPATH.txt" 2>/dev/null <<'XLS' && DTXT="\$DPATH.txt"
-import sys
-path = sys.argv[1]
-if path.lower().endswith(".xls"):
-    import xlrd
-    book = xlrd.open_workbook(path)
-    for sh in book.sheets():
-        print(f"=== лист: {sh.name}")
-        for r in range(sh.nrows):
-            print("\t".join(str(c.value) for c in sh.row(r)))
-else:
-    import openpyxl
-    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
-    for ws in wb.worksheets:
-        print(f"=== лист: {ws.title}")
-        for row in ws.iter_rows(values_only=True):
-            print("\t".join("" if v is None else str(v) for v in row))
-XLS
-          ;;
-        esac
+        DTXT=\$(extract_text "\$DPATH" "\$DNAME")
         [ -z "\$TEXT" ] && TEXT=\$(upd '.message.caption // empty')
         [ -z "\$TEXT" ] && TEXT="Разбери присланный файл: что в нём и что с этим делать."
         TEXT="\$TEXT
@@ -366,7 +410,7 @@ XLS
       else
         log "файл не скачался (\$DNAME, \$DSIZE байт)"
         if [ "\$DSIZE" -gt 20000000 ] 2>/dev/null; then
-          send "Файл больше 20 МБ -- Telegram не отдаёт такие ботам. Сожми или разбей на части."
+          send "Файл больше 20 МБ -- Telegram не отдаёт такие ботам. Положи его на Яндекс Диск или Google Drive и пришли ссылку -- скачаю сам."
         else send "Файл не скачался, пришли ещё раз."; fi
         continue
       fi
@@ -387,6 +431,28 @@ XLS
       if [ -n "\$VOICE" ]; then send "Не разобрал голосовое. Голосовые работают при заданном ключе Groq (см. гайд, раздел про голосовые)."
       else send "Понимаю текст, голосовые, фото и файлы (PDF, Excel)."; fi
       continue
+    fi
+    # Ссылка на облако в сообщении -> качаем файл и разбираем, как вложение
+    LINK=\$(printf '%s' "\$TEXT" | grep -oE 'https?://(disk\.yandex\.[a-z]+|yadi\.sk|drive\.google\.com|docs\.google\.com)/[^[:space:]]+' | head -1)
+    if [ -n "\$LINK" ]; then
+      send "Качаю файл по ссылке..."
+      LPATH=\$(fetch_link "\$LINK"); LRC=\$?
+      if [ \$LRC -eq 0 ] && [ -n "\$LPATH" ]; then
+        LTXT=\$(extract_text "\$LPATH" "\$LPATH")
+        TEXT="\$TEXT
+
+[Мост: файл по ссылке скачан: \$LPATH\${LTXT:+; текст из него уже вытащен в \$LTXT -- читай его}]"
+      elif [ \$LRC -eq 2 ]; then
+        log "ссылка: файл больше лимита: \$LINK"
+        TEXT="\$TEXT
+
+[Мост: файл по ссылке больше 500 МБ -- не качал, чтобы не забить диск. Попроси прислать нужную часть.]"
+      else
+        log "ссылка не скачалась: \$LINK"
+        TEXT="\$TEXT
+
+[Мост: файл по ссылке скачать не удалось -- скорее всего, доступ только по приглашению. Попроси открыть доступ «всем, у кого есть ссылка» или прислать файл иначе.]"
+      fi
     fi
     if [ "\$TEXT" = "/new" ]; then
       send "Сохраняю важное из диалога в память и начинаю новую сессию..."
