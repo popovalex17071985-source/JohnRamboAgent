@@ -76,7 +76,7 @@
         <AdType>Товар приобретен на продажу</AdType>
         <Case_Condition>Мелкие царапины</Case_Condition>
         <Screen_Condition>1–2 мелкие царапины</Screen_Condition>
-      <ScreenCondition>1–2 мелкие царапины</ScreenCondition><CaseCondition>Мелкие царапины</CaseCondition><Devicework>Включается</Devicework><Akb>87</Akb></Ad>
+      <ScreenCondition>1–2 мелкие царапины</ScreenCondition><CaseCondition>Мелкие царапины</CaseCondition><Devicework>Включается</Devicework><Akb>84</Akb></Ad>
 
       <Ad>
         <Id>490852539</Id>
@@ -207,7 +207,7 @@
         <AdType>Товар приобретен на продажу</AdType>
         <Case_Condition>Мелкие царапины</Case_Condition>
         <Screen_Condition>Без дефектов</Screen_Condition>
-      <ScreenCondition>1–2 мелкие царапины</ScreenCondition><CaseCondition>Мелкие царапины</CaseCondition><Devicework>Включается</Devicework><Akb>83</Akb><BoxSealed>Нет</BoxSealed></Ad>
+      <ScreenCondition>Без дефектов</ScreenCondition><CaseCondition>Мелкие царапины</CaseCondition><Devicework>Включается</Devicework><Akb>83</Akb><BoxSealed>Нет</BoxSealed></Ad>
 
       <Ad>
         <Id>1615196817</Id>
@@ -546,7 +546,7 @@
         <AdType>Товар приобретен на продажу</AdType>
         <Case_Condition>Мелкие царапины</Case_Condition>
         <Screen_Condition>Много мелких царапин</Screen_Condition>
-      <ScreenCondition>1–2 мелкие царапины</ScreenCondition><CaseCondition>Мелкие царапины</CaseCondition><Devicework>Включается</Devicework><Akb>84</Akb></Ad>
+      <ScreenCondition>Много мелких царапин</ScreenCondition><CaseCondition>Мелкие царапины</CaseCondition><Devicework>Включается</Devicework><Akb>84</Akb></Ad>
 
       <Ad>
         <Id>1730301473</Id>
@@ -1117,7 +1117,7 @@
         <Case_Condition>Без дефектов</Case_Condition>
         <Screen_Condition>1–2 мелкие царапины</Screen_Condition>
         <Devicework>Включается</Devicework>
-        <ScreenCondition>1–2 мелкие царапины</ScreenCondition>
+        <ScreenCondition>Без дефектов</ScreenCondition>
         <CaseCondition>Без дефектов</CaseCondition>
       <Akb>76</Akb><RamSize>2</RamSize></Ad>
 
@@ -3333,7 +3333,7 @@
         <Condition>новое</Condition>
         <MemorySize>256 ГБ</MemorySize>
         <AdType>Товар приобретен на продажу</AdType>
-      <Revalidate>2984599</Revalidate></Ad>
+      <Revalidate>2984605</Revalidate></Ad>
 <Ad>
         <Id>496127545</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -3531,7 +3531,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2984599</Revalidate></Ad>
+      <Revalidate>2984605</Revalidate></Ad>
 <Ad>
         <Id>1640714561</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -3681,7 +3681,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2984599</Revalidate></Ad>
+      <Revalidate>2984605</Revalidate></Ad>
 <Ad>
         <Id>1640726593</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -3831,7 +3831,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2984599</Revalidate></Ad>
+      <Revalidate>2984605</Revalidate></Ad>
 <Ad>
         <Id>1640736641</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4431,7 +4431,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2984599</Revalidate></Ad>
+      <Revalidate>2984605</Revalidate></Ad>
 <Ad>
         <Id>1642060329</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4531,7 +4531,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2984599</Revalidate></Ad>
+      <Revalidate>2984605</Revalidate></Ad>
 <Ad>
         <Id>1642061641</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4831,7 +4831,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2984599</Revalidate></Ad>
+      <Revalidate>2984605</Revalidate></Ad>
 <Ad>
         <Id>1645613473</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4981,7 +4981,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2984599</Revalidate></Ad>
+      <Revalidate>2984605</Revalidate></Ad>
 <Ad>
         <Id>1645614297</Id>
         <DateBegin>2023-03-01</DateBegin>
