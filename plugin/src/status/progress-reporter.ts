@@ -18,7 +18,7 @@
 
 import type { AppConfig } from '../config.js'
 import type { Logger } from '../log.js'
-import type { ActivityStatusEvent } from '../hooks/claude-events.js'
+import { isSubagentToolEvent, type ActivityStatusEvent } from '../hooks/claude-events.js'
 import {
   buildActivityDetail,
   buildHumanizedActivityLine,
@@ -106,6 +106,10 @@ export class ProgressReporter extends PerChatMessageQueue<ChatProgressEntry> {
         await this.handleStop(chatId)
         return
       }
+
+      // A sub-agent / forked side-query tool call may annotate the card the
+      // main turn has open, but never opens one: no Stop would close it.
+      if (isSubagentToolEvent(event) && !this.hasLiveEntry(chatId)) return
 
       const entry = this.getOrCreate(chatId)
       if (entry.stopped) return
@@ -240,6 +244,13 @@ export class ProgressReporter extends PerChatMessageQueue<ChatProgressEntry> {
         // kept for exhaustiveness.
         break
     }
+  }
+
+  // An entry getOrCreate would reuse (not stopped, not TTL-expired).
+  private hasLiveEntry(chatId: string): boolean {
+    const entry = this.chats.get(chatId)
+    if (!entry || entry.stopped) return false
+    return this.now() - entry.lastActivityMs <= this.config.progress.session_ttl_ms
   }
 
   private buildSnapshot(entry: ChatProgressEntry): ActivitySnapshot {

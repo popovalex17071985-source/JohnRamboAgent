@@ -24,7 +24,7 @@ import {
   type MultichatPolicy,
 } from '../chats/policy-loader.js'
 import { escapeHtml } from '../format/html.js'
-import type { ActivityStatusEvent } from '../hooks/claude-events.js'
+import { isSubagentToolEvent, type ActivityStatusEvent } from '../hooks/claude-events.js'
 import { classifyEditError } from '../safety/telegram-edit-classifier.js'
 import {
   buildActivityDetail,
@@ -872,6 +872,9 @@ export class StatusManager {
     // surface exists. Initial state is `activity` so the first edit shows
     // the working block, not "Печатает…".
     let entry = this.entries.get(chatId)
+    // Sub-agent / forked side-query tool calls never lazy-open a bubble: no
+    // Stop would close it (see isSubagentToolEvent).
+    if (!entry && isSubagentToolEvent(event)) return
     if (!entry) {
       const initial: StatusState = {
         kind: 'activity',

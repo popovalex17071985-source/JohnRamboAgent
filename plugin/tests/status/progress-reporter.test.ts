@@ -528,4 +528,90 @@ describe('ProgressReporter', () => {
     expect(edits.length).toBeGreaterThanOrEqual(2)
     expect(edits[edits.length - 1]!.text).toContain('baz.ts')
   })
+
+  // 30.09.2026 incident: after the turn's Stop, Claude Code's prompt-suggestion
+  // fork emitted a Bash call; its PreToolUse (carrying agent_id) opened a fresh
+  // card «работаю -- 0 сек / команда No suggestion» that nothing ever closed.
+  describe('sub-agent / forked side-query tool events', () => {
+    function forkBash(toolUseId = 'fork-1', description = 'No suggestion'): ActivityStatusEvent {
+      return {
+        kind: 'tool_start',
+        toolName: 'Bash',
+        toolInput: { command: description, description },
+        toolUseId,
+        subagentId: 'a0123456789abcdef',
+      }
+    }
+
+    test('after Stop, a sub-agent tool_start does NOT open a new card', async () => {
+      const { reporter, api } = makeReporter()
+      await reporter.recordEvent('164995011', bashStart('t1'))
+      await reporter._idleForTests('164995011')
+      await reporter.recordEvent('164995011', STOP)
+      const before = api.calls.length
+      await reporter.recordEvent('164995011', forkBash())
+      await reporter._idleForTests('164995011')
+      expect(api.calls.length).toBe(before)
+      expect(api.calls.some((c) => c.text.includes('No suggestion'))).toBe(false)
+      expect(reporter.isBusy('164995011', 60_000)).toBe(false)
+    })
+
+    test('with no card at all, a sub-agent tool_start / tool_end is a no-op', async () => {
+      const { reporter, api } = makeReporter()
+      await reporter.recordEvent('164995011', forkBash())
+      await reporter.recordEvent('164995011', {
+        kind: 'tool_end',
+        toolName: 'Bash',
+        toolInput: { command: 'ls' },
+        toolUseId: 'fork-1',
+        subagentId: 'a0123456789abcdef',
+      })
+      await reporter._idleForTests('164995011')
+      expect(api.calls.length).toBe(0)
+    })
+
+    test('while the main turn card is live, sub-agent calls still land on it', async () => {
+      const { reporter, clock, api } = makeReporter()
+      await reporter.recordEvent('164995011', bashStart('t1', 'echo main'))
+      await reporter._idleForTests('164995011')
+      clock.advance(5_000)
+      await reporter.recordEvent('164995011', forkBash('sub-1', 'subagent step'))
+      await reporter._idleForTests('164995011')
+      const sends = api.calls.filter((c) => c.kind === 'send')
+      const edits = api.calls.filter((c) => c.kind === 'edit')
+      expect(sends.length).toBe(1)
+      expect(edits.at(-1)!.text).toContain('subagent step')
+      // Normal lifecycle intact: Stop finalizes the same message.
+      await reporter.recordEvent('164995011', STOP)
+      const last = api.calls.at(-1)!
+      expect(last.kind).toBe('edit')
+      expect(last.messageId).toBe(sends[0]!.messageId)
+      expect(last.text).toContain('done -- ')
+    })
+
+    test('a TTL-expired card is not revived by a sub-agent tool_start', async () => {
+      const { reporter, clock, api } = makeReporter({
+        config: makeConfig({ session_ttl_ms: 60_000 }),
+      })
+      await reporter.recordEvent('164995011', bashStart('t1'))
+      await reporter._idleForTests('164995011')
+      clock.advance(60_001)
+      const before = api.calls.length
+      await reporter.recordEvent('164995011', forkBash())
+      await reporter._idleForTests('164995011')
+      expect(api.calls.length).toBe(before)
+    })
+
+    test('a main-loop tool_start after Stop still opens a fresh card', async () => {
+      const { reporter, api } = makeReporter()
+      await reporter.recordEvent('164995011', bashStart('t1'))
+      await reporter._idleForTests('164995011')
+      await reporter.recordEvent('164995011', STOP)
+      await reporter.recordEvent('164995011', bashStart('t2', 'echo next turn'))
+      await reporter._idleForTests('164995011')
+      const sends = api.calls.filter((c) => c.kind === 'send')
+      expect(sends.length).toBe(2)
+      expect(sends[1]!.text).toContain('echo next turn')
+    })
+  })
 })

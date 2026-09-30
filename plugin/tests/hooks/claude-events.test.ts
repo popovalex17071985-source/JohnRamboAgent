@@ -8,7 +8,11 @@ import {
   WebhookMessagePayloadSchema,
   type WebhookPayload,
 } from '../../src/schemas.js'
-import { toActivityEvent, toTodoWriteEvent } from '../../src/hooks/claude-events.js'
+import {
+  isSubagentToolEvent,
+  toActivityEvent,
+  toTodoWriteEvent,
+} from '../../src/hooks/claude-events.js'
 
 function parse(value: unknown): WebhookPayload {
   return WebhookPayloadSchema.parse(value)
@@ -214,6 +218,39 @@ describe('toActivityEvent mapping', () => {
     expect(event.toolName).toBe('Read')
     expect(event.toolUseId).toBe('u1')
     expect(event.toolInput.file_path).toBe('/repo/a.ts')
+  })
+
+  test('PreToolUse with agent_id → tool_start carries subagentId (sub-agent / fork)', () => {
+    const event = toActivityEvent({
+      chatId: '1',
+      session_id: 's',
+      transcript_path: '/t',
+      cwd: '/',
+      agent_id: 'a0123456789abcdef',
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Bash',
+      tool_use_id: 'u1',
+      tool_input: { command: 'No suggestion' },
+    })
+    expect(event.kind).toBe('tool_start')
+    if (event.kind !== 'tool_start') throw new Error('unreachable')
+    expect(event.subagentId).toBe('a0123456789abcdef')
+    expect(isSubagentToolEvent(event)).toBe(true)
+  })
+
+  test('main-loop PreToolUse (no agent_id) → no subagentId key', () => {
+    const event = toActivityEvent({
+      chatId: '1',
+      session_id: 's',
+      transcript_path: '/t',
+      cwd: '/',
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Bash',
+      tool_use_id: 'u1',
+      tool_input: { command: 'ls' },
+    })
+    expect('subagentId' in event).toBe(false)
+    expect(isSubagentToolEvent(event)).toBe(false)
   })
 
   test('PostToolUse without tool_result omits the field entirely', () => {
