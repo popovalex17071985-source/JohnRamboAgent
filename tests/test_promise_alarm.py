@@ -110,6 +110,40 @@ class PromiseSentenceTest(HookCase):
     def test_empty_text_is_not_a_promise(self):
         self.assertIsNone(self.hook.promise_sentence(""))
 
+    def test_future_verbs_ending_in_beru_are_not_a_promise(self):
+        for text in ("Соберу сводку к вечеру.", "Разберу логи завтра."):
+            with self.subTest(text=text):
+                self.assertIsNone(self.hook.promise_sentence(text))
+
+    def test_conditional_promises_do_not_arm(self):
+        for text in (
+            "Ответит — соберу сводку и вернусь.",
+            "Когда подключу, сразу вернусь с разбором.",
+            "Кинешь ссылку -- подключу и отчитаюсь.",
+            "Если нужно — скажи склад, вернусь со сводкой.",
+        ):
+            with self.subTest(text=text):
+                self.assertIsNone(self.hook.promise_sentence(text))
+
+    def test_the_three_false_alarms_of_30_09(self):
+        for text in (
+            "Ответит — соберу сводку по накладной №487 и после его «да» оприходую.",
+            "Когда подключу, сразу разберу всё, что вышло с 24.08.",
+            "Приходовать не стал: Сане написал, что если нужно — пусть назовёт склад, "
+            "соберу сводку.",
+        ):
+            with self.subTest(text=text):
+                self.assertIsNone(self.hook.promise_sentence(text))
+
+    def test_quoted_verbs_do_not_arm(self):
+        self.assertIsNone(
+            self.hook.promise_sentence("- **Причина:** шаблон «беру» ловил «соберу» и «разберу».")
+        )
+        self.assertEqual(
+            self.hook.promise_sentence("Сказал «беру», вернусь с прогоном."),
+            "Сказал «беру», вернусь с прогоном.",
+        )
+
 
 class FinalTextTest(HookCase):
     def test_reads_the_last_assistant_message(self):

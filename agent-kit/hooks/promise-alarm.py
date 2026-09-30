@@ -46,6 +46,7 @@ PROMISE_RE = re.compile(
 )
 # A turn that merely reports a finished thing is not a promise.
 DONE_ONLY_RE = re.compile(r"^(готово|сделано|закрыто)[.!]?$", re.IGNORECASE)
+QUOTED_RE = re.compile(r"«[^»]*»")
 # A commitment that waits on the owner («когда пришлёшь ссылку -- разберу»,
 # «ответит -- соберу сводку») is not mine to resume: the alarm would wake me to
 # a task that is blocked on him. Such sentences are skipped.
@@ -112,7 +113,9 @@ def promise_sentence(text: str) -> str | None:
         chunk = chunk.strip()
         if not chunk or DONE_ONLY_RE.match(chunk) or CONDITIONAL_RE.match(chunk):
             continue
-        if PROMISE_RE.search(chunk):
+        # A verb inside «…» is a quotation (a report ABOUT the word «беру»),
+        # not my commitment -- 30.09.2026 such a report armed an alarm.
+        if PROMISE_RE.search(QUOTED_RE.sub("", chunk)):
             return chunk[:MAX_PROMISE_CHARS]
     return None
 
