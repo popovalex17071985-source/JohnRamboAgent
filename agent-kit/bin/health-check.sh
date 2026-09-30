@@ -21,6 +21,11 @@ systemctl list-unit-files "claude-repair-$AGENT.service" >/dev/null 2>&1 \
 TOKEN_ENV="${TOKEN_ENV:-/etc/dashi-plugin/$AGENT/channel.env}"
 HEARTBEAT="${HEARTBEAT:-$WORKSPACE/data/cron-heartbeat}"
 BACKUP_DIR="${BACKUP_DIR:-$WORKSPACE/backups}"
+# Когда агент впервые увидел нынешний годовой токен: "HASH EPOCH". Дата env-файла
+# сама по себе врёт -- его переписывают set-bot-token.sh, restore-agent.sh (cp -f)
+# и прочие, и токен «молодеет». Поэтому дату запоминаем один раз на токен.
+AUTH_STAMP="${AUTH_STAMP:-$WORKSPACE/data/claude-token-seen}"
+YEAR_TOKEN_DAYS=365
 
 # --- Pure functions (tested) ---
 
@@ -78,6 +83,52 @@ classify_credentials() {
     size=$(stat -c%s "$path" 2>/dev/null || echo 0)
     printf 'OK|%s (%db)\n' "$path" "$size"
   fi
+}
+
+# classify_auth_expiry DAYS_LEFT KIND -> echoes "STATUS|DETAILS"
+# Саня 30.08.2026: «а в архитектуре новых агентов будет это?». Проверка входа
+# смотрит «вход на месте», а вход умирает по СРОКУ -- и агент замолкает целиком.
+# Порог у годового шире (месяц): новый выпускают руками и не за один вечер.
+classify_auth_expiry() {
+  local left="$1" kind="$2" warn=30
+  [ "$kind" = "месячный вход" ] && warn=7
+  if [ "$left" -le 0 ]; then
+    printf 'FAIL|%s ИСТЁК -- агент замолчит\n' "$kind"
+  elif [ "$left" -le "$warn" ]; then
+    printf 'WARN|%s кончается через %d дн\n' "$kind" "$left"
+  else
+    printf 'OK|%s: ещё %d дн\n' "$kind" "$left"
+  fi
+}
+
+# auth_days_left -> echoes "DAYS|KIND", or nothing when there is no expiry to read.
+# Годовой токен в env службы главнее .credentials.json: служба ходит с ним, а
+# файл от старого /login может лежать давно протухшим (у Джарвиса -27 дн при
+# живом агенте). Годовой токен непрозрачный, срока внутри нет: год от первой
+# встречи с этим токеном (первая встреча -- дата env-файла на тот момент).
+auth_days_left() {
+  local now; now=$(date +%s)
+  local line; line=$(grep -m1 '^CLAUDE_CODE_OAUTH_TOKEN=sk-ant-' "$TOKEN_ENV" 2>/dev/null)
+  if [ -n "$line" ]; then
+    local hash seen=""
+    hash=$(printf '%s' "$line" | sha256sum | cut -c1-16)
+    if [ "$(cut -d' ' -f1 "$AUTH_STAMP" 2>/dev/null)" = "$hash" ]; then
+      seen=$(cut -d' ' -f2 "$AUTH_STAMP" 2>/dev/null)
+    fi
+    if ! [[ "$seen" =~ ^[0-9]+$ ]]; then
+      seen=$(stat -c%Y "$TOKEN_ENV" 2>/dev/null || echo "$now")
+      mkdir -p "$(dirname "$AUTH_STAMP")" 2>/dev/null
+      printf '%s %s\n' "$hash" "$seen" > "$AUTH_STAMP" 2>/dev/null
+    fi
+    printf '%d|годовой токен\n' "$(( YEAR_TOKEN_DAYS - (now - seen) / 86400 ))"
+    return
+  fi
+  local ms
+  ms=$(/usr/bin/python3 -c "import json,sys;d=json.load(open(sys.argv[1]));print(int(d.get('claudeAiOauth',{}).get('refreshTokenExpiresAt') or 0))" \
+        "$CRED_PATH" 2>/dev/null)
+  ms=${ms:-0}
+  [[ "$ms" =~ ^[0-9]+$ ]] && [ "$ms" -gt 0 ] || return 0
+  printf '%d|месячный вход\n' "$(( (ms / 1000 - now) / 86400 ))"
 }
 
 # classify_backup AGE_H DETAILS -> echoes "STATUS|DETAILS"
@@ -153,6 +204,41 @@ run_tests() {
   rm -f "$envf"
 
 
+  echo "== classify_auth_expiry =="
+  assert "OK|годовой токен: ещё 200 дн"   "$(classify_auth_expiry 200 'годовой токен')" "200д -> OK"
+  assert "WARN|годовой токен кончается через 20 дн" \
+    "$(classify_auth_expiry 20 'годовой токен')" "20д -> WARN"
+  assert "FAIL|годовой токен ИСТЁК -- агент замолчит" \
+    "$(classify_auth_expiry 0 'годовой токен')" "0д -> FAIL"
+  assert "OK|месячный вход: ещё 20 дн"    "$(classify_auth_expiry 20 'месячный вход')" "месячный 20д -> OK"
+  assert "WARN|месячный вход кончается через 5 дн" \
+    "$(classify_auth_expiry 5 'месячный вход')" "месячный 5д -> WARN"
+  assert "FAIL|месячный вход ИСТЁК -- агент замолчит" \
+    "$(classify_auth_expiry -3 'месячный вход')" "месячный -3д -> FAIL"
+
+  echo "== auth_days_left =="
+  local adir; adir=$(mktemp -d)
+  (
+    TOKEN_ENV="$adir/channel.env" CRED_PATH="$adir/creds.json" AUTH_STAMP="$adir/data/seen"
+    now=$(date +%s)
+    printf '{"claudeAiOauth":{"refreshTokenExpiresAt":%d}}' "$(( (now + 10*86400 + 3600) * 1000 ))" \
+      > "$CRED_PATH"
+    echo "BOT_TOKEN=1" > "$TOKEN_ENV"
+    assert "10|месячный вход" "$(auth_days_left)" "нет токена -> срок из creds"
+    echo "CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-AAAA" > "$TOKEN_ENV"
+    touch -d '@'"$(( now - 100*86400 ))" "$TOKEN_ENV"
+    assert "265|годовой токен" "$(auth_days_left)" "токен главнее creds, год от даты env"
+    touch "$TOKEN_ENV"
+    assert "265|годовой токен" "$(auth_days_left)" "env переписан -- дата не молодеет"
+    echo "CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-BBBB" > "$TOKEN_ENV"
+    assert "365|годовой токен" "$(auth_days_left)" "новый токен -- новый отсчёт"
+    rm -f "$TOKEN_ENV" "$CRED_PATH"
+    assert "" "$(auth_days_left)" "ни токена, ни creds -> пусто"
+    exit "$fails"
+  ) || fails=$(( $? ))
+  total=$(( total + 5 ))
+  rm -rf "$adir"
+
   echo "== classify_backup =="
   assert "FAIL|бэкап: нет архивов"        "$(classify_backup -1 '')"  "none -> FAIL"
   assert "OK|бэкап: arch (5 ч)"           "$(classify_backup 5 'arch (5 ч)')" "5h -> OK"
@@ -210,6 +296,12 @@ probe_secrets() {
 
 probe_credentials() {
   classify_credentials "$CRED_PATH" "$TOKEN_ENV"
+}
+
+probe_auth_expiry() {
+  local left; left=$(auth_days_left)
+  [ -n "$left" ] || { echo "skip|срок входа не прочитать"; return; }
+  classify_auth_expiry "${left%%|*}" "${left#*|}"
 }
 
 probe_cron() {
@@ -326,6 +418,7 @@ main() {
   results[CPU_load]=$(probe_cpu)
   results[Agent]=$(probe_service "dashi-$AGENT")
   results[OAuth]=$(probe_credentials)
+  results[Auth_expiry]=$(probe_auth_expiry)
   results[Cron]=$(probe_cron)
   results[Backup]=$(probe_backup)
   results[Secrets]=$(probe_secrets)
@@ -343,6 +436,7 @@ main() {
   render_row "CPU load (1m)"   "${results[CPU_load]}"
   render_row "Агент"           "${results[Agent]}"
   render_row "OAuth creds"     "${results[OAuth]}"
+  render_row "Срок входа"      "${results[Auth_expiry]}"
   render_row "Планировщик"     "${results[Cron]}"
   render_row "Бэкап"           "${results[Backup]}"
   render_row "Секреты"         "${results[Secrets]}"
