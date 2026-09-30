@@ -18,7 +18,7 @@
 
 import type { AppConfig } from '../config.js'
 import type { Logger } from '../log.js'
-import type { ActivityStatusEvent } from '../hooks/claude-events.js'
+import { isSubagentToolEvent, type ActivityStatusEvent } from '../hooks/claude-events.js'
 import {
   buildActivityDetail,
   buildHumanizedActivityLine,
@@ -107,6 +107,13 @@ export class ProgressReporter extends PerChatMessageQueue<ChatProgressEntry> {
         return
       }
 
+      // A sub-agent / forked side-query tool call may annotate the card the
+      // main turn has open, but never opens one: no Stop would close it.
+      if (isSubagentToolEvent(event)) {
+        this.evictIfExpired(chatId)
+        if (!this.hasLiveEntry(chatId)) return
+      }
+
       const entry = this.getOrCreate(chatId)
       if (entry.stopped) return
       entry.lastActivityMs = this.now()
@@ -190,11 +197,11 @@ export class ProgressReporter extends PerChatMessageQueue<ChatProgressEntry> {
    * parity with intermediate edits, then appends «done -- Ns» as the
    * last line inside the <pre> body so a single block paragraph remains.
    */
-  protected renderFinalEntry(entry: ChatProgressEntry): string {
+  protected renderFinalEntry(entry: ChatProgressEntry, endMs: number): string {
     const snapshot = this.buildSnapshot(entry)
-    const block = this.safeRender(snapshot)
+    const block = this.safeRender(snapshot, endMs)
     if (!block) return ''
-    const elapsedSec = Math.max(0, Math.floor((this.now() - entry.startedAtMs) / 1000))
+    const elapsedSec = Math.max(0, Math.floor((endMs - entry.startedAtMs) / 1000))
     const doneLine = `\n\ndone -- ${elapsedSec}s`
     if (block.endsWith('</pre>')) {
       return `${block.slice(0, -'</pre>'.length)}${doneLine}</pre>`
@@ -242,6 +249,13 @@ export class ProgressReporter extends PerChatMessageQueue<ChatProgressEntry> {
     }
   }
 
+  // An entry getOrCreate would reuse. Call evictIfExpired first so a
+  // TTL-expired entry is closed and gone rather than counted as live.
+  private hasLiveEntry(chatId: string): boolean {
+    const entry = this.chats.get(chatId)
+    return entry !== undefined && !entry.stopped
+  }
+
   private buildSnapshot(entry: ChatProgressEntry): ActivitySnapshot {
     return {
       startedAtMs: entry.startedAtMs,
@@ -250,9 +264,9 @@ export class ProgressReporter extends PerChatMessageQueue<ChatProgressEntry> {
     }
   }
 
-  private safeRender(snapshot: ActivitySnapshot): string {
+  private safeRender(snapshot: ActivitySnapshot, nowMs: number = this.now()): string {
     try {
-      return renderActivityBlock(snapshot, this.now())
+      return renderActivityBlock(snapshot, nowMs)
     } catch (err) {
       this.log.warn('progress reporter render failed (ignored)', {
         error: err instanceof Error ? err.message : String(err),

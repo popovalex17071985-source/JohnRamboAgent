@@ -33,6 +33,9 @@ export interface ToolStartEvent {
   readonly toolInput: Record<string, unknown>
   readonly toolUseId: string
   readonly chatId?: string
+  // Set when the hook fired inside a sub-agent or a harness-internal fork
+  // (payload `agent_id`). See `isSubagentToolEvent`.
+  readonly subagentId?: string
 }
 
 export interface ToolEndEvent {
@@ -45,6 +48,24 @@ export interface ToolEndEvent {
   // raw value so the renderer is the single mask point.
   readonly toolResult?: unknown
   readonly chatId?: string
+  readonly subagentId?: string
+}
+
+/**
+ * True for a tool event that did NOT come from the main agent loop: an
+ * Agent-tool sub-agent or a harness-internal fork. Claude Code runs side
+ * queries (prompt suggestion, etc.) as forked agents that share the session
+ * and its PreToolUse hooks; if the fork's model emits a tool call, PreToolUse
+ * fires (then the fork's canUseTool denies it), so no PostToolUse and no Stop
+ * ever follow. Such events may annotate a card the main turn already has open,
+ * but must never OPEN one -- nothing would ever close it (30.09.2026: a
+ * «работаю -- 0 сек / команда No suggestion» card hung in the owner DM).
+ */
+export function isSubagentToolEvent(event: ActivityStatusEvent): boolean {
+  return (
+    (event.kind === 'tool_start' || event.kind === 'tool_end') &&
+    event.subagentId !== undefined
+  )
 }
 
 // Phase events flip the status to `reasoning…` without recording a tool
@@ -183,6 +204,12 @@ export function toActivityEvent(payload: ClaudeHookPayload): ActivityStatusEvent
     payload.chatId !== undefined && payload.chatId !== ''
       ? { chatId: payload.chatId }
       : {}
+  // `agent_id` is present only when the hook fired inside a sub-agent or a
+  // forked side query (never in the main loop).
+  const subagentProp =
+    payload.agent_id !== undefined && payload.agent_id !== ''
+      ? { subagentId: payload.agent_id }
+      : {}
   switch (payload.hook_event_name) {
     case 'PreToolUse':
       return {
@@ -191,6 +218,7 @@ export function toActivityEvent(payload: ClaudeHookPayload): ActivityStatusEvent
         toolInput: payload.tool_input,
         toolUseId: payload.tool_use_id,
         ...chatIdProp,
+        ...subagentProp,
       }
     case 'PostToolUse': {
       const event: ToolEndEvent = {
@@ -199,6 +227,7 @@ export function toActivityEvent(payload: ClaudeHookPayload): ActivityStatusEvent
         toolInput: payload.tool_input,
         toolUseId: payload.tool_use_id,
         ...chatIdProp,
+        ...subagentProp,
       }
       // exactOptionalPropertyTypes: only attach `toolResult` if defined,
       // otherwise the property must be absent — `undefined` is not allowed.

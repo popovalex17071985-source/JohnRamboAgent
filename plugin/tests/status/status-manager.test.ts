@@ -780,3 +780,31 @@ describe('StatusManager.suppress_typing_bubble', () => {
     expect(lastEdit.text).toContain('Read')
   })
 })
+
+// 30.09.2026: a forked side query's PreToolUse (agent_id set) must not
+// lazy-open a status bubble — no Stop ever follows it.
+describe('StatusManager.recordActivityByChatId sub-agent guard', () => {
+  test('sub-agent tool_start with no open bubble does not lazy-open one', async () => {
+    const { mgr, api } = makeManager()
+    await mgr.recordActivityByChatId('164795011', {
+      kind: 'tool_start',
+      toolName: 'Bash',
+      toolInput: { command: 'No suggestion' },
+      toolUseId: 'fork-1',
+      subagentId: 'a0123456789abcdef',
+    })
+    expect(api.calls.filter((c) => c.kind === 'send').length).toBe(0)
+    expect(mgr.isActive('164795011')).toBe(false)
+  })
+
+  test('main-loop tool_start still lazy-opens the bubble', async () => {
+    const { mgr } = makeManager()
+    await mgr.recordActivityByChatId('164795011', {
+      kind: 'tool_start',
+      toolName: 'Bash',
+      toolInput: { command: 'ls' },
+      toolUseId: 'main-1',
+    })
+    expect(mgr.isActive('164795011')).toBe(true)
+  })
+})

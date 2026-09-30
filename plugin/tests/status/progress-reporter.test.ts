@@ -19,8 +19,8 @@
 //   9. session_stop while sendMessage is in-flight does not emit an
 //      orphan edit; the entry is evicted cleanly.
 //  10. Cross-session TTL — an idle entry older than session_ttl_ms is
-//      evicted; the next event starts a fresh thread (new sendMessage,
-//      not an edit on the prior message).
+//      closed with its final «done» render and evicted; the next event
+//      starts a fresh thread (new sendMessage).
 //  11. Long tool input does not blow Telegram's 4096-char limit.
 //  12. Bearer-token-shaped secrets in Bash commands never reach Telegram.
 //  13. editMessageText failure is swallowed; next event retries.
@@ -191,6 +191,11 @@ function readStart(toolUseId = 'tool-2', file_path = '/abs/path/foo.ts'): Activi
 }
 
 const STOP: ActivityStatusEvent = { kind: 'session_stop' }
+
+// Drain fire-and-forget work (TTL finalize runs detached from recordEvent).
+async function settle(): Promise<void> {
+  for (let i = 0; i < 10; i++) await Promise.resolve()
+}
 
 // ─────────────────────────────────────────────────────────────────────
 // Tests
@@ -386,13 +391,57 @@ describe('ProgressReporter', () => {
     expect(api.calls.filter((c) => c.kind === 'send').length).toBe(1)
     // Move past TTL with no activity.
     clock.advance(60_001)
-    // New event after TTL — must start a fresh sendMessage, not edit the prior.
+    // New event after TTL — must start a fresh sendMessage; the only edit
+    // allowed on the prior message is its closing «done» render.
     await reporter.recordEvent('164995011', bashStart('t2'))
+    await settle()
     const sends = api.calls.filter((c) => c.kind === 'send')
     const edits = api.calls.filter((c) => c.kind === 'edit')
     expect(sends.length).toBe(2)
     expect(sends[1]!.messageId).toBe(101)
-    expect(edits.length).toBe(0)
+    expect(edits.every((e) => e.messageId === 100 && e.text.includes('done -- '))).toBe(true)
+  })
+
+  // A card whose Stop never came (lost hook, forked side query) used to be
+  // dropped silently on TTL expiry and stayed on «работаю» forever.
+  test('TTL expiry closes the stale card with the final «done» render', async () => {
+    const { reporter, clock, api } = makeReporter({
+      config: makeConfig({ session_ttl_ms: 60_000 }),
+    })
+    await reporter.recordEvent('164995011', bashStart('t1', 'echo stale'))
+    await reporter._idleForTests('164995011')
+    clock.advance(5_000)
+    await reporter.recordEvent('164995011', { kind: 'reasoning' })
+    clock.advance(60_001)
+    await reporter.recordEvent('164995011', bashStart('t2', 'echo fresh'))
+    await settle()
+    const oldEdits = api.calls.filter((c) => c.kind === 'edit' && c.messageId === 100)
+    const closing = oldEdits.filter((c) => c.text.includes('done -- '))
+    expect(closing.length).toBe(1)
+    expect(oldEdits.at(-1)).toBe(closing[0])
+    expect(closing[0]!.text).toContain('echo stale')
+    // Elapsed ends at the last activity (5s), not at the TTL-expiry moment.
+    expect(closing[0]!.text).toContain('done -- 5s')
+    expect(closing[0]!.text).not.toContain('echo fresh')
+    // The fresh thread is a separate message.
+    const sends = api.calls.filter((c) => c.kind === 'send')
+    expect(sends.length).toBe(2)
+    expect(sends[1]!.text).toContain('echo fresh')
+  })
+
+  test('TTL finalize failure is swallowed; the fresh thread still opens', async () => {
+    const { reporter, clock, api } = makeReporter({
+      config: makeConfig({ session_ttl_ms: 60_000 }),
+    })
+    await reporter.recordEvent('164995011', bashStart('t1'))
+    await reporter._idleForTests('164995011')
+    clock.advance(60_001)
+    api.failEditWith = new Error('Bad Request: message to edit not found')
+    await reporter.recordEvent('164995011', bashStart('t2', 'echo fresh'))
+    await settle()
+    const sends = api.calls.filter((c) => c.kind === 'send')
+    expect(sends.length).toBe(2)
+    expect(sends[1]!.text).toContain('echo fresh')
   })
 
   test('long Bash command stays under Telegram 4096-char limit', async () => {
@@ -527,5 +576,94 @@ describe('ProgressReporter', () => {
     const edits = api.calls.filter((c) => c.kind === 'edit')
     expect(edits.length).toBeGreaterThanOrEqual(2)
     expect(edits[edits.length - 1]!.text).toContain('baz.ts')
+  })
+
+  // 30.09.2026 incident: after the turn's Stop, Claude Code's prompt-suggestion
+  // fork emitted a Bash call; its PreToolUse (carrying agent_id) opened a fresh
+  // card «работаю -- 0 сек / команда No suggestion» that nothing ever closed.
+  describe('sub-agent / forked side-query tool events', () => {
+    function forkBash(toolUseId = 'fork-1', description = 'No suggestion'): ActivityStatusEvent {
+      return {
+        kind: 'tool_start',
+        toolName: 'Bash',
+        toolInput: { command: description, description },
+        toolUseId,
+        subagentId: 'a0123456789abcdef',
+      }
+    }
+
+    test('after Stop, a sub-agent tool_start does NOT open a new card', async () => {
+      const { reporter, api } = makeReporter()
+      await reporter.recordEvent('164995011', bashStart('t1'))
+      await reporter._idleForTests('164995011')
+      await reporter.recordEvent('164995011', STOP)
+      const before = api.calls.length
+      await reporter.recordEvent('164995011', forkBash())
+      await reporter._idleForTests('164995011')
+      expect(api.calls.length).toBe(before)
+      expect(api.calls.some((c) => c.text.includes('No suggestion'))).toBe(false)
+      expect(reporter.isBusy('164995011', 60_000)).toBe(false)
+    })
+
+    test('with no card at all, a sub-agent tool_start / tool_end is a no-op', async () => {
+      const { reporter, api } = makeReporter()
+      await reporter.recordEvent('164995011', forkBash())
+      await reporter.recordEvent('164995011', {
+        kind: 'tool_end',
+        toolName: 'Bash',
+        toolInput: { command: 'ls' },
+        toolUseId: 'fork-1',
+        subagentId: 'a0123456789abcdef',
+      })
+      await reporter._idleForTests('164995011')
+      expect(api.calls.length).toBe(0)
+    })
+
+    test('while the main turn card is live, sub-agent calls still land on it', async () => {
+      const { reporter, clock, api } = makeReporter()
+      await reporter.recordEvent('164995011', bashStart('t1', 'echo main'))
+      await reporter._idleForTests('164995011')
+      clock.advance(5_000)
+      await reporter.recordEvent('164995011', forkBash('sub-1', 'subagent step'))
+      await reporter._idleForTests('164995011')
+      const sends = api.calls.filter((c) => c.kind === 'send')
+      const edits = api.calls.filter((c) => c.kind === 'edit')
+      expect(sends.length).toBe(1)
+      expect(edits.at(-1)!.text).toContain('subagent step')
+      // Normal lifecycle intact: Stop finalizes the same message.
+      await reporter.recordEvent('164995011', STOP)
+      const last = api.calls.at(-1)!
+      expect(last.kind).toBe('edit')
+      expect(last.messageId).toBe(sends[0]!.messageId)
+      expect(last.text).toContain('done -- ')
+    })
+
+    test('a TTL-expired card is closed, not revived, by a sub-agent tool_start', async () => {
+      const { reporter, clock, api } = makeReporter({
+        config: makeConfig({ session_ttl_ms: 60_000 }),
+      })
+      await reporter.recordEvent('164995011', bashStart('t1'))
+      await reporter._idleForTests('164995011')
+      clock.advance(60_001)
+      await reporter.recordEvent('164995011', forkBash())
+      await settle()
+      expect(api.calls.filter((c) => c.kind === 'send').length).toBe(1)
+      expect(api.calls.some((c) => c.text.includes('No suggestion'))).toBe(false)
+      const last = api.calls.at(-1)!
+      expect(last.kind).toBe('edit')
+      expect(last.text).toContain('done -- ')
+    })
+
+    test('a main-loop tool_start after Stop still opens a fresh card', async () => {
+      const { reporter, api } = makeReporter()
+      await reporter.recordEvent('164995011', bashStart('t1'))
+      await reporter._idleForTests('164995011')
+      await reporter.recordEvent('164995011', STOP)
+      await reporter.recordEvent('164995011', bashStart('t2', 'echo next turn'))
+      await reporter._idleForTests('164995011')
+      const sends = api.calls.filter((c) => c.kind === 'send')
+      expect(sends.length).toBe(2)
+      expect(sends[1]!.text).toContain('echo next turn')
+    })
   })
 })
