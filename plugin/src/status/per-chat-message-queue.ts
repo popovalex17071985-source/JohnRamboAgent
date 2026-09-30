@@ -101,8 +101,12 @@ export abstract class PerChatMessageQueue<E extends BaseChatEntry> {
   protected abstract createEntryState(chatId: string): Omit<E, keyof BaseChatEntry>
   /** Intermediate render. Return '' to publish nothing this cycle. */
   protected abstract renderEntry(entry: E): string
-  /** Final (Stop-time) render. Return '' to skip the final edit. */
-  protected abstract renderFinalEntry(entry: E): string
+  /**
+   * Final render. Return '' to skip the final edit. `endMs` is when the work
+   * ended: now for Stop, the last activity for a TTL-expired entry (so the
+   * closed card does not count the idle gap as work).
+   */
+  protected abstract renderFinalEntry(entry: E, endMs: number): string
   protected abstract readonly logPrefix: string
 
   // ── Shared machinery ──────────────────────────────────────────────────
@@ -124,20 +128,34 @@ export abstract class PerChatMessageQueue<E extends BaseChatEntry> {
     }
   }
 
-  protected getOrCreate(chatId: string): E {
+  /**
+   * Evict the chat's entry if it has been idle past `session_ttl_ms`. The
+   * expired card never got its Stop (lost hook, forked side query), so it is
+   * closed with the same final render Stop would post instead of hanging on
+   * «работаю» forever. Fire-and-forget: stays sync, never throws.
+   */
+  protected evictIfExpired(chatId: string): void {
     const existing = this.chats.get(chatId)
-    if (existing) {
-      const idle = this.now() - existing.lastActivityMs
-      if (idle > this.getConfigSlice().session_ttl_ms) {
-        this.log.debug(`${this.logPrefix} entry TTL expired, starting fresh thread`, {
-          chat_id: chatId,
-          idle_ms: idle,
-        })
-        this.chats.delete(chatId)
-      } else {
-        return existing
-      }
-    }
+    if (!existing) return
+    const idle = this.now() - existing.lastActivityMs
+    if (idle <= this.getConfigSlice().session_ttl_ms) return
+    this.log.debug(`${this.logPrefix} entry TTL expired, starting fresh thread`, {
+      chat_id: chatId,
+      idle_ms: idle,
+    })
+    this.chats.delete(chatId)
+    void this.finalizeEntry(existing, existing.lastActivityMs).catch((err: unknown) => {
+      this.log.warn(`${this.logPrefix} TTL finalize failed (ignored)`, {
+        chat_id: chatId,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    })
+  }
+
+  protected getOrCreate(chatId: string): E {
+    this.evictIfExpired(chatId)
+    const existing = this.chats.get(chatId)
+    if (existing) return existing
     const base: BaseChatEntry = {
       chatId,
       startedAtMs: this.now(),
@@ -245,6 +263,19 @@ export abstract class PerChatMessageQueue<E extends BaseChatEntry> {
   protected async handleStop(chatId: string): Promise<void> {
     const entry = this.chats.get(chatId)
     if (!entry || entry.stopped) return
+    await this.finalizeEntry(entry, this.now())
+    // Only evict if the slot still holds this entry (a TTL restart may have
+    // replaced it while we awaited).
+    if (this.chats.get(chatId) === entry) this.chats.delete(chatId)
+  }
+
+  /**
+   * Mark the entry stopped, cancel its throttle timer, await any in-flight
+   * flush and post the subclass's final render. Never throws; does NOT touch
+   * `this.chats` (callers own eviction). Idempotent via `stopped`.
+   */
+  private async finalizeEntry(entry: E, endMs: number): Promise<void> {
+    if (entry.stopped) return
     entry.stopped = true
 
     if (entry.pendingTimer !== null) {
@@ -261,7 +292,7 @@ export abstract class PerChatMessageQueue<E extends BaseChatEntry> {
     }
 
     if (entry.messageId !== undefined) {
-      const text = this.renderFinalEntry(entry)
+      const text = this.renderFinalEntry(entry, endMs)
       if (text && text !== entry.lastRenderedText) {
         try {
           await this.telegramApi.editMessageText(entry.chatId, entry.messageId, text, HTML_OPTS)
@@ -275,7 +306,5 @@ export abstract class PerChatMessageQueue<E extends BaseChatEntry> {
         }
       }
     }
-
-    this.chats.delete(chatId)
   }
 }
