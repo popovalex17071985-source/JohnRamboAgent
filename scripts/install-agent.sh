@@ -897,7 +897,7 @@ notify_online() {
   code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' \
     "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
     -d chat_id="${TELEGRAM_ALLOWED_USER_IDS%%,*}" \
-    --data-urlencode "text=🟢 братан на связи, work hard no drama (systemd, перезапуск завершён)") || code=000
+    --data-urlencode "text=🟢 на связи, work hard no drama (systemd, перезапуск завершён)") || code=000
   echo "online ping: HTTP $code" >&2
 }
 seen_up=0 down=0
