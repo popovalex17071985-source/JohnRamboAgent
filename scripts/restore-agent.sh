@@ -100,6 +100,23 @@ gpg --batch --quiet --passphrase-file "$PASSFILE" -d "$LOCAL_ARCH" 2>/dev/null \
 chown -R "$SERVICE_USER:$SERVICE_USER" "$WORKSPACE"
 ok "данные восстановлены в $WORKSPACE"
 
+# 4b. Долгая память приезжает в архиве как .openviking/ -- её место в домашке
+#     пользователя, куда смотрит контейнер OpenViking. Старую не удаляем, а
+#     откладываем рядом; контейнер на время подмены останавливаем.
+if [[ -d "$WORKSPACE/.openviking" ]]; then
+  say "Возвращаю долгую память"
+  OV_HOME="/home/$SERVICE_USER/.openviking"
+  OV_WAS_UP=""
+  if command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' | grep -qx openviking; then
+    docker stop openviking >/dev/null && OV_WAS_UP=1
+  fi
+  [[ -e "$OV_HOME" ]] && mv "$OV_HOME" "$OV_HOME.pre-restore-$(date +%Y%m%d-%H%M)"
+  mv "$WORKSPACE/.openviking" "$OV_HOME"
+  chown -R "$SERVICE_USER:$SERVICE_USER" "$OV_HOME"
+  [[ -n "$OV_WAS_UP" ]] && docker start openviking >/dev/null
+  ok "память на месте ($OV_HOME)"
+fi
+
 # 5. Вернуть на место то, что лежит вне workspace (снимок в deploy/).
 if [[ -d "$WORKSPACE/deploy" ]]; then
   say "Возвращаю системный конфиг"
