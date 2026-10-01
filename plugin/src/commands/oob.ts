@@ -277,6 +277,8 @@ function helpText(): string {
 
 // Public so server.ts can feed the SAME list to bot.api.setMyCommands and
 // Telegram autocomplete stays in sync with what the parser actually accepts.
+// Technical commands (mirror, keys, cc, lease) are deliberately left out of the
+// menu -- the owner never uses them; they still parse when typed.
 export interface BotCommandSpec {
   command: string
   description: string
@@ -287,13 +289,9 @@ export const BOT_COMMANDS: ReadonlyArray<BotCommandSpec> = [
   { command: 'stop', description: 'прервать текущую задачу' },
   { command: 'compact', description: 'сжать контекст сессии' },
   { command: 'new', description: 'новый диалог (очистит контекст, с подтверждением)' },
-  { command: 'mirror', description: 'зеркало терминала: on | off | status' },
-  { command: 'keys', description: 'панель кнопок для подтверждений (нажатия в сессию)' },
-  { command: 'cc', description: 'панель команд Claude Code (тап) или /cc <команда>' },
   { command: 'relogin', description: 'обновить вход в Claude (ссылка + код)' },
   { command: 'restart', description: 'перезапустить мост (systemd)' },
   { command: 'update', description: 'обновить мост до свежей версии' },
-  { command: 'lease', description: 'выдать мандат автономии: /lease <scope>[; ttl=48h]' },
 ]
 
 // ponytail: Jarvis-specific paths hardcoded — this is Jarvis's own fork, not
