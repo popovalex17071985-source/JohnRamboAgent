@@ -887,9 +887,23 @@ mkdir -p "$HOME/logs"
 tmux pipe-pane -o -t "$SESSION" "cat >> $HOME/logs/tmux-pane.log"
 tmux has-session -t "$SESSION" 2>/dev/null || { echo "tmux session did not start" >&2; exit 1; }
 /usr/local/bin/dashi-press-dialogs "$SESSION" &
+# Пинг хозяину «перезапуск завершён» -- один раз, когда мост впервые поднялся.
+# Без него после restart непонятно, готов агент или ещё встаёт: tmux жив, а
+# сообщения до Claude пока не доезжают. Код ответа -- в журнал службы, токен
+# никогда: молчаливый curl не оставляет следа, дошёл ли пинг (Jarvis 14.09.2026).
+notify_online() {
+  [[ -n "${TELEGRAM_BOT_TOKEN:-}" && -n "${TELEGRAM_ALLOWED_USER_IDS:-}" ]] || return 0
+  local code
+  code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' \
+    "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+    -d chat_id="${TELEGRAM_ALLOWED_USER_IDS%%,*}" \
+    --data-urlencode "text=😠 на связи, work hard no drama (systemd, перезапуск завершён)") || code=000
+  echo "online ping: HTTP $code" >&2
+}
 seen_up=0 down=0
 while tmux has-session -t "$SESSION" 2>/dev/null; do
   if (exec 3<>"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null; then
+    (( seen_up )) || notify_online &
     seen_up=1 down=0
   elif (( seen_up )); then
     down=$((down + 1))
