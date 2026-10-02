@@ -112,3 +112,21 @@ echo "✓ замок панели берётся один раз"
 
 # После перезапуска хозяин видит «на связи» -- иначе непонятно, встал агент или нет
 grep -q 'перезапуск завершён' "$S" || fail "dashi-run не шлёт пинг «на связи» после старта"
+
+# Подсказки владельцу про rclone: у «rclone authorize» нет флагов --client-id /
+# --client-secret (ID и секрет -- позиционно), а brew на чистом маке нет.
+# 02.10.2026 живая установка упала на обоих.
+INST="$(cd "$(dirname "$0")/.." && pwd)/scripts/install-agent.sh"
+GUIDE="$(cd "$(dirname "$0")/.." && pwd)/docs/install-guide/install-guide.html"
+! grep -q -e 'rclone authorize.*--client-id' "$INST" "$GUIDE" || fail "подсказка зовёт rclone authorize с несуществующим флагом --client-id"
+! grep -q 'brew install rclone' "$INST" "$GUIDE" || fail "подсказка шлёт ставить rclone через brew, которого на маке нет"
+echo "✓ подсказки про rclone authorize рабочие"
+
+# Группы: в privacy mode Telegram не отдал боту даже @упоминание (живая
+# установка 02.10.2026) -- и установщик, и инструкция обязаны требовать админа.
+grep -q 'НАДО сделать администратором группы' "$INST" || fail "установщик не говорит, что бота в группе надо сделать админом"
+grep -q 'Сделать бота администратором — обязательно' "$GUIDE" || fail "инструкция не требует сделать бота админом группы"
+# Связь не рвётся на долгих вопросах, а команды из PDF не переносятся по строкам
+grep -q 'ssh -o ServerAliveInterval=30 root@' "$GUIDE" || fail "в инструкции ssh без ServerAliveInterval"
+grep -q 'white-space: pre;' "$GUIDE" || fail "блоки команд в инструкции могут переноситься по строкам"
+echo "✓ инструкция: группы через админа, ssh с keepalive, команды без переносов"

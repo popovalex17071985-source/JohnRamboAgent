@@ -1201,16 +1201,25 @@ EOF
          создай проект (имя любое, например dashi-backups)
       2) «APIs & Services» → «Library» → найди «Google Drive API» → Enable
       3) «APIs & Services» → «OAuth consent screen» → тип External →
-         заполни обязательные поля → в «Test users» добавь свой же гугл-адрес
+         заполни обязательные поля → «Audience» → «Test users» → «+ Add users»:
+         ТОТ адрес, которым войдёшь в шаге 7 (иначе «Ошибка 403: access_denied»)
+         и там же «Publish app» → «Confirm» (иначе через 7 дней Google гасит
+         вход и копии молча перестают уезжать в облако)
       4) «APIs & Services» → «Credentials» → «Create credentials» →
          «OAuth client ID» → тип «Desktop app» → скопируй Client ID и Client secret
 
     ПОТОМ вход в гугл — он требует браузера, поэтому делай на СВОЁМ компьютере
     (в отдельном окне терминала, НЕ внутри ssh на сервер):
-      5) поставь rclone: mac — brew install rclone,
-         windows/linux — установщик со страницы rclone.org/downloads
+      5) поставь rclone (brew не нужен). mac — команды по одной:
+           cd ~/Downloads
+           A=\$(uname -m | sed s/x86_64/amd64/)
+           curl -fsSLO https://downloads.rclone.org/rclone-current-osx-\$A.zip
+           unzip -o rclone-current-osx-\$A.zip
+           cd rclone-*-osx-\$A
+         windows — скачай zip с rclone.org/downloads, распакуй, открой
+         в этой папке PowerShell и пиши .\\rclone.exe вместо ./rclone
       6) выполни, подставив свои значения из шага 4:
-         rclone authorize "drive" --client-id ВАШ_ID --client-secret ВАШ_SECRET
+         ./rclone authorize "drive" ВАШ_ID ВАШ_SECRET   (ID и SECRET через пробел, без флагов)
       7) войди в гугл, разреши доступ — в терминале появится строка
          вида {"access_token":...}
     Вставь сюда Client ID, Client secret и эту строку. Пропустить — просто Enter
@@ -1267,15 +1276,24 @@ EOF
          создай проект (имя любое, например dashi-backups)
       2) «APIs & Services» → «Library» → «Google Drive API» → Enable
       3) «APIs & Services» → «OAuth consent screen» → тип External →
-         заполни обязательные поля → в «Test users» добавь свой гугл-адрес
+         заполни обязательные поля → «Audience» → «Test users» → «+ Add users»:
+         ТОТ адрес, которым войдёшь (иначе «Ошибка 403: access_denied»)
+         и там же «Publish app» → «Confirm» (иначе через 7 дней Google гасит
+         вход и копии молча перестают уезжать в облако)
       4) «APIs & Services» → «Credentials» → «Create credentials» →
          «OAuth client ID» → «Desktop app» → скопируй Client ID и Client secret
 
     ПОТОМ вход:
-      5) на своём компьютере поставь rclone: mac — brew install rclone,
-         windows/linux — установщик с rclone.org/downloads
+      5) на своём компьютере поставь rclone (brew не нужен). mac — по одной:
+           cd ~/Downloads
+           A=\$(uname -m | sed s/x86_64/amd64/)
+           curl -fsSLO https://downloads.rclone.org/rclone-current-osx-\$A.zip
+           unzip -o rclone-current-osx-\$A.zip
+           cd rclone-*-osx-\$A
+         windows — zip с rclone.org/downloads, распакуй, PowerShell в папке,
+         пиши .\\rclone.exe вместо ./rclone
       6) там же выполни, подставив свои значения из шага 4:
-         rclone authorize "drive" --client-id ВАШ_ID --client-secret ВАШ_SECRET
+         ./rclone authorize "drive" ВАШ_ID ВАШ_SECRET   (ID и SECRET через пробел, без флагов)
       7) он напечатает строку вида {"access_token":...} — скопируй её целиком
       8) на СЕРВЕРЕ создай конфиг СО СВОИМ ключом (одной командой):
            sudo -u $SERVICE_USER rclone config create gdrive drive \
@@ -1371,6 +1389,12 @@ EOF
   script -qec "su - $SERVICE_USER -c 'claude setup-token'" "$TOKEN_LOG" </dev/tty >/dev/tty 2>&1 || true
   CLAUDE_TOKEN="$(extract_token "$TOKEN_LOG" || true)"
   rm -f "$TOKEN_LOG"; trap - INT TERM EXIT
+  if [[ -n "$CLAUDE_TOKEN" ]]; then
+    # Выловили сами — стираем экран И прокрутку: годовой токен на виду уезжал в
+    # скриншоты и демонстрацию экрана (живая установка 02.10.2026).
+    { printf '\033[H\033[2J\033[3J' >/dev/tty; } 2>/dev/null || true
+    ok "токен Claude выловлен и стёрт с экрана — скриншотить можно"
+  fi
   if [[ -z "$CLAUDE_TOKEN" ]]; then
     warn "не смог выловить токен с экрана"
     # Токен печатается в ДВЕ строки — вставка второй улетала в shell, а первая
@@ -1735,20 +1759,21 @@ if curl -s -m 20 "https://api.telegram.org/bot${BOT_TOKEN}/getMe" | grep -q '"ca
 else
   cat <<EOF
 
-    В группе агент сейчас увидит только сообщения, где его упомянули:
-    @${BOT_NAME:-имя_бота} текст вопроса
-
-    Так и работает по умолчанию, это нормально. Хочешь, чтобы он читал всю
-    переписку группы (и отвечал, когда его зовут по смыслу, без собачки):
-      @BotFather → /setprivacy → выбери бота → Disable
-    Либо сделай бота администратором группы — тогда privacy не действует.
+    Для работы в группе бота НАДО сделать администратором группы.
+    Сейчас он в «режиме приватности» Telegram: в группе почти ничего не
+    получает, даже @${BOT_NAME:-имя_бота} (в списке участников у него
+    «не имеет доступа к сообщениям»). Порядок:
+      1) добавь бота в группу и назначь администратором (права можно снять)
+         либо @BotFather → /setprivacy → выбери бота → Disable,
+         потом удали бота из группы и добавь заново
+      2) первым напиши в группе сам: @${BOT_NAME:-имя_бота} привет
 
 EOF
-  # НЕ gap: ответ на @упоминание в группе работает из коробки, это и есть
-  # штатный режим. Раньше строка падала в «НЕ ЗАКРЫТО» и владелец читал её как
-  # поломку, хотя речь про необязательную опцию -- читать всю переписку группы
-  # без собачки (Саня 11.09.2026).
-  ok "в группах отвечает на @${BOT_NAME:-имя_бота} сразу; чтение всей переписки — по желанию, см. выше"
+  # НЕ gap: без групп агент полностью рабочий, а «НЕ ЗАКРЫТО» владелец читал
+  # как поломку (Саня 11.09.2026). Но и «отвечает на @ сразу» было неправдой:
+  # 02.10.2026 у живого агента в privacy mode Telegram не отдал ни одного
+  # @упоминания из группы (offset бота не сдвинулся); лечение -- админ группы.
+  warn "в группах бот заработает, когда станет админом группы — см. выше"
 fi
 
 systemctl enable --now "$UNIT" >/dev/null 2>&1 || true
