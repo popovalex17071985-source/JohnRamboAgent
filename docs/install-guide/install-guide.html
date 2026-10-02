@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Как поставить агента</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+<style>
+  @page { size: A4; margin: 16mm 15mm 18mm 15mm; }
+  :root {
+    --ink: #1d2433; --muted: #5b6475; --line: #e3e7ef; --bg-soft: #f5f7fb;
+    --blue: #2f6fed; --green: #1f9d55; --amber: #c27c0e; --red: #d64545;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: Inter, Arial, sans-serif; color: var(--ink); font-size: 11.5pt;
+         line-height: 1.5; margin: 0; background: #fff; }
+  h1 { font-size: 26pt; line-height: 1.15; margin: 0 0 6px; font-weight: 800; }
+  h2 { font-size: 16pt; margin: 18px 0 4px; font-weight: 800; break-after: avoid; }
+  h3 { font-size: 12.5pt; margin: 14px 0 6px; break-after: avoid; }
+  p { margin: 6px 0; }
+  .cover { border-radius: 18px; padding: 28px 28px 22px; color: #fff;
+           background: linear-gradient(135deg, #2f6fed, #6b4de6); margin-bottom: 18px; }
+  .cover p { color: #e8ecff; font-size: 12.5pt; margin: 4px 0; }
+  .tag { display: inline-block; font-size: 9pt; font-weight: 700; letter-spacing: .04em;
+         text-transform: uppercase; padding: 3px 9px; border-radius: 99px; background: rgba(255,255,255,.18); }
+  .box { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin: 12px 0;
+         break-inside: avoid; background: #fff; }
+  .soft { background: var(--bg-soft); border-color: transparent; }
+  .warn { border-left: 6px solid var(--amber); background: #fff8ec; }
+  .danger { border-left: 6px solid var(--red); background: #fff2f2; }
+  .ok { border-left: 6px solid var(--green); background: #effaf3; }
+  .scenario { border: 1px solid var(--line); border-radius: 16px; margin: 16px 0; }
+  .scenario-head { border-radius: 15px 15px 0 0; break-after: avoid; }
+  .scenario-head { display: flex; gap: 12px; align-items: center; padding: 12px 16px; color: #fff; }
+  .scenario-head .letter { font-size: 22pt; font-weight: 800; width: 42px; height: 42px; border-radius: 12px;
+         background: rgba(255,255,255,.22); display: flex; align-items: center; justify-content: center; flex: none; }
+  .scenario-head .t { font-size: 13.5pt; font-weight: 800; line-height: 1.25; }
+  .scenario-head .s { font-size: 10pt; opacity: .9; }
+  .scenario-body { padding: 10px 16px 14px; }
+  .c-green { background: var(--green); } .c-blue { background: var(--blue); }
+  .c-amber { background: var(--amber); } .c-red { background: var(--red); } .c-violet { background: #6b4de6; }
+  ol.steps { counter-reset: s; list-style: none; padding: 0; margin: 8px 0; }
+  ol.steps > li { counter-increment: s; position: relative; padding: 4px 0 8px 40px; break-inside: avoid; }
+  ol.steps > li::before { content: counter(s); position: absolute; left: 0; top: 3px; width: 28px; height: 28px;
+         border-radius: 50%; background: var(--ink); color: #fff; font-weight: 700; font-size: 11pt;
+         display: flex; align-items: center; justify-content: center; }
+  code, .cmd { font-family: "JetBrains Mono", Consolas, monospace; font-size: 9.6pt; }
+  .cmd { display: block; background: #12182a; color: #e7ecff; border-radius: 10px; padding: 9px 12px;
+         margin: 6px 0; white-space: pre-wrap; word-break: break-all; }
+  code { background: #eef1f7; padding: 1px 5px; border-radius: 5px; }
+  .ph { color: #ffd479; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 10.5pt; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: var(--bg-soft); font-weight: 700; }
+  td .pill { display: inline-block; padding: 1px 8px; border-radius: 99px; font-weight: 700; font-size: 9.5pt; color: #fff; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 10px 0; }
+  .card { border-radius: 14px; padding: 12px; background: var(--bg-soft); break-inside: avoid; }
+  .card b { display: block; font-size: 11.5pt; margin-bottom: 3px; }
+  .card span { color: var(--muted); font-size: 10pt; }
+  .check li { margin: 4px 0; }
+  .page-break { break-before: page; }
+  .muted { color: var(--muted); }
+  .foot { margin-top: 18px; font-size: 9.5pt; color: var(--muted); border-top: 1px solid var(--line); padding-top: 8px; }
+</style>
+
+</head>
+<body>
+
+<div class="cover">
+  <span class="tag">Инструкция для владельца</span>
+  <h1>Как поставить своего AI-агента в Telegram</h1>
+  <p>Пошагово, для тех, кто не программист. Одна программа-установщик делает почти всё сама — от вас нужно подготовить пять вещей, скопировать две команды и ответить на её вопросы.</p>
+</div>
+
+<h2>Что у вас будет в конце</h2>
+<div class="grid3">
+  <div class="card"><b>Помощник в Telegram</b><span>Пишете ему как человеку — текстом или голосом. Он делает работу и присылает готовый результат.</span></div>
+  <div class="card"><b>Работает круглые сутки</b><span>Живёт на вашем собственном сервере в интернете и сам поднимается после перезагрузки.</span></div>
+  <div class="card"><b>Помнит и бережёт</b><span>Долговременная память о вас и вашем деле. Каждую ночь — зашифрованная копия на ваш Google Диск.</span></div>
+</div>
+
+<h2>Подготовьте заранее</h2>
+<p class="muted">Соберите всё это в один файл-заметку до начала — по ходу установки будете просто копировать.</p>
+<table>
+  <tr><th style="width:30%">Что</th><th style="width:16%">Нужно?</th><th>Где взять</th></tr>
+  <tr><td><b>Сервер (VPS)</b></td><td><span class="pill c-red">обязательно</span></td><td>Арендуйте у любого хостинга. Система <b>Ubuntu 22.04</b> или новее. Советуем <b>4 ядра, 4 ГБ памяти, 40 ГБ диска</b>; минимум — 2 ядра, 2 ГБ, 20 ГБ. Хостинг пришлёт письмо с адресом сервера (IP, вида <code>123.45.67.89</code>) и паролем root.</td></tr>
+  <tr><td><b>Бот в Telegram</b></td><td><span class="pill c-red">обязательно</span></td><td>Напишите <code>@BotFather</code> → <code>/newbot</code> → придумайте имя. Он выдаст токен вида <code>123456789:AAH...</code>. Найдите своего бота в поиске и нажмите <b>Start</b>.</td></tr>
+  <tr><td><b>Ваш номер в Telegram (id)</b></td><td><span class="pill c-red">обязательно</span></td><td>Напишите <code>@userinfobot</code> — он ответит числом, это ваш id. Агент будет слушаться только вас.</td></tr>
+  <tr><td><b>Подписка Claude</b></td><td><span class="pill c-red">обязательно</span></td><td>Тариф <b>Pro</b> или <b>Max</b> на claude.ai. Для работы весь день лучше Max.</td></tr>
+  <tr><td><b>Google-аккаунт</b></td><td><span class="pill c-amber">очень советуем</span></td><td>На его Диск каждую ночь будет уезжать копия агента. Без него копия хранится только на том же сервере — и умрёт вместе с ним.</td></tr>
+  <tr><td><b>Ключ OpenAI</b></td><td><span class="pill c-amber">советуем</span></td><td>platform.openai.com → API keys, вида <code>sk-...</code>. С ним память точнее и легче для сервера, стоит центы в месяц. Без него память тоже работает.</td></tr>
+  <tr><td><b>Ключ Groq</b></td><td><span class="pill c-blue">по желанию</span></td><td>console.groq.com → Create API Key, вида <code>gsk_...</code>. Нужен, чтобы агент понимал голосовые.</td></tr>
+  <tr><td><b>Второй бот — «ремонтник»</b></td><td><span class="pill c-blue">по желанию</span></td><td>Ещё раз <code>@BotFather</code> → <code>/newbot</code>. Это страховка: если агент замолчит, ремонтник его перезапустит. Тоже нажмите у него <b>Start</b>.</td></tr>
+</table>
+
+<h2>Шаг 1. Зайдите на сервер</h2>
+<ol class="steps">
+  <li>Откройте программу для команд. <b>Windows:</b> «PowerShell» (через Пуск). <b>Mac:</b> «Терминал».</li>
+  <li>Наберите, подставив адрес вашего сервера:
+    <span class="cmd">ssh root@<span class="ph">123.45.67.89</span></span>
+    На вопрос «Are you sure…» ответьте <code>yes</code>. Потом введите пароль root из письма хостинга — при вводе символы не видны, это нормально.</li>
+</ol>
+
+<h2>Шаг 2. Скачайте и запустите установщик</h2>
+<p>Скопируйте две команды по очереди. В конце второй впишите свой город — по нему агент будет присылать утреннюю сводку в 09:00.</p>
+<span class="cmd">curl -fsSL https://raw.githubusercontent.com/popovalex17071985-source/dashi-plugin-claude-code/main/scripts/install-agent.sh -o install-agent.sh</span>
+<span class="cmd">sudo bash install-agent.sh --tz <span class="ph">Пермь</span></span>
+<div class="box soft">Без <code>--tz</code> установщик сам спросит город. Подходят Москва, Пермь, Екатеринбург, Новосибирск и другие — или код вида <code>Asia/Yekaterinburg</code>.</div>
+
+<h2>Шаг 3. Ответьте на вопросы</h2>
+<p class="muted">Установщик спрашивает по одному. Где написано «Enter — пропустить», можно просто нажать Enter.</p>
+<table>
+  <tr><th style="width:38%">Вопрос на экране</th><th>Что ответить</th></tr>
+  <tr><td>Имя агента (латиницей)</td><td>Короткое имя маленькими латинскими буквами, например <code>jarvis</code>. Запомните его — оно понадобится, если будете запускать установщик повторно.</td></tr>
+  <tr><td>Токен бота от @BotFather</td><td>Токен первого бота.</td></tr>
+  <tr><td>Твой Telegram id</td><td>Число от @userinfobot.</td></tr>
+  <tr><td>Ключ Groq для голосовых</td><td>Ключ <code>gsk_...</code> или Enter.</td></tr>
+  <tr><td>Ключ OpenAI для памяти</td><td>Ключ <code>sk-...</code> или Enter.</td></tr>
+  <tr><td>Поехали? [Y/n]</td><td>Enter. До этого момента на сервере ничего не менялось.</td></tr>
+</table>
+<p>Дальше установщик ставит всё сам: программы, браузер для работы с сайтами, память, защиту, расписание. Просто ждите — он остановится, когда снова понадобитесь вы.</p>
+
+<h2>Шаг 4. Пароль от бэкапа — сохраните его</h2>
+<p>На вопрос «Включить шифрованный бэкап?» нажмите Enter. Установщик покажет жёлтую строку:</p>
+<span class="cmd">ПАРОЛЬ ОТ БЭКАПА (сохрани отдельно от сервера!): <span class="ph">Xy7…</span></span>
+<div class="box danger"><b>Это самый важный момент всей установки.</b> Скопируйте пароль в менеджер паролей или запишите на бумаге. Без него ночные копии на Google Диске не откроет никто — даже мы. На экране его покажут один раз. Сохранили — нажмите Enter.</div>
+
+<h2>Шаг 5. Подключите Google Диск</h2>
+<p>Копия должна уезжать с сервера, иначе при поломке сервера она пропадёт вместе с ним. Это бесплатно, карта не нужна.</p>
+<h3>На сайте Google (под тем аккаунтом, куда пойдут копии)</h3>
+<ol class="steps">
+  <li>Откройте <code>console.cloud.google.com</code> и создайте проект, например <code>dashi-backups</code>.</li>
+  <li>«APIs &amp; Services» → «Library» → найдите <b>Google Drive API</b> → <b>Enable</b>.</li>
+  <li>«OAuth consent screen» → тип <b>External</b> → заполните обязательные поля → в «Test users» добавьте свою почту.</li>
+  <li>«Credentials» → «Create credentials» → «OAuth client ID» → тип <b>Desktop app</b>. Скопируйте <b>Client ID</b> и <b>Client secret</b>.</li>
+</ol>
+<h3>На своём компьютере (не на сервере)</h3>
+<ol class="steps">
+  <li>Поставьте программу rclone. <b>Mac:</b> в Терминале <code>curl https://rclone.org/install.sh | sudo bash</code>. <b>Windows:</b> скачайте с <code>rclone.org/downloads</code> и распакуйте.</li>
+  <li>Выполните, подставив свои значения:
+    <span class="cmd">rclone authorize "drive" --client-id <span class="ph">ВАШ_ID</span> --client-secret <span class="ph">ВАШ_SECRET</span></span></li>
+  <li>Откроется браузер — войдите в Google и разрешите доступ. В окне команд появится строка, начинающаяся с <code>{"access_token":</code> — скопируйте её целиком.</li>
+</ol>
+<h3>Обратно в установщик</h3>
+<p>Он попросит по очереди: <b>Client ID</b>, <b>Client secret</b> и <b>строку токена</b>. Вставьте. Ответ «Google Drive подключён» — всё получилось. Копии будут лежать на Диске в папке <code>dashi-<span class="muted">ИМЯ</span>-backups</code>.</p>
+
+<h2>Шаг 6. Войдите в Claude</h2>
+<ol class="steps">
+  <li>Установщик напечатает длинную ссылку. Откройте её в браузере на телефоне или компьютере. Если ссылка разорвалась на две строки — склейте в одну.</li>
+  <li>Войдите в свой аккаунт Claude (тот, где подписка) и нажмите «Разрешить».</li>
+  <li>Страница покажет код. Скопируйте его и вставьте обратно в окно с сервером, нажмите Enter.</li>
+</ol>
+<div class="box ok"><b>Вход сразу на год.</b> Установщик сам заберёт ключ и пропишет агенту — перелогиниваться каждый месяц не придётся.</div>
+<div class="box warn"><b>Не нажимайте Ctrl-C</b>, пока на экране «Paste code here if prompted». Это не зависание — программа ждёт ваш код.</div>
+
+<h2>Шаг 7. Ремонтник (если завели второго бота)</h2>
+<p>На вопрос «Токен бота-ремонтника» вставьте токен <b>второго</b> бота. Не первого — с одним токеном два бота мешают друг другу. Нет второго бота — Enter, добавить можно позже.</p>
+
+<h2>Готово — как понять, что всё получилось</h2>
+<p>В конце установщик пишет:</p>
+<span class="cmd">✓ Готово. Агент <span class="ph">jarvis</span> поднят и стартует сам после перезагрузки.
+Напиши своему боту в Telegram — он ответит.</span>
+<div class="box warn"><b>Если ниже есть блок «НЕ ЗАКРЫТО»</b> — установка прошла, но чего-то не хватает: например, не подключился Диск. У каждой строки написано, как доделать. Самый простой путь — снова запустить ту же команду из шага 2: установщик доделает недостающее и не тронет готовое.</div>
+
+<h2>Первые шаги в Telegram</h2>
+<ol class="steps">
+  <li>Агент сам напишет «на связи». Ответьте «привет» — он представится и задаст пару вопросов: как к вам обращаться, чем занимаетесь, какие задачи.</li>
+  <li>Попросите: <i>«Проведи со мной интервью и перепиши свой характер под меня»</i>. Так агент станет вашим, а не общим.</li>
+  <li>Проверьте память: <i>«запомни, что я работаю в часовом поясе Перми»</i> → <code>/new</code> → <i>«в каком я часовом поясе?»</i>.</li>
+</ol>
+<h3>Кнопки в меню бота</h3>
+<table>
+  <tr><th style="width:22%">Команда</th><th>Когда нужна</th></tr>
+  <tr><td><code>/status</code></td><td>Проверить, жив ли агент и чем занят.</td></tr>
+  <tr><td><code>/stop</code></td><td>Остановить задачу, которую он сейчас делает.</td></tr>
+  <tr><td><code>/new</code></td><td>Начать разговор с чистого листа (память о вас остаётся).</td></tr>
+  <tr><td><code>/compact</code></td><td>Сжать длинный разговор, если агент стал медленнее.</td></tr>
+  <tr><td><code>/restart</code></td><td>Агент не отвечает — перезапуск. Работает, даже когда он молчит.</td></tr>
+  <tr><td><code>/relogin</code></td><td>Если агент пишет, что надо снова войти в Claude.</td></tr>
+  <tr><td><code>/update</code></td><td>Обновить агента до свежей версии.</td></tr>
+  <tr><td><code>/help</code></td><td>Справка по всем командам.</td></tr>
+</table>
+
+<h2>Если что-то пошло не так</h2>
+<div class="box ok"><b>Главное правило: запустите ту же команду ещё раз.</b> Установщик можно гонять сколько угодно раз — он доделывает недостающее и не ломает готовое. Прервались на середине, закрылось окно, пропал интернет — просто снова <code>sudo bash install-agent.sh</code> и то же имя агента.</div>
+<table>
+  <tr><th style="width:42%">Что написано на экране</th><th>Что делать</th></tr>
+  <tr><td>«запускай под root»</td><td>Вы зашли не под root. Зайдите как в шаге 1: <code>ssh root@адрес</code>.</td></tr>
+  <tr><td>«токен не похож на настоящий»</td><td>Скопируйте токен бота у @BotFather ещё раз, целиком.</td></tr>
+  <tr><td>«имя только латиницей в нижнем регистре»</td><td>Маленькие латинские буквы, без пробелов: <code>jarvis</code>, <code>pomoshnik</code>.</td></tr>
+  <tr><td>«это не похоже на токен Claude»</td><td>Запустите установщик снова и пройдите вход в Claude ещё раз (шаг 6).</td></tr>
+  <tr><td>«не смог выловить токен с экрана»</td><td>Токен Claude напечатан выше в две строки — вставьте обе, каждую с Enter.</td></tr>
+  <tr><td>«Drive не подключился»</td><td>Проверьте, что строку токена из шага 5 скопировали целиком, с фигурными скобками.</td></tr>
+  <tr><td>«сервис не поднялся»</td><td>Пришлите нам снимок экрана — разберёмся.</td></tr>
+  <tr><td>Бот молчит после установки</td><td>Нажмите у бота <b>Start</b>, подождите минуту и напишите снова. Не помогло — <code>/restart</code>.</td></tr>
+</table>
+
+<h3>Агент в группе Telegram</h3>
+<p>В группе агент по умолчанию видит только сообщения, где его упомянули через <code>@имя_бота</code>. Чтобы читал всё: <code>@BotFather</code> → <code>/setprivacy</code> → <b>Disable</b>, или сделайте бота администратором группы.</p>
+
+<h3>Второй агент на том же сервере</h3>
+<p>Можно. Дайте ему своё имя, своего пользователя и свой порт:</p>
+<span class="cmd">sudo bash install-agent.sh --name <span class="ph">agent2</span> --user <span class="ph">agent2</span> --webhook-port <span class="ph">8090</span></span>
+
+<h2>Сделайте сразу после установки</h2>
+<div class="box warn">
+  <ul class="check">
+    <li><b>Пароль от бэкапа</b> лежит не только на сервере — в менеджере паролей или на бумаге.</li>
+    <li><b>Адрес сервера и пароль root</b> сохранены (письмо хостинга не удалено).</li>
+    <li><b>Наутро</b> откройте drive.google.com — в папке <code>dashi-ИМЯ-backups</code> должна появиться первая ночная копия.</li>
+    <li>Сохраните вторую инструкцию — <b>«Как вернуть агента»</b>: что делать, если агент замолчал, сломался или сервер пропал.</li>
+  </ul>
+</div>
+
+<div class="foot">Инструкция собрана по коду установщика <code>scripts/install-agent.sh</code> на 02.10.2026. Если на экране что-то выглядит иначе, чем здесь, — верьте экрану и напишите нам.</div>
+</body>
+</html>
