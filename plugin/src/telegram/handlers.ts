@@ -725,6 +725,13 @@ async function gateAndNotify(
     }
   }
 
+  // A group answered by the master session gets no status bubble
+  // (`streaming: 'off'`), so show the header `typing…` instead — people in
+  // the group see the agent is alive. Cleared by the reply (complete()).
+  if (deps.statusManager && isGroup && routesToMaster) {
+    deps.statusManager.startTypingOnly(decision.chatId)
+  }
+
   deps.log.info('inbound delivered', { kind, chat_id: decision.chatId })
   const delivered = await sendChannelNotification(deps.server, event, deps.log)
   if (!delivered) {
@@ -1313,6 +1320,10 @@ export async function sendAlbumNotification(
   }
 
   const event: ChannelEvent = { content, meta }
+  // Same header `typing…` as a single message in a master-routed group.
+  if (deps.statusManager && isGroup && albumToMaster) {
+    deps.statusManager.startTypingOnly(ids.chatId)
+  }
   deps.log.info('album delivered', {
     kind: ids.kind,
     chat_id: ids.chatId,

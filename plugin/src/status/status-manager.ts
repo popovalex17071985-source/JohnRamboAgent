@@ -320,6 +320,13 @@ export class StatusManager {
   // chatId)` against the TARGET chat — we never memoise the answer at
   // construction time, because the manager is shared across all chats.
   private readonly policy: MultichatPolicy | null
+  // Header-only `typing…` for group chats that get no status bubble
+  // (`streaming: 'off'`) but are answered by the master session
+  // (`route: master`). The router's M7 loop covers groups with their own
+  // session; master-routed groups never reach it, so people in the group
+  // saw nothing until the answer landed (Саня, 03.10.2026: «чтобы
+  // понимать, что Альберт живой и скоро ответит»).
+  private readonly typingOnly: Map<string, { handle: NodeJS.Timeout | null; pulses: number }>
 
   constructor(deps: StatusManagerDeps) {
     this.telegramApi = deps.telegramApi
@@ -335,6 +342,58 @@ export class StatusManager {
     this.blockedChats = new Map()
     this.lastBlockedPruneAt = 0
     this.policy = deps.policy ?? null
+    this.typingOnly = new Map()
+  }
+
+  /**
+   * Show the native `typing…` header in a chat WITHOUT any status message.
+   * For chats whose streaming is off but whose reply comes from the master
+   * session. No-op for chats that stream (start() owns them) or that
+   * recently returned 403. Pulses every CHAT_ACTION_PULSE_MS until
+   * complete()/cancel() for the chat, capped at `status.ttl_ms` so a turn
+   * that never replies cannot leave the header animating forever.
+   */
+  startTypingOnly(chatId: string): void {
+    if (this.isStreamingAllowed(chatId)) return
+    const sendChatAction = this.telegramApi.sendChatAction
+    if (!sendChatAction || this.isChatBlocked(chatId)) return
+    this.stopTypingOnly(chatId)
+    const maxPulses = Math.max(1, Math.floor(this.config.status.ttl_ms / CHAT_ACTION_PULSE_MS))
+    const state: { handle: NodeJS.Timeout | null; pulses: number } = { handle: null, pulses: 0 }
+    const pulse = (): void => {
+      state.pulses += 1
+      void Promise.resolve(sendChatAction(chatId, 'typing')).catch((err: unknown) => {
+        this.log.debug('typing-only chat action failed (ignored)', {
+          chat_id: chatId,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      })
+    }
+    const tick = (): void => {
+      if (this.typingOnly.get(chatId) !== state) return
+      if (state.pulses >= maxPulses) {
+        this.typingOnly.delete(chatId)
+        return
+      }
+      pulse()
+      state.handle = this.setTimer(tick, CHAT_ACTION_PULSE_MS)
+    }
+    this.typingOnly.set(chatId, state)
+    pulse()
+    state.handle = this.setTimer(tick, CHAT_ACTION_PULSE_MS)
+  }
+
+  /** Stop a typing-only header loop. No-op when none is running. */
+  stopTypingOnly(chatId: string): void {
+    const state = this.typingOnly.get(chatId)
+    if (!state) return
+    if (state.handle) this.clearTimer(state.handle)
+    this.typingOnly.delete(chatId)
+  }
+
+  /** True while a typing-only header loop runs for the chat (tests, shutdown). */
+  isTypingOnly(chatId: string): boolean {
+    return this.typingOnly.has(chatId)
   }
 
   // Record a 403/forbidden Telegram failure for a chat. Future start()
@@ -1012,6 +1071,7 @@ export class StatusManager {
     // any pending timer ticks are invalidated before we yield to the
     // event loop. The Telegram delete (network I/O) runs inside the
     // lifecycle lock to serialize with concurrent start() calls.
+    this.stopTypingOnly(chatId)
     const entry = this.entries.get(chatId)
     if (!entry) return
     entry.generation += 1
@@ -1069,6 +1129,7 @@ export class StatusManager {
   async cancel(chatId: string, reason: string): Promise<void> {
     // Synchronous bookkeeping FIRST (see complete()). The "Остановлено"
     // edit runs inside the lifecycle lock to serialize against starts.
+    this.stopTypingOnly(chatId)
     const entry = this.entries.get(chatId)
     if (!entry) return
     entry.generation += 1
