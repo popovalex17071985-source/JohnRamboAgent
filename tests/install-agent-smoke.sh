@@ -112,3 +112,12 @@ echo "✓ замок панели берётся один раз"
 
 # После перезапуска хозяин видит «на связи» -- иначе непонятно, встал агент или нет
 grep -q 'перезапуск завершён' "$S" || fail "dashi-run не шлёт пинг «на связи» после старта"
+
+# Подсказки владельцу про rclone: у «rclone authorize» нет флагов --client-id /
+# --client-secret (ID и секрет -- позиционно), а brew на чистом маке нет.
+# 02.10.2026 живая установка упала на обоих.
+INST="$(cd "$(dirname "$0")/.." && pwd)/scripts/install-agent.sh"
+GUIDE="$(cd "$(dirname "$0")/.." && pwd)/docs/install-guide/install-guide.html"
+! grep -q -e '--client-id' "$INST" "$GUIDE" || fail "подсказка зовёт rclone authorize с несуществующим флагом --client-id"
+! grep -q 'brew install rclone' "$INST" "$GUIDE" || fail "подсказка шлёт ставить rclone через brew, которого на маке нет"
+echo "✓ подсказки про rclone authorize рабочие"

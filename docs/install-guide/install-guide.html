@@ -145,8 +145,8 @@
     <span class="cmd">unzip -o rclone-current-osx-$A.zip</span>
     <span class="cmd">cd rclone-*-osx-$A</span>
     <b>Windows:</b> скачайте zip с <code>rclone.org/downloads</code>, распакуйте, откройте в этой папке PowerShell и в команде ниже пишите <code>.\rclone.exe</code> вместо <code>./rclone</code>.</li>
-  <li>Выполните, подставив свои значения (точка и слэш в начале обязательны):
-    <span class="cmd">./rclone authorize "drive" --client-id <span class="ph">ВАШ_ID</span> --client-secret <span class="ph">ВАШ_SECRET</span></span></li>
+  <li>Выполните, подставив свои значения сначала ID, потом SECRET, через пробел, без флагов (точка и слэш в начале обязательны):
+    <span class="cmd">./rclone authorize "drive" <span class="ph">ВАШ_ID</span> <span class="ph">ВАШ_SECRET</span></span></li>
   <li>Откроется браузер — войдите в Google и разрешите доступ. В окне команд появится строка, начинающаяся с <code>{"access_token":</code> — скопируйте её целиком.</li>
 </ol>
 <h3>Обратно в установщик</h3>

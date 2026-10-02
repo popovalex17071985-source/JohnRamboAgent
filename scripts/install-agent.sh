@@ -1173,7 +1173,7 @@ EOF
          windows — скачай zip с rclone.org/downloads, распакуй, открой
          в этой папке PowerShell и пиши .\\rclone.exe вместо ./rclone
       6) выполни, подставив свои значения из шага 4:
-         ./rclone authorize "drive" --client-id ВАШ_ID --client-secret ВАШ_SECRET
+         ./rclone authorize "drive" ВАШ_ID ВАШ_SECRET   (ID и SECRET через пробел, без флагов)
       7) войди в гугл, разреши доступ — в терминале появится строка
          вида {"access_token":...}
     Вставь сюда Client ID, Client secret и эту строку. Пропустить — просто Enter
@@ -1244,7 +1244,7 @@ EOF
          windows — zip с rclone.org/downloads, распакуй, PowerShell в папке,
          пиши .\\rclone.exe вместо ./rclone
       6) там же выполни, подставив свои значения из шага 4:
-         ./rclone authorize "drive" --client-id ВАШ_ID --client-secret ВАШ_SECRET
+         ./rclone authorize "drive" ВАШ_ID ВАШ_SECRET   (ID и SECRET через пробел, без флагов)
       7) он напечатает строку вида {"access_token":...} — скопируй её целиком
       8) на СЕРВЕРЕ создай конфиг СО СВОИМ ключом (одной командой):
            sudo -u $SERVICE_USER rclone config create gdrive drive \
