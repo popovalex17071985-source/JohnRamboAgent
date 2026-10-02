@@ -1342,6 +1342,12 @@ EOF
   script -qec "su - $SERVICE_USER -c 'claude setup-token'" "$TOKEN_LOG" </dev/tty >/dev/tty 2>&1 || true
   CLAUDE_TOKEN="$(extract_token "$TOKEN_LOG" || true)"
   rm -f "$TOKEN_LOG"; trap - INT TERM EXIT
+  if [[ -n "$CLAUDE_TOKEN" ]]; then
+    # Выловили сами — стираем экран И прокрутку: годовой токен на виду уезжал в
+    # скриншоты и демонстрацию экрана (живая установка 02.10.2026).
+    { printf '\033[H\033[2J\033[3J' >/dev/tty; } 2>/dev/null || true
+    ok "токен Claude выловлен и стёрт с экрана — скриншотить можно"
+  fi
   if [[ -z "$CLAUDE_TOKEN" ]]; then
     warn "не смог выловить токен с экрана"
     # Токен печатается в ДВЕ строки — вставка второй улетала в shell, а первая
