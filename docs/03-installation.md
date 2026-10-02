@@ -9,7 +9,7 @@
 `dashi-<имя>`, годовой токен Claude, шифрованный бэкап, бот-ремонтник (опция):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/popovalex17071985-source/dashi-plugin-claude-code/main/scripts/install-agent.sh -o install-agent.sh
+curl -fsSL https://raw.githubusercontent.com/popovalex17071985-source/JohnRamboAgent/main/scripts/install-agent.sh -o install-agent.sh
 sudo bash install-agent.sh --tz Asia/Yekaterinburg     # спросит имя, токен бота, ваш id
 ```
 

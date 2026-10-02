@@ -107,7 +107,7 @@ ssh root@123.45.67.89
 Вставь обе строки целиком:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/popovalex17071985-source/dashi-plugin-claude-code/main/scripts/install-agent.sh -o install-agent.sh
+curl -fsSL https://raw.githubusercontent.com/popovalex17071985-source/JohnRamboAgent/main/scripts/install-agent.sh -o install-agent.sh
 sudo bash install-agent.sh
 ```
 
@@ -929,7 +929,7 @@ cd ~/.claude-lab/myagent/.claude
 
 **[СЕРВЕР]** (ты в `~/.claude-lab/myagent/.claude`):
 ```
-git clone https://github.com/popovalex17071985-source/dashi-plugin-claude-code.git
+git clone https://github.com/popovalex17071985-source/JohnRamboAgent.git
 cd dashi-plugin-claude-code/plugin
 bun install
 ```
@@ -1230,6 +1230,6 @@ Telegram замолчит, и чинить будет нечем. Порядок
 | Служба перезапускается по кругу, на экране вопрос про доверие к папке | Новый диалог Claude «Do you trust the files in this folder?» с выбором «No, exit» по умолчанию | Обнови установщик и прогони повторно; руками — в tmux выбрать «Yes, proceed» |
 | Основной завис, не отвечает | Разное | Ремонтнику `/restart`, не помог — `reboot` |
 
-Репозиторий плагина: github.com/popovalex17071985-source/dashi-plugin-claude-code
+Репозиторий плагина: github.com/popovalex17071985-source/JohnRamboAgent
 (docs/02-where-to-place-plugin.md, docs/03-installation-linux.md,
 docs/05-troubleshooting.md, skills/doctor-dashi-plugin).

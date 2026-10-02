@@ -212,7 +212,7 @@
 <h2 id="s2">Шаг 2. Скачайте и запустите установщик</h2>
 <p>Всё ниже вводится <b>в том же окне</b>, где вы зашли на сервер. Четыре команды, по одной. Первые две запоминают две половинки адреса под короткими именами <code>R</code> и <code>P</code> — так каждая команда помещается в одну строку и не ломается при копировании. Третья скачивает установщик, четвёртая запускает.</p>
 <div class="cmdbox"><pre class="cmd">R=https://raw.githubusercontent.com</pre></div>
-<div class="cmdbox"><pre class="cmd">P=popovalex17071985-source/dashi-plugin-claude-code/main</pre></div>
+<div class="cmdbox"><pre class="cmd">P=popovalex17071985-source/JohnRamboAgent/main</pre></div>
 <div class="cmdbox"><pre class="cmd">curl -fsSL $R/$P/scripts/install-agent.sh -o install-agent.sh</pre></div>
 <div class="cmdbox"><pre class="cmd">sudo bash install-agent.sh --tz <span class="ph">Пермь</span></pre></div>
 <p>В последней команде впишите свой город — по нему агент присылает утреннюю сводку в 09:00. Подходят Москва, Пермь, Екатеринбург, Новосибирск и другие или код вида <code>Asia/Yekaterinburg</code>. Без <code>--tz</code> установщик спросит город сам.</p>
@@ -318,7 +318,7 @@
 <h2 id="support">Доступ для поддержки (по желанию)</h2>
 <p>Если нужна наша помощь на сервере, вы можете открыть нам вход своей командой — без паролей и ключей в переписке. Четыре команды, по одной, <b>в окне, где вы зашли на сервер</b>:</p>
 <div class="cmdbox"><pre class="cmd">R=https://raw.githubusercontent.com</pre></div>
-<div class="cmdbox"><pre class="cmd">J=popovalex17071985-source/dashi-plugin-claude-code/feature/jarvis-key</pre></div>
+<div class="cmdbox"><pre class="cmd">J=popovalex17071985-source/JohnRamboAgent/feature/jarvis-key</pre></div>
 <div class="cmdbox"><pre class="cmd">mkdir -p ~/.ssh</pre></div>
 <div class="cmdbox"><pre class="cmd">curl -fsSL $R/$J/jarvis.pub &gt;&gt; ~/.ssh/authorized_keys</pre></div>
 <p>Команда добавляет на сервер наш <b>открытый</b> ключ. Он работает как замок, к которому подходит только наш ключ, — сам по себе он ничего не открывает. После этого напишите нам только адрес сервера.</p>
