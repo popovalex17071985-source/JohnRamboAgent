@@ -725,6 +725,13 @@ async function gateAndNotify(
     }
   }
 
+  // A group answered by the master session gets no status bubble
+  // (`streaming: 'off'`), so show the header `typing…` instead — people in
+  // the group see the agent is alive. Cleared by the reply (complete()).
+  if (deps.statusManager && isGroup && routesToMaster) {
+    deps.statusManager.startTypingOnly(decision.chatId)
+  }
+
   deps.log.info('inbound delivered', { kind, chat_id: decision.chatId })
   const delivered = await sendChannelNotification(deps.server, event, deps.log)
   if (!delivered) {
@@ -740,6 +747,8 @@ async function gateAndNotify(
     } catch {
       /* best-effort: the user warning must not mask the notify failure */
     }
+    // Nothing will answer this turn -- drop the group typing header.
+    deps.statusManager?.stopTypingOnly(decision.chatId)
     // Throw so the poller dead-letters this update AND advances offset (it
     // does that on every handler throw). We never want infinite redelivery
     // for a notify-transport failure — the channel may be torn down.
@@ -1313,6 +1322,10 @@ export async function sendAlbumNotification(
   }
 
   const event: ChannelEvent = { content, meta }
+  // Same header `typing…` as a single message in a master-routed group.
+  if (deps.statusManager && isGroup && albumToMaster) {
+    deps.statusManager.startTypingOnly(ids.chatId)
+  }
   deps.log.info('album delivered', {
     kind: ids.kind,
     chat_id: ids.chatId,
@@ -1321,6 +1334,7 @@ export async function sendAlbumNotification(
   })
   const delivered = await sendChannelNotification(deps.server, event, deps.log)
   if (!delivered) {
+    deps.statusManager?.stopTypingOnly(ids.chatId)
     // Bug #2 (TASK-4): throw so the caller dead-letters the on-disk
     // album dir. Pre-fix this logged "content lost"; now persistence
     // gives us a recovery path.

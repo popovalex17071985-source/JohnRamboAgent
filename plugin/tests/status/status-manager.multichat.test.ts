@@ -360,3 +360,75 @@ describe('StatusManager legacy null-policy mode', () => {
     expect(api.calls.filter((c) => c.kind === 'send').length).toBe(1)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────
+// Typing-only header for master-routed groups (03.10.2026): a group with
+// `streaming: 'off'` answered by the master session shows the native
+// `typing…` header and nothing else, until the reply clears it.
+// ─────────────────────────────────────────────────────────────────────
+
+describe('StatusManager.startTypingOnly', () => {
+  const offGroup = () =>
+    makePolicy({
+      [WARCHIEF]: makeChatPolicy(),
+      [PUBLIC_GROUP]: makeChatPolicy({ mode: 'public', streaming: 'off', delivery: 'final_only' }),
+    })
+  const actions = (api: FakeApi) => api.calls.filter((c) => c.kind === 'chat_action')
+
+  test('pulses typing in an off group without any message, stops on complete()', async () => {
+    const { mgr, clock, api } = makeManager({ policy: offGroup() })
+    mgr.startTypingOnly(PUBLIC_GROUP)
+    await Promise.resolve()
+    expect(actions(api)).toEqual([{ kind: 'chat_action', chatId: PUBLIC_GROUP, action: 'typing' }])
+    clock.advance(8_000)
+    await Promise.resolve()
+    expect(actions(api).length).toBe(3)
+    expect(mgr.isTypingOnly(PUBLIC_GROUP)).toBe(true)
+
+    await mgr.complete(PUBLIC_GROUP)
+    expect(mgr.isTypingOnly(PUBLIC_GROUP)).toBe(false)
+    clock.advance(20_000)
+    await Promise.resolve()
+    expect(actions(api).length).toBe(3)
+    expect(api.calls.filter((c) => c.kind !== 'chat_action')).toEqual([])
+  })
+
+  test('cancel() stops it too', async () => {
+    const { mgr, clock, api } = makeManager({ policy: offGroup() })
+    mgr.startTypingOnly(PUBLIC_GROUP)
+    await mgr.cancel(PUBLIC_GROUP, 'stop')
+    clock.advance(20_000)
+    await Promise.resolve()
+    expect(actions(api).length).toBe(1)
+    expect(api.calls.filter((c) => c.kind !== 'chat_action')).toEqual([])
+  })
+
+  test('no-op for a chat that streams (start() owns it)', async () => {
+    const { mgr, clock, api } = makeManager({ policy: offGroup() })
+    mgr.startTypingOnly(WARCHIEF)
+    clock.advance(10_000)
+    await Promise.resolve()
+    expect(api.calls).toEqual([])
+    expect(mgr.isTypingOnly(WARCHIEF)).toBe(false)
+  })
+
+  test('capped at status.ttl_ms when no reply ever comes', async () => {
+    const { mgr, clock, api, config } = makeManager({ policy: offGroup() })
+    mgr.startTypingOnly(PUBLIC_GROUP)
+    clock.advance(config.status.ttl_ms * 3)
+    await Promise.resolve()
+    expect(actions(api).length).toBe(Math.floor(config.status.ttl_ms / 4000))
+    expect(mgr.isTypingOnly(PUBLIC_GROUP)).toBe(false)
+  })
+
+  test('a second message restarts the loop instead of doubling pulses', async () => {
+    const { mgr, clock, api } = makeManager({ policy: offGroup() })
+    mgr.startTypingOnly(PUBLIC_GROUP)
+    clock.advance(2_000)
+    mgr.startTypingOnly(PUBLIC_GROUP)
+    clock.advance(4_000)
+    await Promise.resolve()
+    // initial + restart + one pulse of the new loop; the old loop is dead
+    expect(actions(api).length).toBe(3)
+  })
+})
