@@ -138,9 +138,15 @@
 </ol>
 <h3>На своём компьютере (не на сервере)</h3>
 <ol class="steps">
-  <li>Поставьте программу rclone. <b>Mac:</b> в Терминале <code>curl https://rclone.org/install.sh | sudo bash</code>. <b>Windows:</b> скачайте с <code>rclone.org/downloads</code> и распакуйте.</li>
-  <li>Выполните, подставив свои значения:
-    <span class="cmd">rclone authorize "drive" --client-id <span class="ph">ВАШ_ID</span> --client-secret <span class="ph">ВАШ_SECRET</span></span></li>
+  <li>Поставьте программу rclone, brew не нужен. <b>Mac:</b> в Терминале, команды по одной:
+    <span class="cmd">cd ~/Downloads</span>
+    <span class="cmd">A=$(uname -m | sed s/x86_64/amd64/)</span>
+    <span class="cmd">curl -fsSLO https://downloads.rclone.org/rclone-current-osx-$A.zip</span>
+    <span class="cmd">unzip -o rclone-current-osx-$A.zip</span>
+    <span class="cmd">cd rclone-*-osx-$A</span>
+    <b>Windows:</b> скачайте zip с <code>rclone.org/downloads</code>, распакуйте, откройте в этой папке PowerShell и в команде ниже пишите <code>.\rclone.exe</code> вместо <code>./rclone</code>.</li>
+  <li>Выполните, подставив свои значения (точка и слэш в начале обязательны):
+    <span class="cmd">./rclone authorize "drive" --client-id <span class="ph">ВАШ_ID</span> --client-secret <span class="ph">ВАШ_SECRET</span></span></li>
   <li>Откроется браузер — войдите в Google и разрешите доступ. В окне команд появится строка, начинающаяся с <code>{"access_token":</code> — скопируйте её целиком.</li>
 </ol>
 <h3>Обратно в установщик</h3>

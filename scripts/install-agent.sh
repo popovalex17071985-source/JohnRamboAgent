@@ -1164,10 +1164,16 @@ EOF
 
     ПОТОМ вход в гугл — он требует браузера, поэтому делай на СВОЁМ компьютере
     (в отдельном окне терминала, НЕ внутри ssh на сервер):
-      5) поставь rclone: mac — brew install rclone,
-         windows/linux — установщик со страницы rclone.org/downloads
+      5) поставь rclone (brew не нужен). mac — команды по одной:
+           cd ~/Downloads
+           A=\$(uname -m | sed s/x86_64/amd64/)
+           curl -fsSLO https://downloads.rclone.org/rclone-current-osx-\$A.zip
+           unzip -o rclone-current-osx-\$A.zip
+           cd rclone-*-osx-\$A
+         windows — скачай zip с rclone.org/downloads, распакуй, открой
+         в этой папке PowerShell и пиши .\\rclone.exe вместо ./rclone
       6) выполни, подставив свои значения из шага 4:
-         rclone authorize "drive" --client-id ВАШ_ID --client-secret ВАШ_SECRET
+         ./rclone authorize "drive" --client-id ВАШ_ID --client-secret ВАШ_SECRET
       7) войди в гугл, разреши доступ — в терминале появится строка
          вида {"access_token":...}
     Вставь сюда Client ID, Client secret и эту строку. Пропустить — просто Enter
@@ -1229,10 +1235,16 @@ EOF
          «OAuth client ID» → «Desktop app» → скопируй Client ID и Client secret
 
     ПОТОМ вход:
-      5) на своём компьютере поставь rclone: mac — brew install rclone,
-         windows/linux — установщик с rclone.org/downloads
+      5) на своём компьютере поставь rclone (brew не нужен). mac — по одной:
+           cd ~/Downloads
+           A=\$(uname -m | sed s/x86_64/amd64/)
+           curl -fsSLO https://downloads.rclone.org/rclone-current-osx-\$A.zip
+           unzip -o rclone-current-osx-\$A.zip
+           cd rclone-*-osx-\$A
+         windows — zip с rclone.org/downloads, распакуй, PowerShell в папке,
+         пиши .\\rclone.exe вместо ./rclone
       6) там же выполни, подставив свои значения из шага 4:
-         rclone authorize "drive" --client-id ВАШ_ID --client-secret ВАШ_SECRET
+         ./rclone authorize "drive" --client-id ВАШ_ID --client-secret ВАШ_SECRET
       7) он напечатает строку вида {"access_token":...} — скопируй её целиком
       8) на СЕРВЕРЕ создай конфиг СО СВОИМ ключом (одной командой):
            sudo -u $SERVICE_USER rclone config create gdrive drive \
