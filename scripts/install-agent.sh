@@ -620,6 +620,13 @@ if [[ -f "$ENV_FILE" ]]; then
   # Пояс хозяина: /update читает его отсюда, чтобы не сдвинуть сводку.
   if grep -q "^DASHI_OWNER_TZ=" "$ENV_FILE"; then sed -i "s#^DASHI_OWNER_TZ=.*#DASHI_OWNER_TZ=$OWNER_TZ#" "$ENV_FILE"
   else echo "DASHI_OWNER_TZ=$OWNER_TZ" >> "$ENV_FILE"; fi
+  # Ключ Groq писался только при первом создании конфига: повторный прогон с
+  # --groq-key молча его терял, и голосовые так и не включались.
+  if [[ -n "$GROQ_KEY" ]]; then
+    if grep -q "^GROQ_API_KEY=" "$ENV_FILE"; then sed -i "s#^GROQ_API_KEY=.*#GROQ_API_KEY=$GROQ_KEY#" "$ENV_FILE"
+    else echo "GROQ_API_KEY=$GROQ_KEY" >> "$ENV_FILE"; fi
+    ok "ключ Groq записан -- голосовые включатся после перезапуска"
+  fi
   # Порт вебхука: --webhook-port меняет, без флага строка не трогается.
   if [[ $PORT_GIVEN -eq 1 ]]; then
     if grep -q "^TELEGRAM_WEBHOOK_PORT=" "$ENV_FILE"; then sed -i "s#^TELEGRAM_WEBHOOK_PORT=.*#TELEGRAM_WEBHOOK_PORT=$WEBHOOK_PORT#" "$ENV_FILE"
@@ -1097,6 +1104,9 @@ setup_backup=0
 if [[ $ASSUME_YES -eq 1 ]]; then
   setup_backup=1   # неинтерактивно: включаем (данные важнее, off-site настроят потом)
 else
+  # Без терминала read падает, __b остаётся неопределённой, и set -u ронял весь
+  # установщик на «unbound variable» (02.10.2026, разбор под инструкцию). Пусто = «да».
+  __b=""
   read -r -p "    Включить шифрованный бэкап? [Y/n] " __b </dev/tty || true
   [[ ! "$__b" =~ ^[Nn] ]] && setup_backup=1
 fi
