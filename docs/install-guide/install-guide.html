@@ -97,7 +97,7 @@
 <ol class="steps">
   <li>Откройте программу для команд. <b>Windows:</b> «PowerShell» (через Пуск). <b>Mac:</b> «Терминал».</li>
   <li>Наберите, подставив адрес вашего сервера:
-    <span class="cmd">ssh root@<span class="ph">123.45.67.89</span></span>
+    <span class="cmd">ssh -o ServerAliveInterval=30 root@<span class="ph">123.45.67.89</span></span>
     На вопрос «Are you sure…» ответьте <code>yes</code>. Потом введите пароль root из письма хостинга — при вводе символы не видны, это нормально.</li>
 </ol>
 
