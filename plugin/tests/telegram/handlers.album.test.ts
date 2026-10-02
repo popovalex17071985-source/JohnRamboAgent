@@ -973,6 +973,7 @@ describe('FIX-D B1 — group album aggregate addressing', () => {
       dispatch: async (msg: InboundMessage) => {
         routerCalls.push(msg)
       },
+      ensureGroupJoined: () => null,
     } as unknown as MultichatRouter
     const { deps, statePaths } = makeDeps({
       albumBuffer: buffer,
@@ -1050,6 +1051,7 @@ describe('FIX-D B1 — group album aggregate addressing', () => {
       dispatch: async (msg: InboundMessage) => {
         routerCalls.push(msg)
       },
+      ensureGroupJoined: () => null,
     } as unknown as MultichatRouter
     const { deps, statePaths } = makeDeps({
       albumBuffer: buffer,
@@ -1100,6 +1102,7 @@ describe('FIX-D B1 — group album aggregate addressing', () => {
       dispatch: async (msg: InboundMessage) => {
         routerCalls.push(msg)
       },
+      ensureGroupJoined: () => null,
     } as unknown as MultichatRouter
     const { deps, statePaths } = makeDeps({
       albumBuffer: buffer,

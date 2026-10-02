@@ -161,6 +161,7 @@ function makeRouterSpy(): { router: MultichatRouter; calls: InboundMessage[] } {
     dispatch: async (msg: InboundMessage) => {
       calls.push(msg)
     },
+    ensureGroupJoined: () => null,
   } as unknown as MultichatRouter
   return { router, calls }
 }

@@ -37,6 +37,7 @@ import {
   assertValidChatId,
   autojoinGroupChat,
   getChatPolicyOrDeny,
+  type ChatPolicy,
   type MultichatPolicy,
 } from '../chats/policy-loader.js'
 import {
@@ -282,6 +283,29 @@ export class MultichatRouter {
   }
 
   /**
+   * Заводит новую рабочую группу (см. autojoinGroupChat) и сразу кладёт её
+   * в общую политику. Вызывается и из dispatch, и из handlers ДО выбора
+   * маршрута: группа наследует `route` личного чата владельца, и с
+   * `route: master` уже ПЕРВОЕ сообщение должно уйти в главную сессию, а не
+   * в отдельную, у которой на агенте с годовым токеном нет входа в Claude
+   * (живая установка 02.10.2026).
+   *
+   * @returns политику чата (уже существующую или только что заведённую),
+   *   либо null, если заводить нельзя.
+   */
+  ensureGroupJoined(chatId: string, userId: string): ChatPolicy | null {
+    const existing = getChatPolicyOrDeny(this.policy, chatId)
+    if (existing !== null) return existing
+    if (!this.policy.allowlist.users.includes(userId)) return null
+    const joined = autojoinGroupChat(chatsBasePath(this.workspaceDir), chatId, userId)
+    if (joined === null) return null
+    this.policy.chats[chatId] = joined
+    if (!this.policy.allowlist.chats.includes(chatId)) this.policy.allowlist.chats.push(chatId)
+    this.logger.info('router.dispatch.group_autojoined', { chat_id: chatId, user_id: userId })
+    return joined
+  }
+
+  /**
    * Route an inbound message into the per-chat tmux session.
    *
    * Flow (in order — H5 spawn-order fix 2026-05-23, TASK-5 bug 1
@@ -342,8 +366,9 @@ export class MultichatRouter {
     //    "is this chat configured?" across router, status-manager,
     //    tmux-mirror. Legacy single-DM mode never
     //    runs through this router.
-    const userAllowed = this.policy.allowlist.users.includes(input.user_id)
     let chatPolicy = getChatPolicyOrDeny(this.policy, input.chat_id)
+    const userAllowed = this.policy.allowlist.users.includes(input.user_id)
+      || chatPolicy?.open_to_members === true
     const chatAllowed = this.policy.allowlist.chats.includes(input.chat_id)
 
     // Новая рабочая группа работает сразу: владелец создал чат, позвал бота
@@ -352,18 +377,7 @@ export class MultichatRouter {
     // Только адресованные сообщения вообще доходят сюда (mention-гейт выше),
     // так что чужая болтовня в контекст не попадает.
     if (chatPolicy === null && userAllowed) {
-      const joined = autojoinGroupChat(chatsBasePath(this.workspaceDir), input.chat_id, input.user_id)
-      if (joined !== null) {
-        this.policy.chats[input.chat_id] = joined
-        if (!this.policy.allowlist.chats.includes(input.chat_id)) {
-          this.policy.allowlist.chats.push(input.chat_id)
-        }
-        chatPolicy = joined
-        this.logger.info('router.dispatch.group_autojoined', {
-          chat_id: input.chat_id,
-          user_id: input.user_id,
-        })
-      }
+      chatPolicy = this.ensureGroupJoined(input.chat_id, input.user_id)
     }
 
     if (chatPolicy === null || !userAllowed) {
