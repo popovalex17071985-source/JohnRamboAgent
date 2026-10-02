@@ -133,7 +133,7 @@
 <ol class="steps">
   <li>Откройте <code>console.cloud.google.com</code> и создайте проект, например <code>dashi-backups</code>.</li>
   <li>«APIs &amp; Services» → «Library» → найдите <b>Google Drive API</b> → <b>Enable</b>.</li>
-  <li>«OAuth consent screen» → тип <b>External</b> → заполните обязательные поля → в «Test users» добавьте свою почту.</li>
+  <li>«OAuth consent screen» → тип <b>External</b> → заполните обязательные поля → раздел «Audience» → «Test users» → «+ Add users» → впишите <b>ту почту, которой будете входить</b> в шаге ниже. Не добавите — Google ответит «Доступ заблокирован… Ошибка 403: access_denied». (В новом интерфейсе всё это лежит в меню «Google Auth Platform».)</li>
   <li>«Credentials» → «Create credentials» → «OAuth client ID» → тип <b>Desktop app</b>. Скопируйте <b>Client ID</b> и <b>Client secret</b>.</li>
 </ol>
 <h3>На своём компьютере (не на сервере)</h3>
@@ -198,6 +198,8 @@
   <tr><td>«имя только латиницей в нижнем регистре»</td><td>Маленькие латинские буквы, без пробелов: <code>jarvis</code>, <code>pomoshnik</code>.</td></tr>
   <tr><td>«это не похоже на токен Claude»</td><td>Запустите установщик снова и пройдите вход в Claude ещё раз (шаг 6).</td></tr>
   <tr><td>«не смог выловить токен с экрана»</td><td>Токен Claude напечатан выше в две строки — вставьте обе, каждую с Enter.</td></tr>
+  <tr><td>Google: «Доступ заблокирован… Ошибка 403: access_denied»</td><td>Почта, которой входите, не добавлена в тестировщики. Google Auth Platform → Audience → Test users → «+ Add users», потом снова <code>./rclone authorize</code>.</td></tr>
+  <tr><td>rclone: «unknown flag: --client-id»</td><td>Старая подсказка. ID и SECRET пишутся через пробел, без флагов: <code>./rclone authorize "drive" ID SECRET</code>.</td></tr>
   <tr><td>«Drive не подключился»</td><td>Проверьте, что строку токена из шага 5 скопировали целиком, с фигурными скобками.</td></tr>
   <tr><td>«сервис не поднялся»</td><td>Пришлите нам снимок экрана — разберёмся.</td></tr>
   <tr><td>Бот молчит после установки</td><td>Нажмите у бота <b>Start</b>, подождите минуту и напишите снова. Не помогло — <code>/restart</code>.</td></tr>

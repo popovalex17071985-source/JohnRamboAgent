@@ -1158,7 +1158,8 @@ EOF
          создай проект (имя любое, например dashi-backups)
       2) «APIs & Services» → «Library» → найди «Google Drive API» → Enable
       3) «APIs & Services» → «OAuth consent screen» → тип External →
-         заполни обязательные поля → в «Test users» добавь свой же гугл-адрес
+         заполни обязательные поля → «Audience» → «Test users» → «+ Add users»:
+         ТОТ адрес, которым войдёшь в шаге 7 (иначе «Ошибка 403: access_denied»)
       4) «APIs & Services» → «Credentials» → «Create credentials» →
          «OAuth client ID» → тип «Desktop app» → скопируй Client ID и Client secret
 
@@ -1230,7 +1231,8 @@ EOF
          создай проект (имя любое, например dashi-backups)
       2) «APIs & Services» → «Library» → «Google Drive API» → Enable
       3) «APIs & Services» → «OAuth consent screen» → тип External →
-         заполни обязательные поля → в «Test users» добавь свой гугл-адрес
+         заполни обязательные поля → «Audience» → «Test users» → «+ Add users»:
+         ТОТ адрес, которым войдёшь (иначе «Ошибка 403: access_denied»)
       4) «APIs & Services» → «Credentials» → «Create credentials» →
          «OAuth client ID» → «Desktop app» → скопируй Client ID и Client secret
 
