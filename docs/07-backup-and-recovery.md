@@ -57,7 +57,7 @@ ssh root@АЙПИ
 
 **Шаг 3. Скачай код агента.** Скопируй строку целиком, вставь, Enter:
 ```
-git clone https://github.com/popovalex17071985-source/dashi-plugin-claude-code.git
+git clone https://github.com/popovalex17071985-source/JohnRamboAgent.git
 ```
 
 **Шаг 4. Возьми бэкап.** Открой Google Drive в браузере, зайди в папку

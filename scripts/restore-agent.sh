@@ -17,7 +17,7 @@
 set -uo pipefail
 
 SERVICE_USER="${DASHI_SERVICE_USER:-agent}"
-AGENT_NAME=""; ARCHIVE=""; PASS=""; REPO_URL="${DASHI_REPO_URL:-https://github.com/popovalex17071985-source/dashi-plugin-claude-code.git}"
+AGENT_NAME=""; ARCHIVE=""; PASS=""; REPO_URL="${DASHI_REPO_URL:-https://github.com/popovalex17071985-source/JohnRamboAgent.git}"
 BRANCH="${DASHI_BRANCH:-main}"; ASSUME_YES=0
 
 say()  { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }

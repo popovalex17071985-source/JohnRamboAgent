@@ -40,7 +40,7 @@
 
 **Шаг В — одна команда.** В КОНСОЛЬ:
 ```
-curl -fsSL https://raw.githubusercontent.com/popovalex17071985-source/dashi-plugin-claude-code/main/scripts/install-codex.sh -o install-codex.sh && bash install-codex.sh
+curl -fsSL https://raw.githubusercontent.com/popovalex17071985-source/JohnRamboAgent/main/scripts/install-codex.sh -o install-codex.sh && bash install-codex.sh
 ```
 Скрипт спросит два токена, твой id и ключ Groq для голосовых (Enter — пропустить), поставит всё (своп, Codex, мост, ремонтника, автозапуск) и остановится ровно на одном месте — входе в ChatGPT. Экран сам скажет, что делать: `codex login` → открыть ссылку → ввести код (подробности — Шаг 3.2 ниже, там же про склейку разорванной ссылки).
 

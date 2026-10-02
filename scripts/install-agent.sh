@@ -37,7 +37,7 @@ NODE_MAJOR=22
 # ремонтнику как установщик Python — их поломки нам пока не встречались.
 BUN_VERSION="bun-v1.4.0"
 OPENVIKING_IMAGE="ghcr.io/volcengine/openviking@sha256:46f9e34cd37238c28cbd9535033773d179006bdf7f3e528dd1c46567abce7701"
-REPO_URL="${DASHI_REPO_URL:-https://github.com/popovalex17071985-source/dashi-plugin-claude-code.git}"
+REPO_URL="${DASHI_REPO_URL:-https://github.com/popovalex17071985-source/JohnRamboAgent.git}"
 # Ветка, с которой агент обновляется (/update, советник, повторный прогон).
 # main = проверенное, раскатывается всем после обсуждения; staging-агенты
 # (Smith) сидят на feature-ветке и видят изменения первыми.
