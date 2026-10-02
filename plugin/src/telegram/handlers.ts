@@ -747,6 +747,8 @@ async function gateAndNotify(
     } catch {
       /* best-effort: the user warning must not mask the notify failure */
     }
+    // Nothing will answer this turn -- drop the group typing header.
+    deps.statusManager?.stopTypingOnly(decision.chatId)
     // Throw so the poller dead-letters this update AND advances offset (it
     // does that on every handler throw). We never want infinite redelivery
     // for a notify-transport failure — the channel may be torn down.
@@ -1332,6 +1334,7 @@ export async function sendAlbumNotification(
   })
   const delivered = await sendChannelNotification(deps.server, event, deps.log)
   if (!delivered) {
+    deps.statusManager?.stopTypingOnly(ids.chatId)
     // Bug #2 (TASK-4): throw so the caller dead-letters the on-disk
     // album dir. Pre-fix this logged "content lost"; now persistence
     // gives us a recovery path.
