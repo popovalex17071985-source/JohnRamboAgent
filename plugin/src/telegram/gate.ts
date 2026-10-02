@@ -79,12 +79,16 @@ export function gateTelegramMessage(
   }
 
   const allowedChats = new Set(policy.allowlist.chats)
-  if (!allowedChats.has(input.chatId)) {
+  const allowedUsers = new Set(policy.allowlist.users)
+  // Незнакомая группа пропускается, только если пишет человек из allowlist.users:
+  // дальше роутер заведёт её сам (autojoinGroupChat). Раньше гейт отбрасывал её
+  // раньше роутера, и автоподключение групп не срабатывало никогда (02.10.2026).
+  if (!allowedChats.has(input.chatId) && !allowedUsers.has(input.senderId)) {
     return { kind: 'drop', reason: 'chat_not_allowed' }
   }
 
-  const allowedUsers = new Set(policy.allowlist.users)
-  if (!allowedUsers.has(input.senderId)) {
+  const openGroup = allowedChats.has(input.chatId) && policy.chats[input.chatId]?.open_to_members === true
+  if (!allowedUsers.has(input.senderId) && !openGroup) {
     return { kind: 'drop', reason: 'sender_not_allowed_in_group' }
   }
 

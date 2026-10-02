@@ -28,7 +28,7 @@ import type { GuestQueryRegistry } from './guest-queries.js'
 import type { Logger } from '../log.js'
 import type { TelegramApi } from '../channel/tools.js'
 import type { StatusManager } from '../status/status-manager.js'
-import type { MultichatPolicy } from '../chats/policy-loader.js'
+import { mentionAllowlistFor, type MultichatPolicy } from '../chats/policy-loader.js'
 import type { MultichatRouter } from '../router/multichat-router.js'
 import type { InboundMessage } from '../router/inbox-bridge.js'
 import {
@@ -309,7 +309,7 @@ function isSideEffectAllowed(
 ): boolean {
   if (!watcherAllowed(ctx, config, policy)) return false
   // Addressing gate. mention_allowlist defends groups; DM passes through.
-  return isAddressedToBot(ctx, policy?.mention_allowlist)
+  return isAddressedToBot(ctx, mentionAllowlistFor(policy, ctx.chat?.id !== undefined ? String(ctx.chat.id) : undefined))
 }
 
 // Fire-and-forget watcher trigger. Encapsulates the allowlist gate +
@@ -544,7 +544,7 @@ async function gateAndNotify(
   // DM passes through unchanged because isAddressedToBot returns true for
   // private chats regardless of the allowlist parameter.
   if (deps.policy && input.chatType !== 'private') {
-    const addressed = isAddressedToBot(ctx, deps.policy.mention_allowlist)
+    const addressed = isAddressedToBot(ctx, mentionAllowlistFor(deps.policy, decision.chatId))
     if (!addressed) {
       deps.log.debug('handlers.not_addressed', {
         chat_id: decision.chatId,
@@ -608,6 +608,11 @@ async function gateAndNotify(
   // Exception: a chat marked `route: master` in policy.yaml is deliberately
   // merged into the master session (same place DMs land), so one Claude holds
   // both threads instead of two sessions duplicating the same work.
+  // Новая группа заводится ДО выбора маршрута: она наследует route лички
+  // владельца, и с `route: master` уже первое сообщение идёт в главную сессию.
+  if (deps.router && deps.policy && isGroup) {
+    deps.router.ensureGroupJoined(decision.chatId, decision.senderId)
+  }
   const routesToMaster = deps.policy?.chats[decision.chatId]?.route === 'master'
   if (deps.router && deps.policy && isGroup && !routesToMaster) {
     // Open a status before dispatch — symmetric with the legacy path so
@@ -976,7 +981,10 @@ async function tryRouteToAlbumBuffer(
   // DMs always evaluate to `true` (isAddressedToBot returns true for
   // private chat regardless of mention_allowlist), so private albums
   // behave exactly as before.
-  const addressedAtPush = isAddressedToBot(ctx, deps.policy?.mention_allowlist)
+  const addressedAtPush = isAddressedToBot(
+    ctx,
+    mentionAllowlistFor(deps.policy, ctx.chat?.id !== undefined ? String(ctx.chat.id) : undefined),
+  )
 
   const descriptors = await buildDescriptors()
   const rendered = descriptors.map(renderMediaDescriptor)
@@ -1241,7 +1249,14 @@ export async function sendAlbumNotification(
   // gone by album flush time. Channel-type posts never reach this path
   // (gate.ts drops chatType==='channel' before buffering), so the
   // negative-id check cannot misclassify a channel as a group here.
+  // Альбом — как одиночное сообщение: новая группа заводится до выбора
+  // маршрута, а группа с `route: master` идёт в главную сессию, не в отдельную
+  // (у той на агенте с годовым токеном нет входа в Claude — ревью 02.10.2026).
   if (deps.router && deps.policy && isGroup) {
+    deps.router.ensureGroupJoined(ids.chatId, ids.senderId)
+  }
+  const albumToMaster = deps.policy?.chats[ids.chatId]?.route === 'master'
+  if (deps.router && deps.policy && isGroup && !albumToMaster) {
     const combinedMediaPaths: string[] = []
     for (const m of album.messages) {
       for (const p of m.mediaPaths) combinedMediaPaths.push(p)

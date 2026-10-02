@@ -624,6 +624,7 @@ describe('hybrid routing — DM to master, groups to per-chat (router wired)', (
       dispatch: async (msg: InboundMessage) => {
         calls.push(msg)
       },
+      ensureGroupJoined: () => null,
     } as unknown as MultichatRouter
     return { router, calls }
   }
