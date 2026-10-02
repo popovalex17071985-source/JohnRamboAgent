@@ -102,8 +102,10 @@
 </ol>
 
 <h2>Шаг 2. Скачайте и запустите установщик</h2>
-<p>Скопируйте две команды по очереди. В конце второй впишите свой город — по нему агент будет присылать утреннюю сводку в 09:00.</p>
-<span class="cmd">curl -fsSL https://raw.githubusercontent.com/popovalex17071985-source/dashi-plugin-claude-code/main/scripts/install-agent.sh -o install-agent.sh</span>
+<p>Скопируйте четыре команды по очереди, каждую отдельно, в одном окне терминала. Первые две запоминают части адреса, третья скачивает установщик, четвёртая запускает. В конце четвёртой впишите свой город — по нему агент будет присылать утреннюю сводку в 09:00.</p>
+<span class="cmd">R=https://raw.githubusercontent.com</span>
+<span class="cmd">P=popovalex17071985-source/dashi-plugin-claude-code/main</span>
+<span class="cmd">curl -fsSL $R/$P/scripts/install-agent.sh -o install-agent.sh</span>
 <span class="cmd">sudo bash install-agent.sh --tz <span class="ph">Пермь</span></span>
 <div class="box soft">Без <code>--tz</code> установщик сам спросит город. Подходят Москва, Пермь, Екатеринбург, Новосибирск и другие — или код вида <code>Asia/Yekaterinburg</code>.</div>
 

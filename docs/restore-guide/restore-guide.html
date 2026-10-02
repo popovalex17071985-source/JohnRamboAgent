@@ -142,7 +142,7 @@
 
 
 <div class="scenario">
-  <div class="scenario-head c-amber"><div class="letter">Г</div><div><div class="t">Агент сломан целиком, сервер жив</div><div class="s">Возвращаем агента в состояние прошлой ночи. Одна команда.</div></div></div>
+  <div class="scenario-head c-amber"><div class="letter">Г</div><div><div class="t">Агент сломан целиком, сервер жив</div><div class="s">Возвращаем агента в состояние прошлой ночи. Четыре короткие команды.</div></div></div>
   <div class="scenario-body">
     <h3>Шаг 1. Подключитесь к серверу</h3>
     <ol class="steps">
@@ -154,8 +154,11 @@
     </ol>
     <h3>Шаг 2. Запустите восстановление</h3>
     <ol class="steps">
-      <li>Скопируйте команду целиком, замените <span class="ph" style="background:#12182a;padding:0 4px;border-radius:4px">ИМЯ</span> (в трёх местах) на имя своего агента — оно есть в названии папки на Google Диске: <code>dashi-<b>ИМЯ</b>-backups</code>:
-        <span class="cmd">bash /home/agent/.claude-lab/<span class="ph">ИМЯ</span>/.claude/dashi-plugin-claude-code/scripts/restore-agent.sh --name <span class="ph">ИМЯ</span> --archive "$(ls -t /home/agent/.claude-lab/<span class="ph">ИМЯ</span>/backups/*.gpg | head -1)"</span></li>
+      <li>Скопируйте четыре команды по очереди, каждую отдельно, в одном окне. Замените <span class="ph" style="background:#12182a;padding:0 4px;border-radius:4px">ИМЯ</span> (в двух местах) на имя своего агента — оно есть в названии папки на Google Диске: <code>dashi-<b>ИМЯ</b>-backups</code>:
+        <span class="cmd">H=/home/agent/.claude-lab/<span class="ph">ИМЯ</span></span>
+        <span class="cmd">A=$(ls -t $H/backups/*.gpg | head -1)</span>
+        <span class="cmd">S=$H/.claude/dashi-plugin-claude-code/scripts</span>
+        <span class="cmd">bash $S/restore-agent.sh --name <span class="ph">ИМЯ</span> --archive "$A"</span></li>
       <li>Программа попросит <b>пароль от бэкапа</b>. Вставьте его (символы снова не видны) и нажмите Enter.</li>
       <li>Дальше она всё сделает сама: проверит пароль, вернёт память и настройки, переустановит всё нужное и запустит агента. Не закрывайте окно и ждите, пока внизу не появится <b>«Готово»</b> и строка <b>«✓ агент ИМЯ восстановлен из бэкапа»</b>.</li>
       <li>Напишите боту <code>/status</code>. Если он попросит войти в Claude — сделайте шаги из раздела <b>Б</b>.</li>
@@ -188,10 +191,12 @@
     <h3>Шаг 4. Восстановите агента</h3>
     <ol class="steps">
       <li>Подключитесь к новому серверу: <span class="cmd">ssh root@<span class="ph">АДРЕС_СЕРВЕРА</span></span></li>
-      <li>Скачайте программу восстановления — скопируйте и вставьте целиком:
-        <span class="cmd">git clone https://github.com/popovalex17071985-source/dashi-plugin-claude-code.git /root/dashi</span></li>
-      <li>Запустите восстановление (замените ИМЯ и ИМЯ_ФАЙЛА):
-        <span class="cmd">bash /root/dashi/scripts/restore-agent.sh --name <span class="ph">ИМЯ</span> --archive /root/<span class="ph">ИМЯ_ФАЙЛА</span></span></li>
+      <li>Скачайте программу восстановления — две команды по очереди, каждую отдельно:
+        <span class="cmd">G=https://github.com/popovalex17071985-source</span>
+        <span class="cmd">git clone $G/dashi-plugin-claude-code.git /root/dashi</span></li>
+      <li>Запустите восстановление — две команды по очереди (замените ИМЯ и ИМЯ_ФАЙЛА):
+        <span class="cmd">cd /root/dashi/scripts</span>
+        <span class="cmd">bash restore-agent.sh --name <span class="ph">ИМЯ</span> --archive /root/<span class="ph">ИМЯ_ФАЙЛА</span></span></li>
       <li>Введите <b>пароль от бэкапа</b>. Дальше программа сама поставит всё нужное, вернёт память, бота и расписание и запустит агента. Окно не закрывайте, ждите <b>«Готово»</b> и <b>«✓ агент ИМЯ восстановлен из бэкапа»</b>.</li>
       <li>Напишите боту <code>/status</code>. Если попросит войти в Claude — раздел <b>Б</b>.</li>
       <li>Когда агент заработал, попросите его: «проверь, что ночной бэкап на Google Диск настроен». На новом сервере доступ к Диску может понадобиться подключить заново — агент скажет, что для этого сделать.</li>
