@@ -113,6 +113,7 @@
 <h2>Содержание</h2>
 <ol class="toc">
   <li><a href="#prep">Подготовьте заранее</a></li>
+  <li><a href="#google">Ключ Google для бэкапа</a></li>
   <li><a href="#words">Слова, которые встретятся</a></li>
   <li><a href="#s1">Шаг 1. Зайдите на сервер</a></li>
   <li><a href="#s2">Шаг 2. Запустите установщик</a></li>
@@ -145,11 +146,46 @@
   <tr><td><b>Бот в Telegram</b></td><td><span class="pill c-red">обязательно</span></td><td>Напишите <code>@BotFather</code> → <code>/newbot</code> → придумайте имя. Он выдаст токен вида <code>123456789:AAH...</code>. Найдите своего бота в поиске и нажмите <b>Start</b>.</td></tr>
   <tr><td><b>Ваш номер в Telegram (id)</b></td><td><span class="pill c-red">обязательно</span></td><td>Напишите <code>@userinfobot</code> — он ответит числом, это ваш id. Агент будет слушаться только вас.</td></tr>
   <tr><td><b>Подписка Claude</b></td><td><span class="pill c-red">обязательно</span></td><td>Тариф <b>Pro</b> или <b>Max</b> на claude.ai. Для работы весь день лучше Max.</td></tr>
-  <tr><td><b>Google-аккаунт</b></td><td><span class="pill c-amber">очень советуем</span></td><td>На его Диск каждую ночь будет уезжать копия агента. Без него копия хранится только на том же сервере — и пропадёт вместе с ним.</td></tr>
+  <tr><td><b>Google-аккаунт</b></td><td><span class="pill c-amber">очень советуем</span></td><td>На его Диск каждую ночь будет уезжать копия агента. Без него копия хранится только на том же сервере — и пропадёт вместе с ним. Ключ к Диску готовится заранее — <a href="#google">раздел ниже</a>.</td></tr>
   <tr><td><b>Ключ Groq</b></td><td><span class="pill c-blue">по желанию</span></td><td>console.groq.com → Create API Key, вида <code>gsk_...</code>. Нужен, чтобы агент понимал голосовые.</td></tr>
   <tr><td><b>Второй бот — «ремонтник»</b></td><td><span class="pill c-blue">по желанию</span></td><td>Ещё раз <code>@BotFather</code> → <code>/newbot</code>. Это страховка: если агент замолчит, через ремонтника его можно починить. У него тоже нажмите <b>Start</b>. Подробнее — <a href="#s8">шаг 8</a>.</td></tr>
   <tr><td><b>Ключ OpenAI</b></td><td><span class="pill c-blue">не нужен</span></td><td>Память работает и без него — см. <a href="#s7">шаг 7</a>. Если ключ уже есть (platform.openai.com, вида <code>sk-...</code>), можно дать: поиск по памяти станет точнее.</td></tr>
 </table>
+
+<h2 id="google">Подготовьте заранее: ключ Google для бэкапа</h2>
+<p>Это самая долгая часть, и вся она в браузере и на вашем компьютере — сервер для неё не нужен. Сделайте её заранее: в итоге в заметке появятся три вещи — <b>Client ID</b>, <b>Client secret</b> и <b>строка токена</b>. Во время установки вы их просто вставите.</p>
+<h3>Г1. На сайте Google — свой ключ (под тем аккаунтом, куда пойдут копии)</h3>
+<ol class="steps">
+  <li>Откройте <code>console.cloud.google.com</code> и создайте проект, например <code>dashi-backups</code>.</li>
+  <li>«APIs &amp; Services» → «Library» → найдите <b>Google Drive API</b> → <b>Enable</b>.</li>
+  <li>«OAuth consent screen» → тип <b>External</b> → заполните обязательные поля (название, ваша почта).</li>
+  <li><b>Не пропускайте:</b> «Audience» → «Test users» → «+ Add users» → впишите <b>ту же почту Gmail, которой будете входить</b> в пункте Г2. Иначе Google ответит «Доступ заблокирован… Ошибка 403: access_denied».</li>
+  <li><b>Обязательно:</b> там же, в «Audience», нажмите <b>«Publish app»</b> → «Confirm». Статус сменится с «Testing» на «In production». Пока приложение в «Testing», Google гасит вход через <b>7 дней</b> — и ночные копии молча перестают уезжать в облако.</li>
+  <li>«Credentials» → «Create credentials» → «OAuth client ID» → тип <b>Desktop app</b>. Скопируйте в заметку <b>Client ID</b> и <b>Client secret</b>.</li>
+</ol>
+<p class="muted">В новом интерфейсе Google эти пункты собраны в меню «Google Auth Platform»: там есть разделы «Audience» (тестировщики) и «Clients» (ключи).</p>
+
+<h3>Г2. На своём компьютере — вход в Google</h3>
+<p><b>Mac.</b> Откройте <b>новое</b> окно Терминала (<code>Cmd+N</code>) — не то, где сервер. Поставьте программу rclone, пять команд по одной (brew не нужен):</p>
+<div class="cmdbox"><pre class="cmd">cd ~/Downloads</pre></div>
+<div class="cmdbox"><pre class="cmd">A=$(uname -m | sed s/x86_64/amd64/)</pre></div>
+<div class="cmdbox"><pre class="cmd">curl -fsSLO https://downloads.rclone.org/rclone-current-osx-$A.zip</pre></div>
+<div class="cmdbox"><pre class="cmd">unzip -o rclone-current-osx-$A.zip</pre></div>
+<div class="cmdbox"><pre class="cmd">cd rclone-*-osx-$A</pre></div>
+<p>Теперь вход. Удобнее так: вставьте команду ниже в «Заметки», замените <span class="phl">ВАШ_ID</span> и <span class="phl">ВАШ_SECRET</span> на Client ID и Client secret из пункта Г1 и уже готовую строку скопируйте в Терминал. ID и SECRET пишутся <b>через пробел, без всяких <code>--client-id</code></b>; точка и слэш в начале обязательны.</p>
+<div class="cmdbox"><pre class="cmd">./rclone authorize "drive" <span class="ph">ВАШ_ID</span> <span class="ph">ВАШ_SECRET</span></pre></div>
+<p><b>Windows.</b> Скачайте zip для Windows с <code>rclone.org/downloads</code>, распакуйте и откройте распакованную папку. Щёлкните правой кнопкой по пустому месту → «Открыть в Терминале» (в Windows 10 — с зажатым Shift → «Открыть окно PowerShell здесь»). Команда та же, только начало другое:</p>
+<div class="cmdbox"><pre class="cmd">.\rclone.exe authorize "drive" <span class="ph">ВАШ_ID</span> <span class="ph">ВАШ_SECRET</span></pre></div>
+<ol class="steps">
+  <li>Откроется браузер. Войдите в Google <b>той почтой, что добавили в «Test users»</b>.</li>
+  <li>Google может предупредить, что приложение не проверено. Это ваше собственное приложение из пункта Г1 — нажмите «Продолжить» и разрешите доступ.</li>
+  <li>В окне терминала появится строка между стрелками:
+    <span class="screen">Paste the following into your remote machine ---&gt;
+{"access_token":"ya29...","token_type":"Bearer",...}
+&lt;---End paste</span>
+    Скопируйте строку <b>от <code>{</code> до <code>}</code> включительно</b>, без стрелок, и положите её в ту же заметку. Она понадобится на <a href="#s5">шаге 5</a>.</li>
+</ol>
+
 
 <h2 id="words">Слова, которые встретятся</h2>
 <table>
@@ -202,41 +238,8 @@
 <div class="box danger"><b>Это самый важный момент всей установки.</b> Скопируйте пароль в менеджер паролей или запишите на бумаге. Без него ночные копии на Google Диске не откроет никто — даже мы. На экране его покажут один раз. В чат его не отправляйте. Сохранили — нажмите Enter на вопросе «Сохранил пароль?».</div>
 
 <h2 id="s5">Шаг 5. Подключите Google Диск</h2>
-<p>Копия должна уезжать с сервера, иначе при поломке сервера она пропадёт вместе с ним. Это бесплатно, карта не нужна. Установщик сейчас ждёт — окно с сервером не закрывайте, а всё ниже делайте <b>в браузере и в новом окне терминала на своём компьютере</b>.</p>
-
-<h3>5.1. На сайте Google — свой ключ (под тем аккаунтом, куда пойдут копии)</h3>
-<ol class="steps">
-  <li>Откройте <code>console.cloud.google.com</code> и создайте проект, например <code>dashi-backups</code>.</li>
-  <li>«APIs &amp; Services» → «Library» → найдите <b>Google Drive API</b> → <b>Enable</b>.</li>
-  <li>«OAuth consent screen» → тип <b>External</b> → заполните обязательные поля (название, ваша почта).</li>
-  <li><b>Не пропускайте:</b> «Audience» → «Test users» → «+ Add users» → впишите <b>ту же почту Gmail, которой будете входить</b> в пункте 5.2. Иначе Google ответит «Доступ заблокирован… Ошибка 403: access_denied».</li>
-  <li>«Credentials» → «Create credentials» → «OAuth client ID» → тип <b>Desktop app</b>. Скопируйте в заметку <b>Client ID</b> и <b>Client secret</b>.</li>
-</ol>
-<p class="muted">В новом интерфейсе Google эти пункты собраны в меню «Google Auth Platform»: там есть разделы «Audience» (тестировщики) и «Clients» (ключи).</p>
-
-<h3>5.2. На своём компьютере — вход в Google</h3>
-<p><b>Mac.</b> Откройте <b>новое</b> окно Терминала (<code>Cmd+N</code>) — не то, где сервер. Поставьте программу rclone, пять команд по одной (brew не нужен):</p>
-<div class="cmdbox"><pre class="cmd">cd ~/Downloads</pre></div>
-<div class="cmdbox"><pre class="cmd">A=$(uname -m | sed s/x86_64/amd64/)</pre></div>
-<div class="cmdbox"><pre class="cmd">curl -fsSLO https://downloads.rclone.org/rclone-current-osx-$A.zip</pre></div>
-<div class="cmdbox"><pre class="cmd">unzip -o rclone-current-osx-$A.zip</pre></div>
-<div class="cmdbox"><pre class="cmd">cd rclone-*-osx-$A</pre></div>
-<p>Теперь вход. Удобнее так: вставьте команду ниже в «Заметки», замените <span class="phl">ВАШ_ID</span> и <span class="phl">ВАШ_SECRET</span> на Client ID и Client secret из пункта 5.1 и уже готовую строку скопируйте в Терминал. ID и SECRET пишутся <b>через пробел, без всяких <code>--client-id</code></b>; точка и слэш в начале обязательны.</p>
-<div class="cmdbox"><pre class="cmd">./rclone authorize "drive" <span class="ph">ВАШ_ID</span> <span class="ph">ВАШ_SECRET</span></pre></div>
-<p><b>Windows.</b> Скачайте zip для Windows с <code>rclone.org/downloads</code>, распакуйте и откройте распакованную папку. Щёлкните правой кнопкой по пустому месту → «Открыть в Терминале» (в Windows 10 — с зажатым Shift → «Открыть окно PowerShell здесь»). Команда та же, только начало другое:</p>
-<div class="cmdbox"><pre class="cmd">.\rclone.exe authorize "drive" <span class="ph">ВАШ_ID</span> <span class="ph">ВАШ_SECRET</span></pre></div>
-<ol class="steps">
-  <li>Откроется браузер. Войдите в Google <b>той почтой, что добавили в «Test users»</b>.</li>
-  <li>Google может предупредить, что приложение не проверено. Это ваше собственное приложение из пункта 5.1 — нажмите «Продолжить» и разрешите доступ.</li>
-  <li>В окне терминала появится строка между стрелками:
-    <span class="screen">Paste the following into your remote machine ---&gt;
-{"access_token":"ya29...","token_type":"Bearer",...}
-&lt;---End paste</span>
-    Скопируйте строку <b>от <code>{</code> до <code>}</code> включительно</b>, без стрелок.</li>
-</ol>
-
-<h3>5.3. Обратно в окно с сервером</h3>
-<p>Установщик попросит по очереди: <b>Client ID</b>, <b>Client secret</b> и <b>Строка токена</b>. Вставьте каждое и Enter. Ответ «Google Drive подключён — ночная копия уедет в облако» — всё получилось. Копии будут лежать на Диске в папке <code>dashi-ИМЯ-backups</code>.</p>
+<p>Копия должна уезжать с сервера, иначе при поломке сервера она пропадёт вместе с ним. Всё нужное уже лежит в заметке из раздела <a href="#google">«Ключ Google для бэкапа»</a>.</p>
+<p>Установщик попросит по очереди: <b>Client ID</b>, <b>Client secret</b> и <b>Строка токена</b>. Вставьте каждое из заметки и Enter. Не сделали подготовку заранее — сделайте её сейчас в браузере и новом окне терминала, окно с сервером не закрывайте: установщик подождёт. Ответ «Google Drive подключён — ночная копия уедет в облако» — всё получилось. Копии будут лежать на Диске в папке <code>dashi-ИМЯ-backups</code>.</p>
 
 <h2 id="s6">Шаг 6. Войдите в Claude</h2>
 <ol class="steps">
@@ -332,10 +335,11 @@
   <tr><td>«запускай под root»</td><td>Вы зашли не под root. Зайдите как в шаге 1: <code>root@АДРЕС_СЕРВЕРА</code>.</td></tr>
   <tr><td>«токен не похож на настоящий»</td><td>Скопируйте токен бота у @BotFather ещё раз, целиком.</td></tr>
   <tr><td>«имя только латиницей в нижнем регистре»</td><td>Маленькие латинские буквы, без пробелов: <code>jarvis</code>, <code>pomoshnik</code>.</td></tr>
-  <tr><td>Google: «Доступ заблокирован… Ошибка 403: access_denied»</td><td>Почта, которой входите, не добавлена в тестировщики. Google Auth Platform → «Audience» → «Test users» → «+ Add users» → ваша почта Gmail. Потом снова команда <code>./rclone authorize</code> из шага 5.2.</td></tr>
+  <tr><td>Google: «Доступ заблокирован… Ошибка 403: access_denied»</td><td>Почта, которой входите, не добавлена в тестировщики. Google Auth Platform → «Audience» → «Test users» → «+ Add users» → ваша почта Gmail. Потом снова команда <code>./rclone authorize</code> из пункта Г2.</td></tr>
   <tr><td>rclone: «unknown flag: --client-id»</td><td>ID и SECRET пишутся через пробел, без флагов: <code>./rclone authorize "drive" ID SECRET</code>.</td></tr>
-  <tr><td>«command not found: ./rclone» или «no such file»</td><td>Терминал не в папке rclone. Повторите пять команд установки rclone из шага 5.2 в том же окне.</td></tr>
-  <tr><td>«Drive не подключился»</td><td>Строку токена из шага 5.2 скопировали не целиком. Нужна вся строка — с фигурными скобками <code>{ }</code> по краям.</td></tr>
+  <tr><td>«command not found: ./rclone» или «no such file»</td><td>Терминал не в папке rclone. Повторите пять команд установки rclone из пункта Г2 в том же окне.</td></tr>
+  <tr><td>Неделю всё работало, потом ночные копии перестали уезжать в облако</td><td>Приложение Google осталось в «Testing», и Google погасил вход через 7 дней. В консоли Google: «Audience» → «Publish app». Потом заново пункт Г2 и на сервере замените строку токена: <code>sudo -u agent rclone config update gdrive token 'СТРОКА_ТОКЕНА'</code> (строку — целиком, в одинарных кавычках).</td></tr>
+  <tr><td>«Drive не подключился»</td><td>Строку токена из пункта Г2 скопировали не целиком. Нужна вся строка — с фигурными скобками <code>{ }</code> по краям.</td></tr>
   <tr><td>«это не похоже на токен Claude»</td><td>Запустите установщик снова и пройдите вход в Claude ещё раз (шаг 6).</td></tr>
   <tr><td>«не смог выловить токен с экрана»</td><td>Токен напечатан выше в две строки — вставьте обе, каждую с Enter. Скриншоты этого окна не пересылайте.</td></tr>
   <tr><td>«ремонтнику нужен СВОЙ бот»</td><td>Вставили токен основного бота. Нужен токен второго бота (шаг 8) или Enter.</td></tr>

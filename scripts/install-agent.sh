@@ -1203,6 +1203,8 @@ EOF
       3) «APIs & Services» → «OAuth consent screen» → тип External →
          заполни обязательные поля → «Audience» → «Test users» → «+ Add users»:
          ТОТ адрес, которым войдёшь в шаге 7 (иначе «Ошибка 403: access_denied»)
+         и там же «Publish app» → «Confirm» (иначе через 7 дней Google гасит
+         вход и копии молча перестают уезжать в облако)
       4) «APIs & Services» → «Credentials» → «Create credentials» →
          «OAuth client ID» → тип «Desktop app» → скопируй Client ID и Client secret
 
@@ -1276,6 +1278,8 @@ EOF
       3) «APIs & Services» → «OAuth consent screen» → тип External →
          заполни обязательные поля → «Audience» → «Test users» → «+ Add users»:
          ТОТ адрес, которым войдёшь (иначе «Ошибка 403: access_denied»)
+         и там же «Publish app» → «Confirm» (иначе через 7 дней Google гасит
+         вход и копии молча перестают уезжать в облако)
       4) «APIs & Services» → «Credentials» → «Create credentials» →
          «OAuth client ID» → «Desktop app» → скопируй Client ID и Client secret
 
