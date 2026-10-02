@@ -43,11 +43,29 @@
   ol.steps > li::before { content: counter(s); position: absolute; left: 0; top: 3px; width: 28px; height: 28px;
          border-radius: 50%; background: var(--ink); color: #fff; font-weight: 700; font-size: 11pt;
          display: flex; align-items: center; justify-content: center; }
-  code, .cmd { font-family: "JetBrains Mono", Consolas, monospace; font-size: 9.6pt; }
-  .cmd { display: block; background: #12182a; color: #e7ecff; border-radius: 10px; padding: 9px 12px;
-         margin: 6px 0; white-space: pre-wrap; word-break: break-all; }
-  code { background: #eef1f7; padding: 1px 5px; border-radius: 5px; }
-  .ph { color: #ffd479; }
+  code { font-family: "JetBrains Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace; font-size: 9.6pt;
+         background: #eef1f7; padding: 1px 5px; border-radius: 5px; font-variant-ligatures: none; }
+  /* ---- Command blocks: one command = one block = one visual line ----
+     white-space: pre forbids soft wraps (a wrapped line pastes as two commands);
+     ligatures and hyphenation are off so the PDF text layer holds the same
+     characters the terminal needs. The build script fails if a block overflows.
+     One font file with Latin AND Cyrillic: a web font split into unicode-range
+     subsets switches fonts mid-command (ВАШ_ID), and PDF extractors then insert
+     a space at the switch. */
+  .cmdbox { position: relative; margin: 6px 0; break-inside: avoid; }
+  pre.cmd { display: block; margin: 0; background: #12182a; color: #e7ecff; border-radius: 10px;
+            padding: 8px 12px; font-family: "DejaVu Sans Mono", Menlo, Consolas, monospace;
+            font-size: 9.6pt; line-height: 1.45; white-space: pre; overflow-x: auto;
+            word-break: normal; overflow-wrap: normal; hyphens: none; -webkit-hyphens: none;
+            font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0, "dlig" 0;
+            letter-spacing: 0; tab-size: 4; break-inside: avoid; user-select: all; -webkit-user-select: all; }
+  .ph { color: #ffd479; text-decoration: underline dotted; text-underline-offset: 3px; }
+  .phl { font-family: "JetBrains Mono", "DejaVu Sans Mono", monospace; font-size: 9.6pt; color: #ffd479;
+         background: #12182a; padding: 1px 5px; border-radius: 5px; }
+  .copy { position: absolute; top: 5px; right: 6px; font: 600 9pt Inter, Arial, sans-serif; cursor: pointer;
+          color: #12182a; background: #e7ecff; border: 0; border-radius: 7px; padding: 4px 9px; }
+  .copy.done { background: #9be3b7; }
+  @media screen { pre.cmd { padding-right: 104px; } }
   table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 10.5pt; }
   th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
   th { background: var(--bg-soft); font-weight: 700; }
@@ -60,6 +78,7 @@
   .page-break { break-before: page; }
   .muted { color: var(--muted); }
   .foot { margin-top: 18px; font-size: 9.5pt; color: var(--muted); border-top: 1px solid var(--line); padding-top: 8px; }
+  @media print { .copy { display: none !important; } }
 </style>
 </head>
 <body>
@@ -148,17 +167,17 @@
     <ol class="steps">
       <li><b>Windows:</b> нажмите «Пуск», наберите <b>PowerShell</b>, откройте. <b>Mac:</b> откройте программу <b>Терминал</b>.</li>
       <li>Наберите команду, подставив адрес своего сервера, и нажмите Enter:
-        <span class="cmd">ssh root@<span class="ph">АДРЕС_СЕРВЕРА</span></span></li>
+        <div class="cmdbox"><pre class="cmd">ssh -o ServerAliveInterval=30 root@<span class="ph">АДРЕС_СЕРВЕРА</span></pre></div></li>
       <li>Если спросит «Are you sure you want to continue connecting» — наберите <code>yes</code> и Enter.</li>
       <li>Введите пароль root от сервера. <b>Символы при вводе не видны — это нормально.</b> Наберите вслепую и нажмите Enter.</li>
     </ol>
     <h3>Шаг 2. Запустите восстановление</h3>
     <ol class="steps">
       <li>Скопируйте четыре команды по очереди, каждую отдельно, в одном окне. Замените <span class="ph" style="background:#12182a;padding:0 4px;border-radius:4px">ИМЯ</span> (в двух местах) на имя своего агента — оно есть в названии папки на Google Диске: <code>dashi-<b>ИМЯ</b>-backups</code>:
-        <span class="cmd">H=/home/agent/.claude-lab/<span class="ph">ИМЯ</span></span>
-        <span class="cmd">A=$(ls -t $H/backups/*.gpg | head -1)</span>
-        <span class="cmd">S=$H/.claude/dashi-plugin-claude-code/scripts</span>
-        <span class="cmd">bash $S/restore-agent.sh --name <span class="ph">ИМЯ</span> --archive "$A"</span></li>
+        <div class="cmdbox"><pre class="cmd">H=/home/agent/.claude-lab/<span class="ph">ИМЯ</span></pre></div>
+        <div class="cmdbox"><pre class="cmd">A=$(ls -t $H/backups/*.gpg | head -1)</pre></div>
+        <div class="cmdbox"><pre class="cmd">S=$H/.claude/dashi-plugin-claude-code/scripts</pre></div>
+        <div class="cmdbox"><pre class="cmd">bash $S/restore-agent.sh --name <span class="ph">ИМЯ</span> --archive "$A"</pre></div></li>
       <li>Программа попросит <b>пароль от бэкапа</b>. Вставьте его (символы снова не видны) и нажмите Enter.</li>
       <li>Дальше она всё сделает сама: проверит пароль, вернёт память и настройки, переустановит всё нужное и запустит агента. Не закрывайте окно и ждите, пока внизу не появится <b>«Готово»</b> и строка <b>«✓ агент ИМЯ восстановлен из бэкапа»</b>.</li>
       <li>Напишите боту <code>/status</code>. Если он попросит войти в Claude — сделайте шаги из раздела <b>Б</b>.</li>
@@ -183,20 +202,20 @@
     <ol class="steps">
       <li>Откройте PowerShell (Windows) или Терминал (Mac), как в разделе <b>Г</b>, но <b>пока не подключайтесь к серверу</b>.</li>
       <li><b>Windows</b> — наберите (подставьте своё имя пользователя Windows, имя файла и адрес):
-        <span class="cmd">scp C:\Users\<span class="ph">ВАШ_ПОЛЬЗОВАТЕЛЬ</span>\Downloads\<span class="ph">ИМЯ_ФАЙЛА</span> root@<span class="ph">АДРЕС_СЕРВЕРА</span>:/root/</span>
+        <div class="cmdbox"><pre class="cmd">scp C:\Users\<span class="ph">ВАШ_ПОЛЬЗОВАТЕЛЬ</span>\Downloads\<span class="ph">ИМЯ_ФАЙЛА</span> root@<span class="ph">АДРЕС_СЕРВЕРА</span>:/root/</pre></div>
         <b>Mac</b>:
-        <span class="cmd">scp ~/Downloads/<span class="ph">ИМЯ_ФАЙЛА</span> root@<span class="ph">АДРЕС_СЕРВЕРА</span>:/root/</span></li>
+        <div class="cmdbox"><pre class="cmd">scp ~/Downloads/<span class="ph">ИМЯ_ФАЙЛА</span> root@<span class="ph">АДРЕС_СЕРВЕРА</span>:/root/</pre></div></li>
       <li>Ответьте <code>yes</code>, если спросит, и введите пароль root нового сервера. Файл загрузится.</li>
     </ol>
     <h3>Шаг 4. Восстановите агента</h3>
     <ol class="steps">
-      <li>Подключитесь к новому серверу: <span class="cmd">ssh root@<span class="ph">АДРЕС_СЕРВЕРА</span></span></li>
+      <li>Подключитесь к новому серверу: <div class="cmdbox"><pre class="cmd">ssh -o ServerAliveInterval=30 root@<span class="ph">АДРЕС_СЕРВЕРА</span></pre></div></li>
       <li>Скачайте программу восстановления — две команды по очереди, каждую отдельно:
-        <span class="cmd">G=https://github.com/popovalex17071985-source</span>
-        <span class="cmd">git clone $G/dashi-plugin-claude-code.git /root/dashi</span></li>
+        <div class="cmdbox"><pre class="cmd">G=https://github.com/popovalex17071985-source</pre></div>
+        <div class="cmdbox"><pre class="cmd">git clone $G/dashi-plugin-claude-code.git /root/dashi</pre></div></li>
       <li>Запустите восстановление — две команды по очереди (замените ИМЯ и ИМЯ_ФАЙЛА):
-        <span class="cmd">cd /root/dashi/scripts</span>
-        <span class="cmd">bash restore-agent.sh --name <span class="ph">ИМЯ</span> --archive /root/<span class="ph">ИМЯ_ФАЙЛА</span></span></li>
+        <div class="cmdbox"><pre class="cmd">cd /root/dashi/scripts</pre></div>
+        <div class="cmdbox"><pre class="cmd">bash restore-agent.sh --name <span class="ph">ИМЯ</span> --archive /root/<span class="ph">ИМЯ_ФАЙЛА</span></pre></div></li>
       <li>Введите <b>пароль от бэкапа</b>. Дальше программа сама поставит всё нужное, вернёт память, бота и расписание и запустит агента. Окно не закрывайте, ждите <b>«Готово»</b> и <b>«✓ агент ИМЯ восстановлен из бэкапа»</b>.</li>
       <li>Напишите боту <code>/status</code>. Если попросит войти в Claude — раздел <b>Б</b>.</li>
       <li>Когда агент заработал, попросите его: «проверь, что ночной бэкап на Google Диск настроен». На новом сервере доступ к Диску может понадобиться подключить заново — агент скажет, что для этого сделать.</li>
@@ -228,5 +247,29 @@
 </div>
 
 <div class="foot">Инструкция для агентов на Claude, поставленных нашим установщиком. Версия от 02.10.2026.</div>
+<script>
+  // Copy buttons for the browser version; hidden in print (@media print).
+  document.querySelectorAll('pre.cmd').forEach(function (pre) {
+    var btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'copy'; btn.textContent = 'Копировать';
+    btn.addEventListener('click', function () {
+      var text = pre.textContent;
+      var done = function () {
+        btn.textContent = 'Скопировано'; btn.classList.add('done');
+        setTimeout(function () { btn.textContent = 'Копировать'; btn.classList.remove('done'); }, 1500);
+      };
+      var fallback = function () {
+        var ta = document.createElement('textarea');
+        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); done(); } finally { document.body.removeChild(ta); }
+      };
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(done, fallback);
+      } else { fallback(); }
+    });
+    pre.parentNode.appendChild(btn);
+  });
+</script>
 </body>
 </html>
