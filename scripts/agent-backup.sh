@@ -58,11 +58,20 @@ for it in "${ITEMS[@]}"; do [[ -e "$it" ]] && present+=("$it"); done
 
 # Исключаем сам git-репозиторий плагина (он на GitHub) и node_modules — иначе
 # архив раздувается гигабайтами того, что и так восстановится git-клоном.
-tar czf - \
+# Долгая память (OpenViking) живёт ВНЕ workspace, в ~/.openviking. До 02.10.2026
+# её в архиве не было: умер сервер -- агент помнит всё, кроме прожитого.
+# Кладём под префиксом .openviking/, restore-agent.sh вернёт её в домашку.
+# --ignore-failed-read: контейнер оставляет там root-файлы (замок, studio.sqlite3),
+# их не прочесть -- это не повод терять весь архив.
+OV_ARGS=()
+[[ -d "$HOME/.openviking" ]] && OV_ARGS=(-C "$HOME" .openviking)
+tar czf - --ignore-failed-read \
   --exclude='.claude/dashi-plugin-claude-code' \
   --exclude='*/node_modules' \
   --exclude='state/telegram/inbox' \
-  "${present[@]}" 2>>"$LOG" \
+  --exclude='.openviking/appdata/temp' \
+  --exclude='.openviking/data/.openviking.lock' \
+  "${present[@]}" "${OV_ARGS[@]}" 2>>"$LOG" \
   | gpg --batch --yes --symmetric --cipher-algo AES256 \
         --passphrase-file "$PASS_FILE" -o "$ARCHIVE" 2>>"$LOG"
 rc=("${PIPESTATUS[@]}"); tar_rc=${rc[0]}; gpg_rc=${rc[1]}
@@ -105,7 +114,9 @@ if [[ -x "$RCLONE_BIN" ]] && "$RCLONE_BIN" listremotes 2>/dev/null | grep -q "^$
   done
   if [[ -n "$ok" ]]; then
     log "OK off-site: ${RCLONE_REMOTE}:${RCLONE_PATH}/$(basename "$ARCHIVE")"
-    "$RCLONE_BIN" delete --min-age "${RETAIN}d" "${RCLONE_REMOTE}:${RCLONE_PATH}/" 2>>"$LOG" || true
+    # Мимо корзины: Google держит удалённое 30 дней и всё это время считает в квоту
+    # (у Jarvis корзина старых архивов съела 8,3 ГБ из 15, 02.10.2026).
+    "$RCLONE_BIN" delete --drive-use-trash=false --min-age "${RETAIN}d" "${RCLONE_REMOTE}:${RCLONE_PATH}/" 2>>"$LOG" || true
   elif gws_upload "$ARCHIVE"; then
     # rclone по умолчанию ходит под ОБЩИМ ключом -- в пик Google отвечает «квота».
     # Запасной канал: googleworkspace CLI, он авторизован под нашим собственным
