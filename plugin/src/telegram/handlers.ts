@@ -1249,7 +1249,14 @@ export async function sendAlbumNotification(
   // gone by album flush time. Channel-type posts never reach this path
   // (gate.ts drops chatType==='channel' before buffering), so the
   // negative-id check cannot misclassify a channel as a group here.
+  // Альбом — как одиночное сообщение: новая группа заводится до выбора
+  // маршрута, а группа с `route: master` идёт в главную сессию, не в отдельную
+  // (у той на агенте с годовым токеном нет входа в Claude — ревью 02.10.2026).
   if (deps.router && deps.policy && isGroup) {
+    deps.router.ensureGroupJoined(ids.chatId, ids.senderId)
+  }
+  const albumToMaster = deps.policy?.chats[ids.chatId]?.route === 'master'
+  if (deps.router && deps.policy && isGroup && !albumToMaster) {
     const combinedMediaPaths: string[] = []
     for (const m of album.messages) {
       for (const p of m.mediaPaths) combinedMediaPaths.push(p)
