@@ -684,6 +684,49 @@ else
   ok "карточка прогресса включена"
 fi
 
+# Группы. Без политики плагин работает «только личка» и любую группу молча
+# выкидывает -- бота добавляли в рабочий чат, а он молчал (живая установка
+# 02.10.2026). Личка владельца -- шаблон для новых групп: route master (у
+# отдельной сессии нет входа в Claude, годовой токен ей не передаётся) и
+# open_to_members (звать через @ может любой участник группы, Саня 02.10).
+POLICY_FILE="$CLAUDE_DIR/chats/policy.yaml"
+if as_agent "test -s '$POLICY_FILE'"; then
+  skip "политика чатов на месте"
+else
+  as_agent "mkdir -p '$CLAUDE_DIR/chats' '$CLAUDE_DIR/state/multichat' && umask 077 && cat > '$POLICY_FILE'" <<EOF
+version: 1
+allowlist:
+  chats:
+    - "$USER_ID"
+  users:
+    - "$USER_ID"
+mention_allowlist:
+  - "$USER_ID"
+chats:
+  "$USER_ID":
+    mode: private
+    streaming: progress
+    tmux_mirror: false
+    edit_message_progress: true
+    delivery: streamed
+    persona_file: CLAUDE.md
+    handoff_file: core/hot/handoff.md
+    system_reminder: ""
+    route: master
+    open_to_members: true
+EOF
+  ok "группы включены: добавь бота в чат и позови через @ — заведётся сам"
+fi
+if ! grep -q "^TELEGRAM_MULTICHAT_ENABLED=" "$ENV_FILE"; then
+  cat >> "$ENV_FILE" <<EOF
+# Группы (политика -- $POLICY_FILE)
+TELEGRAM_MULTICHAT_ENABLED=true
+TELEGRAM_MULTICHAT_POLICY_PATH=$POLICY_FILE
+TELEGRAM_MULTICHAT_STATE_DIR=$CLAUDE_DIR/state/multichat
+TELEGRAM_MULTICHAT_WORKSPACE_DIR=$CLAUDE_DIR
+EOF
+fi
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 7. Hooks
 # ─────────────────────────────────────────────────────────────────────────────

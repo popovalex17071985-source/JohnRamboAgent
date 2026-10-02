@@ -50,6 +50,11 @@ export const ChatPolicySchema = z
     // Only addressed messages ever reach here (mention gate in handlers),
     // so merging a chat in does NOT pour group chatter into that context.
     route: z.enum(['session', 'master']).optional(),   // absent = own session
+    // Группа открыта для всех участников: звать агента через @ может любой, кто
+    // в ней сидит, а не только люди из allowlist.users / mention_allowlist
+    // (Саня 02.10.2026: «надо чтобы все кто в группе могли»). Заводит группу
+    // по-прежнему только человек из allowlist.users.
+    open_to_members: z.boolean().optional(),
     idle_ttl_ms: z.number().int().positive().default(1_800_000),
     max_queue_depth: z.number().int().positive().default(1),
   })
@@ -331,6 +336,11 @@ export function autojoinGroupChat(
     system_reminder: '',
     idle_ttl_ms: 1_800_000,
     max_queue_depth: 1,
+    // Маршрут — как у лички владельца. На агенте с годовым токеном личка стоит
+    // на `route: master`: отдельной сессии нечем войти в Claude (токен в её
+    // окружение не передаётся по замыслу), и группа без маршрута глохла.
+    ...(owner?.route !== undefined ? { route: owner.route } : {}),
+    ...(owner?.open_to_members !== undefined ? { open_to_members: owner.open_to_members } : {}),
   }
   if (!policy.allowlist.chats.includes(chatId)) policy.allowlist.chats.push(chatId)
 
@@ -400,4 +410,18 @@ export function shouldMirrorTmuxForChat(
   const entry = policy.chats[chatId]
   if (entry === undefined) return false
   return entry.tmux_mirror === true
+}
+
+/**
+ * Кого слушать в группе: в открытой группе (`open_to_members`) — любого
+ * участника (undefined = без фильтра по отправителю, @-упоминание всё равно
+ * обязательно), иначе — только mention_allowlist.
+ */
+export function mentionAllowlistFor(
+  policy: MultichatPolicy | undefined,
+  chatId: string | undefined,
+): readonly string[] | undefined {
+  if (policy === undefined) return undefined
+  if (chatId !== undefined && policy.chats[chatId]?.open_to_members === true) return undefined
+  return policy.mention_allowlist
 }
