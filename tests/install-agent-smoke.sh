@@ -118,6 +118,6 @@ grep -q 'перезапуск завершён' "$S" || fail "dashi-run не ш�
 # 02.10.2026 живая установка упала на обоих.
 INST="$(cd "$(dirname "$0")/.." && pwd)/scripts/install-agent.sh"
 GUIDE="$(cd "$(dirname "$0")/.." && pwd)/docs/install-guide/install-guide.html"
-! grep -q -e '--client-id' "$INST" "$GUIDE" || fail "подсказка зовёт rclone authorize с несуществующим флагом --client-id"
+! grep -q -e 'rclone authorize.*--client-id' "$INST" "$GUIDE" || fail "подсказка зовёт rclone authorize с несуществующим флагом --client-id"
 ! grep -q 'brew install rclone' "$INST" "$GUIDE" || fail "подсказка шлёт ставить rclone через brew, которого на маке нет"
 echo "✓ подсказки про rclone authorize рабочие"
