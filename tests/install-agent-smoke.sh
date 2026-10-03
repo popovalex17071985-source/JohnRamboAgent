@@ -127,6 +127,6 @@ echo "✓ подсказки про rclone authorize рабочие"
 grep -q 'НАДО сделать администратором группы' "$INST" || fail "установщик не говорит, что бота в группе надо сделать админом"
 grep -q 'Сделать бота администратором — обязательно' "$GUIDE" || fail "инструкция не требует сделать бота админом группы"
 # Связь не рвётся на долгих вопросах, а команды из PDF не переносятся по строкам
-grep -q 'ssh -o ServerAliveInterval=30 root@' "$GUIDE" || fail "в инструкции ssh без ServerAliveInterval"
+grep -q 'ssh -o ServerAliveInterval=30 -l root ' "$GUIDE" || fail "в инструкции ssh без ServerAliveInterval"
 grep -q 'white-space: pre;' "$GUIDE" || fail "блоки команд в инструкции могут переноситься по строкам"
 echo "✓ инструкция: группы через админа, ssh с keepalive, команды без переносов"
