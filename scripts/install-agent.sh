@@ -273,6 +273,13 @@ else
   # иначе хуки встанут с пустым chat-id и прогресс-пузырёк уедет в никуда.
   USER_ID="$(sed -n 's/^TELEGRAM_ALLOWED_USER_IDS=//p' "$ENV_FILE" | head -1)"
   [[ -n "$USER_ID" ]] || die "в $ENV_FILE нет TELEGRAM_ALLOWED_USER_IDS — почини файл или удали его и запусти снова"
+  # Ключ OpenAI нигде не хранится, кроме ov.conf, а спрашивался только в первом
+  # прогоне. Первый оборвался или его перезапустили с другим --tz -- второй молча
+  # ставил локальную модель, хотя ключ хозяин давал (Альберт, 02.10.2026).
+  if [[ -z "$OPENAI_KEY" && $ASSUME_YES -eq 0 ]] \
+     && ! grep -q '"api_base": *"https://api.openai.com' "/home/$SERVICE_USER/.openviking/ov.conf" 2>/dev/null; then
+    ask OPENAI_KEY "Память агента сейчас без ключа OpenAI. Ключ OpenAI -- СОВЕТУЮ (Enter -- оставить как есть): " 0
+  fi
 fi
 
 if [[ $ASSUME_YES -eq 0 ]]; then
@@ -1553,6 +1560,16 @@ EOF
         -H 'Content-Type: application/json' -d "{\"uri\":\"$u\",\"mode\":\"vectors_only\"}" >/dev/null 2>&1 || true
     done
     ok "память пересчитана под ключ OpenAI"
+  fi
+  if [[ -n "$OPENAI_KEY" && -f /etc/systemd/system/dashi-embed.service ]]; then
+    # Память переехала на ключ -- локальная модель больше не нужна, а держала
+    # ~0.7 ГБ: на 4 ГБ без подкачки агента Гора за двое суток 4 раза прибило
+    # по памяти (03.10.2026). Юнит уносим из systemd целиком: health-check
+    # узнаёт службу по файлу и иначе кричал бы «служба эмбеддингов лежит».
+    systemctl disable --now -q dashi-embed 2>/dev/null || true
+    mv /etc/systemd/system/dashi-embed.service "/root/dashi-embed.service.retired-$(date +%F)"
+    systemctl daemon-reload
+    ok "локальная модель памяти выключена -- оперативка освобождена"
   fi
   curl -s -o /dev/null http://127.0.0.1:1933/ 2>/dev/null && ok "сервер памяти отвечает на 1933" \
     || warn "сервер памяти не ответил за 90 сек — смотри docker logs openviking; плагин подхватит, когда поднимется"

@@ -130,3 +130,10 @@ grep -q 'Сделать бота администратором — обязат
 grep -q 'ssh -o ServerAliveInterval=30 root@' "$GUIDE" || fail "в инструкции ssh без ServerAliveInterval"
 grep -q 'white-space: pre;' "$GUIDE" || fail "блоки команд в инструкции могут переноситься по строкам"
 echo "✓ инструкция: группы через админа, ssh с keepalive, команды без переносов"
+# Переезд памяти на ключ OpenAI выключает локальную модель, иначе она так и ест ~0.7 ГБ
+grep -q 'systemctl disable --now -q dashi-embed' "$S" || fail "после ключа OpenAI локальная модель памяти не выключается"
+grep -q 'dashi-embed.service.retired-' "$S" || fail "юнит dashi-embed не уносится (health-check будет кричать)"
+echo "✓ память: ключ OpenAI выключает локальную модель"
+# Повторный прогон переспрашивает ключ OpenAI, если память на локальной модели
+grep -q 'Память агента сейчас без ключа OpenAI' "$S" || fail "повторный прогон не спрашивает ключ OpenAI для локальной памяти"
+echo "✓ память: повторный прогон переспрашивает ключ OpenAI"
