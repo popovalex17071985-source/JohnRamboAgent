@@ -1554,6 +1554,16 @@ EOF
     done
     ok "память пересчитана под ключ OpenAI"
   fi
+  if [[ -n "$OPENAI_KEY" && -f /etc/systemd/system/dashi-embed.service ]]; then
+    # Память переехала на ключ -- локальная модель больше не нужна, а держала
+    # ~0.7 ГБ: на 4 ГБ без подкачки агента Гора за двое суток 4 раза прибило
+    # по памяти (03.10.2026). Юнит уносим из systemd целиком: health-check
+    # узнаёт службу по файлу и иначе кричал бы «служба эмбеддингов лежит».
+    systemctl disable --now -q dashi-embed 2>/dev/null || true
+    mv /etc/systemd/system/dashi-embed.service "/root/dashi-embed.service.retired-$(date +%F)"
+    systemctl daemon-reload
+    ok "локальная модель памяти выключена -- оперативка освобождена"
+  fi
   curl -s -o /dev/null http://127.0.0.1:1933/ 2>/dev/null && ok "сервер памяти отвечает на 1933" \
     || warn "сервер памяти не ответил за 90 сек — смотри docker logs openviking; плагин подхватит, когда поднимется"
   # Плагин Claude Code: env в settings.json + marketplace + install (всё под агентом)
