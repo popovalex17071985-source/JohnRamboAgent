@@ -1176,53 +1176,6 @@
       <MemorySize>1024</MemorySize><Color>Серый</Color></Ad>
 
       <Ad>
-        <Id>1904811753</Id>
-        <DateBegin>2023-03-01</DateBegin>
-        <DateEnd>2033-03-31</DateEnd>
-        <ListingFee>Package</ListingFee>
-        <AdStatus>Free</AdStatus>
-        
-        <ManagerName>Тимофей</ManagerName>
-        <ContactPhone>+73422140020</ContactPhone>
-        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
-        <GoodsType>Мобильные телефоны</GoodsType>
-        <AdType>Товар приобретен на продажу</AdType>
-        <Category>Телефоны</Category>
-        <Title>iPhone 11 Pro 256Gb Space Gray бу</Title>
-        <Description><![CDATA[<p>iPhone 11 Pro 256Gb Space Gray бу</p>
-<p>✅Отличное состояние, общие следы эксплуатации, была замена дисплейного модуля на оригинал, технически исправен<br>✅Комплект: устройство <br>✅Аккумулятор 100%🔋 Заменен в нашем СЦ<br>✅Гарантия 180 дней</p>
-<p>🔥 Более 100 единиц проверенной бу техники всегда в наличии</p>
-<p>👍🏼 Гарантия лучшей стоимости</p>
-<p>💰Возможна покупка в кредит и по банковской карте</p>
-<p>🔄 Сдайте своё старое устройство по программе TRADE IN и получите скидку до 70% на это устройство</p>
-<p>⬇️ Сделаем скидку на предложение конкурента</p>
-<p>🥇Работаем для Вас с 2008 года и дорожим своей репутацией</p>
-<p>☝🏼Вся Б/У техника является ОРИГИНАЛЬНОЙ, проверена нашим сервисным центром по чек листу из 27 пунктов и является полноценно функционирующей</p>
-<p>Арт. 91739</p>]]></Description>
-        <Price>17990</Price>
-        
-        <Model>iPhone 11 Pro</Model>
-        <Images>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/1089/3237635137/tempImagefstyET.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/1097/3237635145/tempImagepsFkXz.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/1105/3237635153/tempImageU1vITz.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/1113/3237635161/tempImageLPAFf7.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/1121/3237635169/tempImage6ZA7ZV.jpg"/>
-        </Images>
-        <MemorySize>256 ГБ</MemorySize>
-        <Color>серый</Color>
-        <Vendor>Apple</Vendor>
-        <Category>Телефоны</Category>
-        
-        <RamSize>4 ГБ</RamSize>
-        
-        <Condition>отличное</Condition>
-        <AdType>Товар приобретен на продажу</AdType>
-        <Case_Condition>Мелкие царапины</Case_Condition>
-        <Screen_Condition>Без дефектов</Screen_Condition>
-      <ScreenCondition>Без дефектов</ScreenCondition><CaseCondition>Мелкие царапины</CaseCondition><Devicework>Включается</Devicework><Akb>100</Akb></Ad>
-
-      <Ad>
         <Id>1905316937</Id>
         <DateBegin>2023-03-01</DateBegin>
         <DateEnd>2033-03-31</DateEnd>
@@ -3286,7 +3239,7 @@
         <Condition>новое</Condition>
         <MemorySize>256 ГБ</MemorySize>
         <AdType>Товар приобретен на продажу</AdType>
-      <Revalidate>2985037</Revalidate></Ad>
+      <Revalidate>2985043</Revalidate></Ad>
 <Ad>
         <Id>496127545</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -3484,7 +3437,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2985037</Revalidate></Ad>
+      <Revalidate>2985043</Revalidate></Ad>
 <Ad>
         <Id>1640714561</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -3634,7 +3587,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2985037</Revalidate></Ad>
+      <Revalidate>2985043</Revalidate></Ad>
 <Ad>
         <Id>1640726593</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -3784,7 +3737,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2985037</Revalidate></Ad>
+      <Revalidate>2985043</Revalidate></Ad>
 <Ad>
         <Id>1640736641</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4384,7 +4337,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2985037</Revalidate></Ad>
+      <Revalidate>2985043</Revalidate></Ad>
 <Ad>
         <Id>1642060329</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4484,7 +4437,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2985037</Revalidate></Ad>
+      <Revalidate>2985043</Revalidate></Ad>
 <Ad>
         <Id>1642061641</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4784,7 +4737,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2985037</Revalidate></Ad>
+      <Revalidate>2985043</Revalidate></Ad>
 <Ad>
         <Id>1645613473</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4934,7 +4887,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2985037</Revalidate></Ad>
+      <Revalidate>2985043</Revalidate></Ad>
 <Ad>
         <Id>1645614297</Id>
         <DateBegin>2023-03-01</DateBegin>
