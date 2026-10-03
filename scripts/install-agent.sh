@@ -273,6 +273,13 @@ else
   # иначе хуки встанут с пустым chat-id и прогресс-пузырёк уедет в никуда.
   USER_ID="$(sed -n 's/^TELEGRAM_ALLOWED_USER_IDS=//p' "$ENV_FILE" | head -1)"
   [[ -n "$USER_ID" ]] || die "в $ENV_FILE нет TELEGRAM_ALLOWED_USER_IDS — почини файл или удали его и запусти снова"
+  # Ключ OpenAI нигде не хранится, кроме ov.conf, а спрашивался только в первом
+  # прогоне. Первый оборвался или его перезапустили с другим --tz -- второй молча
+  # ставил локальную модель, хотя ключ хозяин давал (Альберт, 02.10.2026).
+  if [[ -z "$OPENAI_KEY" && $ASSUME_YES -eq 0 ]] \
+     && ! grep -q '"api_base": *"https://api.openai.com' "/home/$SERVICE_USER/.openviking/ov.conf" 2>/dev/null; then
+    ask OPENAI_KEY "Память агента сейчас без ключа OpenAI. Ключ OpenAI -- СОВЕТУЮ (Enter -- оставить как есть): " 0
+  fi
 fi
 
 if [[ $ASSUME_YES -eq 0 ]]; then
