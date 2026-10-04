@@ -70,6 +70,15 @@ function sanitizeModelId(value: unknown): string | undefined {
   return trimmed
 }
 
+export interface ContextUsageOptions {
+  // After /compact Claude Code writes a `{"type":"system","subtype":
+  // "compact_boundary"}` line and no assistant usage until the next turn, so a
+  // plain backward scan reports the PRE-compact size. When true, a main-thread
+  // boundary newer than the last usable turn yields `{ usedTokens: 0, pct: 0 }`
+  // ("context just reset"). Default false keeps the HUD / /status behaviour.
+  resetAtCompactBoundary?: boolean
+}
+
 /**
  * Scan transcript lines BACKWARDS and return the context usage of the last
  * main-thread assistant turn that carries a `message.usage`.
@@ -86,6 +95,7 @@ function sanitizeModelId(value: unknown): string | undefined {
 export function computeContextUsage(
   lines: string[],
   windowTokens: number,
+  opts: ContextUsageOptions = {},
 ): ContextUsage | null {
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i]
@@ -101,9 +111,25 @@ export function computeContextUsage(
     }
     if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) continue
 
-    const record = obj as { isSidechain?: unknown; message?: unknown }
+    const record = obj as {
+      isSidechain?: unknown
+      message?: unknown
+      type?: unknown
+      subtype?: unknown
+    }
     // Skip subagent/sidechain turns — their usage is a separate context.
     if (record.isSidechain === true) continue
+
+    // Opt-in: a main-thread compact boundary NEWER than any usable turn means
+    // the context was just compacted and no turn has run since — the
+    // pre-compact usage further up no longer describes the window.
+    if (
+      opts.resetAtCompactBoundary === true &&
+      record.type === 'system' &&
+      record.subtype === 'compact_boundary'
+    ) {
+      return { usedTokens: 0, pct: 0 }
+    }
 
     const message = record.message
     if (typeof message !== 'object' || message === null) continue
@@ -156,6 +182,7 @@ export function computeContextUsage(
 export async function readContextUsage(
   transcriptPath: string,
   windowTokens: number,
+  opts: ContextUsageOptions = {},
 ): Promise<ContextUsage | null> {
   let handle: FileHandle | undefined
   try {
@@ -185,7 +212,7 @@ export async function readContextUsage(
     // filter empties so a trailing newline doesn't produce an empty parse.
     const lines = (start > 0 ? split.slice(1) : split).filter((l) => l.length > 0)
 
-    return computeContextUsage(lines, windowTokens)
+    return computeContextUsage(lines, windowTokens, opts)
   } catch {
     return null
   } finally {

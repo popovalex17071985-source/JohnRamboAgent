@@ -362,6 +362,25 @@ export const AppConfigSchema = z.object({
   hud: z.object({
     enabled: z.boolean().default(true),
   }).optional(),
+  // Idle auto-compact — when the agent session has been idle long enough that
+  // the 1h prompt cache is about to expire AND the context is large, run
+  // Claude Code's own /compact while the cache is still warm (a cheap cache
+  // read), so the next inbound message lands on a small context instead of
+  // re-writing ~300k tokens of cold cache. Never interrupts a busy pane.
+  // Default ON.
+  //
+  //   `idle_minutes`       — transcript untouched this long = idle. Must stay
+  //                          BELOW the 60-min cache TTL (past it the cache is
+  //                          already cold and compacting saves nothing).
+  //   `min_context_tokens` — only compact a context at least this large.
+  //
+  // OPTIONAL block (no `.default({})`), like `hud`, so old config.json files
+  // and test literals stay valid; `resolveIdleCompactConfig` applies defaults.
+  idle_compact: z.object({
+    enabled: z.boolean().default(true),
+    idle_minutes: z.number().int().min(5).max(59).default(55),
+    min_context_tokens: z.number().int().min(10_000).max(10_000_000).default(150_000),
+  }).optional(),
   // Rich Messages (M1, Bot API 10.1, 2026-06-14). When enabled, a DM reply
   // whose body fits 32768 bytes ships as a single RAW-markdown rich message
   // (Telegram renders tables/math/headings/task-lists/<details>/footnotes)
@@ -1084,6 +1103,30 @@ export function resolveContextWindowTokens(config: AppConfig): number {
 
 export function resolveHudEnabled(config: AppConfig): boolean {
   return config.hud?.enabled ?? true
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// resolveIdleCompactConfig — effective idle auto-compact settings. The
+// `idle_compact` block is optional; the defaults (on, 55 min, 150k tokens)
+// live here in one place. Callers MUST NOT read `config.idle_compact` directly.
+// ─────────────────────────────────────────────────────────────────────
+
+export const IDLE_COMPACT_DEFAULT_MINUTES = 55
+export const IDLE_COMPACT_DEFAULT_MIN_TOKENS = 150_000
+
+export interface IdleCompactSettings {
+  enabled: boolean
+  idleMinutes: number
+  minContextTokens: number
+}
+
+export function resolveIdleCompactConfig(config: AppConfig): IdleCompactSettings {
+  const block = config.idle_compact
+  return {
+    enabled: block?.enabled ?? true,
+    idleMinutes: block?.idle_minutes ?? IDLE_COMPACT_DEFAULT_MINUTES,
+    minContextTokens: block?.min_context_tokens ?? IDLE_COMPACT_DEFAULT_MIN_TOKENS,
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────

@@ -8,6 +8,7 @@ import {
   redactToken,
   resolveAskGuardMode,
   resolveAskUserQuestionAllowedUserIds,
+  resolveIdleCompactConfig,
   RuntimeEnvSchema,
 } from '../src/config.js'
 
@@ -661,5 +662,77 @@ describe('resolveAskGuardMode', () => {
     const cfg = loadConfig(env())
     process.env.ASK_GUARD_ENABLED = '1'
     expect(resolveAskGuardMode(cfg)).toBe('advisory')
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────
+// resolveIdleCompactConfig — proactive /compact before the 1h prompt cache
+// expires on an idle, large session. The `idle_compact` block is OPTIONAL so
+// old config.json files (and the many test literals) still load; the helper
+// applies the defaults (on, 55 min, 150k tokens) in one place.
+// ─────────────────────────────────────────────────────────────────────
+
+describe('resolveIdleCompactConfig', () => {
+  test('old config without the block loads and gets the defaults', () => {
+    writeFileSync(join(stateDir, 'config.json'), JSON.stringify({ dm_only: true }))
+    const cfg = loadConfig(env())
+    expect(cfg.idle_compact).toBeUndefined()
+    expect(resolveIdleCompactConfig(cfg)).toEqual({
+      enabled: true,
+      idleMinutes: 55,
+      minContextTokens: 150_000,
+    })
+  })
+
+  test('partial block fills the missing fields with defaults', () => {
+    writeFileSync(
+      join(stateDir, 'config.json'),
+      JSON.stringify({ idle_compact: { idle_minutes: 50 } }),
+    )
+    const cfg = loadConfig(env())
+    expect(resolveIdleCompactConfig(cfg)).toEqual({
+      enabled: true,
+      idleMinutes: 50,
+      minContextTokens: 150_000,
+    })
+  })
+
+  test('explicit values are honored, enabled:false disables', () => {
+    writeFileSync(
+      join(stateDir, 'config.json'),
+      JSON.stringify({
+        idle_compact: { enabled: false, idle_minutes: 45, min_context_tokens: 200_000 },
+      }),
+    )
+    const cfg = loadConfig(env())
+    expect(resolveIdleCompactConfig(cfg)).toEqual({
+      enabled: false,
+      idleMinutes: 45,
+      minContextTokens: 200_000,
+    })
+  })
+
+  test('idle_minutes must stay below the 60-min cache TTL', () => {
+    writeFileSync(
+      join(stateDir, 'config.json'),
+      JSON.stringify({ idle_compact: { idle_minutes: 60 } }),
+    )
+    expect(() => loadConfig(env())).toThrow()
+  })
+
+  test('idle_minutes below the floor is rejected', () => {
+    writeFileSync(
+      join(stateDir, 'config.json'),
+      JSON.stringify({ idle_compact: { idle_minutes: 0 } }),
+    )
+    expect(() => loadConfig(env())).toThrow()
+  })
+
+  test('absurd min_context_tokens is rejected', () => {
+    writeFileSync(
+      join(stateDir, 'config.json'),
+      JSON.stringify({ idle_compact: { min_context_tokens: 500 } }),
+    )
+    expect(() => loadConfig(env())).toThrow()
   })
 })

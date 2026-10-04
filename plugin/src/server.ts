@@ -32,6 +32,7 @@ import {
   resolveGuestModeAllowedUserIds,
   resolveGuestModeEnabled,
   resolveHudEnabled,
+  resolveIdleCompactConfig,
   resolveOwnerChatIds,
   type AppConfig,
   type StatePaths,
@@ -58,6 +59,11 @@ import { TmuxMirror } from './status/tmux-mirror.js'
 import { defaultTmuxExec } from './status/pane-capture.js'
 import { TaskRealityMirror } from './status/task-reality-mirror.js'
 import { SessionInfoStore } from './status/session-info.js'
+import {
+  createIdleCompactorIo,
+  IdleCompactor,
+  resolveOwnerTranscriptPath,
+} from './status/idle-compactor.js'
 import { readLaunchModelId } from './status/launch-model.js'
 import {
   ContextHud,
@@ -1384,6 +1390,23 @@ if (tmuxKeysTarget === undefined) {
   })
 }
 
+// Idle auto-compact — when the owner session has sat idle long enough that the
+// 1h prompt cache is about to expire AND the context is large, run Claude
+// Code's own /compact while the cache is still warm, so the next inbound
+// message lands on a small context instead of a ~300k cold cache write. Never
+// interrupts a busy pane; inert without a tmux target. See idle-compactor.ts.
+const idleCompactSettings = resolveIdleCompactConfig(config)
+const idleCompactor = new IdleCompactor({
+  log,
+  enabled: idleCompactSettings.enabled,
+  idleMinutes: idleCompactSettings.idleMinutes,
+  minContextTokens: idleCompactSettings.minContextTokens,
+  target: tmuxKeysTarget,
+  getTranscriptPath: () => resolveOwnerTranscriptPath(sessionInfoStore, hudOwnerChatIds),
+  ...createIdleCompactorIo(),
+})
+idleCompactor.start()
+
 const handlerDeps: HandlerDeps = {
   server: mcp,
   config,
@@ -1491,6 +1514,7 @@ function shutdown(): void {
   if (shuttingDown) return
   shuttingDown = true
   log.info('shutting down')
+  idleCompactor.stop()
 
   // Best-effort: clean up any pulsing status messages so the chat doesn't
   // show a stale "Печатает..." after the bot dies. Errors are swallowed
