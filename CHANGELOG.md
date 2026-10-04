@@ -13,6 +13,25 @@ Versions before 1.0.0 were not tracked — the project shipped ~60 merged PRs
 between 2026-05-14 and 2026-06-14 without a version discipline. 1.0.0
 retroactively marks the state of `main` on 2026-06-14.
 
+## [Unreleased]
+
+### Added
+- **Idle auto-compact.** When the owner session's transcript has been untouched
+  for `idle_minutes` (default 55) — i.e. the 1-hour prompt cache is about to
+  expire — and the context is at least `min_context_tokens` (default 150 000),
+  the plugin runs Claude Code's own `/compact` in the pane while the cache is
+  still warm (a cheap cache read). The next inbound message then lands on a
+  small context instead of re-writing ~300k tokens of cold cache. Checked every
+  60 s; never interrupts a busy pane (busy/dialog/unknown → skipped and
+  re-checked); at most one attempt per idle period plus a 30-minute cooldown;
+  skipped once idle passes 60 min (cache already cold) or right after a compact
+  (a newer compact boundary reads as an empty context). Logged only, no
+  Telegram messages. Inert without a resolvable tmux pane.
+  Config: optional block
+  `idle_compact: { enabled: true, idle_minutes: 55, min_context_tokens: 150000 }`
+  (`idle_minutes` 5–59, `min_context_tokens` 10 000–10 000 000); a missing block
+  means ON with the defaults. Disable with `"idle_compact": { "enabled": false }`.
+
 ## [1.3.0] — 2026-07-22
 
 ### Added

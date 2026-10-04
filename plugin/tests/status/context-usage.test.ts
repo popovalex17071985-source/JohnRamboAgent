@@ -328,6 +328,90 @@ describe('readContextUsage (file tail)', () => {
   })
 })
 
+// ─────────────────────────────────────────────────────────────────────
+// resetAtCompactBoundary — after /compact Claude Code writes a
+// `{"type":"system","subtype":"compact_boundary"}` line followed by the
+// summary user line, and NO assistant usage until the next turn. A plain
+// backward scan would walk past the boundary to the PRE-compact usage and
+// report a huge context that no longer exists. The idle auto-compactor opts in
+// to treating a boundary newer than the last usable turn as "context reset"
+// (usedTokens 0), so it never re-compacts an already-compacted session. The
+// default (HUD, /status) behaviour is unchanged.
+// ─────────────────────────────────────────────────────────────────────
+
+function compactBoundaryLine(opts: { isSidechain?: boolean } = {}): string {
+  return JSON.stringify({
+    type: 'system',
+    subtype: 'compact_boundary',
+    isSidechain: opts.isSidechain ?? false,
+    content: 'Conversation compacted',
+  })
+}
+
+function compactSummaryLine(): string {
+  return JSON.stringify({
+    type: 'user',
+    isSidechain: false,
+    isCompactSummary: true,
+    message: { role: 'user', content: 'This session is being continued…' },
+  })
+}
+
+describe('computeContextUsage — resetAtCompactBoundary', () => {
+  const big = { input_tokens: 10, cache_read_input_tokens: 290000 }
+
+  test('default: a boundary is ignored (legacy behaviour kept)', () => {
+    const lines = [assistantLine(big), compactBoundaryLine(), compactSummaryLine()]
+    expect(computeContextUsage(lines, 1_000_000)?.usedTokens).toBe(290010)
+  })
+
+  test('opt-in: boundary newer than the last turn → usedTokens 0', () => {
+    const lines = [assistantLine(big), compactBoundaryLine(), compactSummaryLine()]
+    const u = computeContextUsage(lines, 1_000_000, { resetAtCompactBoundary: true })
+    expect(u).not.toBeNull()
+    expect(u?.usedTokens).toBe(0)
+    expect(u?.pct).toBe(0)
+  })
+
+  test('opt-in: a turn AFTER the boundary is the live usage', () => {
+    const lines = [
+      assistantLine(big),
+      compactBoundaryLine(),
+      compactSummaryLine(),
+      assistantLine({ input_tokens: 5, cache_creation_input_tokens: 30000 }),
+    ]
+    const u = computeContextUsage(lines, 1_000_000, { resetAtCompactBoundary: true })
+    expect(u?.usedTokens).toBe(30005)
+  })
+
+  test('opt-in: a sidechain boundary is not the main thread’s', () => {
+    const lines = [assistantLine(big), compactBoundaryLine({ isSidechain: true })]
+    const u = computeContextUsage(lines, 1_000_000, { resetAtCompactBoundary: true })
+    expect(u?.usedTokens).toBe(290010)
+  })
+
+  test('readContextUsage forwards the option through the file path', async () => {
+    const { writeFileSync, mkdtempSync, rmSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const { readContextUsage } = await import('../../src/status/context-usage.js')
+    const dir = mkdtempSync(join(tmpdir(), 'ctxusage-cb-'))
+    try {
+      const p = join(dir, 's.jsonl')
+      writeFileSync(
+        p,
+        [assistantLine(big), compactBoundaryLine(), compactSummaryLine()].join('\n') + '\n',
+      )
+      expect((await readContextUsage(p, 200000))?.usedTokens).toBe(290010)
+      expect(
+        (await readContextUsage(p, 200000, { resetAtCompactBoundary: true }))?.usedTokens,
+      ).toBe(0)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('formatContextUsage', () => {
   test('rounds tokens to nearest 1k and pct to integer', () => {
     expect(formatContextUsage({ usedTokens: 114000 }, 200000)).toBe('114k / 200k (57%)')
