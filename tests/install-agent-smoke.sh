@@ -138,3 +138,14 @@ echo "✓ память: ключ OpenAI выключает локальную м
 # Повторный прогон переспрашивает ключ OpenAI, если память на локальной модели
 grep -q 'Память агента сейчас без ключа OpenAI' "$S" || fail "повторный прогон не спрашивает ключ OpenAI для локальной памяти"
 echo "✓ память: повторный прогон переспрашивает ключ OpenAI"
+# Закрытый репозиторий (05.10.2026): ключ только на чтение -- в заголовок клона
+# (его видят все, кто тянет обновления), копия в secrets/ (переживает бэкап)
+grep -q 'REPO_TOKEN="${REPO_TOKEN:-${DASHI_REPO_TOKEN:-}}"' "$INST" || fail "установщик не берёт ключ репозитория из DASHI_REPO_TOKEN"
+grep -q 'REPO_HDR_KEY="http.https://github.com/.extraheader"' "$INST" || fail "ключ репозитория не кладётся заголовком в клон"
+grep -q 'secrets/repo-token' "$INST" || fail "ключ репозитория не сохраняется в secrets/ (восстановление спросит заново)"
+eval "$(sed -n '/^repo_auth_header()/p' "$INST")"
+[[ "$(repo_auth_header abc)" == "Authorization: Basic $(printf 'x-access-token:abc' | base64 -w0)" ]] \
+  || fail "заголовок ключа репозитория собран неверно"
+grep -q 'curl -fsSL -H "$H" $R/$P/scripts/install-agent.sh' "$GUIDE" || fail "инструкция скачивает установщик без ключа"
+grep -q 'sudo DASHI_REPO_TOKEN=$K bash install-agent.sh' "$GUIDE" || fail "инструкция не передаёт ключ установщику"
+echo "✓ закрытый репозиторий: ключ в клоне и в secrets/, инструкция качает с ключом"

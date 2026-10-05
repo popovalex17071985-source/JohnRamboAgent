@@ -25,6 +25,7 @@
 #   ... --user agent                         # системный пользователь агента (по умолчанию agent)
 #   ... --webhook-port 8089                  # порт приёмника хуков; второму агенту на хосте — свой (+ свой --user)
 #   ... --repo URL                           # откуда клонировать плагин (по умолчанию GitHub)
+#   ... --repo-token github_pat_...          # ключ к ЗАКРЫТОМУ репозиторию (только чтение); лучше через DASHI_REPO_TOKEN
 #   ... --yes                                # без вопросов (cloud-init, CI): необязательное пропускается
 #
 set -euo pipefail
@@ -53,7 +54,7 @@ USER_GIVEN=0; PORT_GIVEN=0
 [[ -n "${DASHI_SERVICE_USER:-}" ]] && USER_GIVEN=1
 [[ -n "${DASHI_WEBHOOK_PORT:-}" ]] && PORT_GIVEN=1
 
-AGENT_NAME=""; BOT_TOKEN=""; USER_ID=""; GROQ_KEY=""; OPENAI_KEY=""; CLAUDE_TOKEN=""; REPAIR_TOKEN=""; ASSUME_YES=0
+REPO_TOKEN=""; AGENT_NAME=""; BOT_TOKEN=""; USER_ID=""; GROQ_KEY=""; OPENAI_KEY=""; CLAUDE_TOKEN=""; REPAIR_TOKEN=""; ASSUME_YES=0
 MODEL="${DASHI_MODEL:-}"
 OWNER_TZ="${DASHI_OWNER_TZ:-}"
 SKIP_BROWSER=0
@@ -90,6 +91,7 @@ while [[ $# -gt 0 ]]; do
     --user)      SERVICE_USER="$2"; USER_GIVEN=1; shift 2 ;;
     --webhook-port) WEBHOOK_PORT="$2"; PORT_GIVEN=1; shift 2 ;;   # порт приёмника хуков (по умолчанию 8089)
     --repo)      REPO_URL="$2";   shift 2 ;;
+    --repo-token) REPO_TOKEN="$2"; shift 2 ;;  # ключ к закрытому репозиторию; DASHI_REPO_TOKEN не светится в ps
     --branch)    BRANCH="$2";     shift 2 ;;   # main (по умолчанию) | feature-ветка для staging
     --tz)        OWNER_TZ="$2";   shift 2 ;;   # пояс ХОЗЯИНА: сводка приходит в 09:00 по нему
     --model)     MODEL="$2";      shift 2 ;;   # opus|sonnet|haiku|полный id; пусто = дефолт аккаунта
@@ -416,7 +418,52 @@ if [[ -d "/home/$SERVICE_USER" ]]; then
   ok "владелец домашней папки нормализован ($SERVICE_USER)"
 fi
 
+# Репозиторий закрытый (05.10.2026): без ключа GitHub отвечает «нет такого».
+# Ключ -- token GitHub только на чтение, СВОЙ у каждого агента: хозяин отозвал
+# ключ -- этот агент перестал получать обновления, остальные не задеты. Ключ
+# живёт заголовком в .git/config клона: его подхватывают все, кто тянет
+# обновления (повторный прогон, dashi-ctl update, советник, проверка стека),
+# и он не попадает в адрес origin, который печатают git remote -v и логи.
+# Копия -- в secrets/ workspace'а: клон в бэкап не входит, а secrets/ входит,
+# поэтому восстановление из бэкапа не спрашивает ключ заново.
+REPO_DIR="$CLAUDE_DIR/dashi-plugin-claude-code"
+REPO_TOKEN_FILE="$WORKSPACE/secrets/repo-token"
+REPO_TOKEN="${REPO_TOKEN:-${DASHI_REPO_TOKEN:-}}"
+[[ -z "$REPO_TOKEN" && -s "$REPO_TOKEN_FILE" ]] && REPO_TOKEN="$(tr -d '[:space:]' < "$REPO_TOKEN_FILE")"
+REPO_HDR_KEY="http.https://github.com/.extraheader"
+repo_auth_header() { printf 'Authorization: Basic %s' "$(printf 'x-access-token:%s' "$1" | base64 -w0)"; }
+repo_reachable() {  # repo_reachable [ключ] -- видно ли репозиторий (без ключа = анонимно)
+  local -a cfg=(-c credential.helper=)
+  [[ -n "${1:-}" ]] && cfg+=(-c "$REPO_HDR_KEY=$(repo_auth_header "$1")")
+  GIT_TERMINAL_PROMPT=0 timeout 60 git "${cfg[@]}" ls-remote --heads "$REPO_URL" >/dev/null 2>&1
+}
+repo_has_saved_token() {
+  [[ -f "$REPO_DIR/.git/config" ]] && git config --file "$REPO_DIR/.git/config" --get "$REPO_HDR_KEY" >/dev/null 2>&1
+}
+save_repo_token() {  # кладёт ключ в клон: дальше обновления идут сами
+  git config --file "$REPO_DIR/.git/config" "$REPO_HDR_KEY" "$(repo_auth_header "$REPO_TOKEN")"
+  chown "$SERVICE_USER:$SERVICE_USER" "$REPO_DIR/.git/config"
+  chmod 600 "$REPO_DIR/.git/config"
+  ( umask 077; printf '%s\n' "$REPO_TOKEN" > "$REPO_TOKEN_FILE" )
+  chown "$SERVICE_USER:$SERVICE_USER" "$REPO_TOKEN_FILE"
+}
+if [[ -n "$REPO_TOKEN" ]]; then
+  repo_reachable "$REPO_TOKEN" \
+    || die "ключ к репозиторию не подошёл: GitHub не пускает с ним в $REPO_URL. Попроси у хозяина новый (только чтение, Contents: Read)"
+  ok "ключ к репозиторию подошёл"
+elif repo_has_saved_token || repo_reachable; then
+  :  # ключ уже лежит в клоне или репозиторий открыт (--repo на своё зеркало)
+else
+  echo "    Репозиторий агента закрытый. Нужен ключ доступа -- его выдаёт хозяин"
+  echo "    репозитория (строка вида github_pat_...)."
+  ask REPO_TOKEN "    Ключ доступа к репозиторию: "
+  repo_reachable "$REPO_TOKEN" \
+    || die "ключ к репозиторию не подошёл. Проверь, что скопирован целиком, или попроси новый"
+  ok "ключ к репозиторию подошёл"
+fi
+
 if [[ -d "$CLAUDE_DIR/dashi-plugin-claude-code/.git" ]]; then
+  [[ -n "$REPO_TOKEN" ]] && save_repo_token
   # Повторный прогон = обновление плагина, иначе фиксы моста не доезжают.
   # set-url обязателен: старые установки смотрят origin'ом в чужое репо.
   # reset --hard стирает правки в отслеживаемых файлах — как dashi-ctl update,
@@ -432,8 +479,12 @@ if [[ -d "$CLAUDE_DIR/dashi-plugin-claude-code/.git" ]]; then
       || warn "не смог обновить плагин (нет сети до GitHub?) — работаю на том, что есть"
   fi
 else
-  as_agent "git clone --depth 1 --branch '$BRANCH' '$REPO_URL' '$CLAUDE_DIR/dashi-plugin-claude-code'" >/dev/null 2>&1 \
+  CLONE_CFG=""
+  [[ -n "$REPO_TOKEN" ]] && CLONE_CFG="-c '$REPO_HDR_KEY=$(repo_auth_header "$REPO_TOKEN")'"
+  as_agent "git $CLONE_CFG clone --depth 1 --branch '$BRANCH' '$REPO_URL' '$CLAUDE_DIR/dashi-plugin-claude-code'" >/dev/null 2>&1 \
     || die "не удалось склонировать $REPO_URL"
+  unset CLONE_CFG
+  [[ -n "$REPO_TOKEN" ]] && save_repo_token
   ok "плагин склонирован"
 fi
 
