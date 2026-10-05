@@ -1423,6 +1423,9 @@ const handlerDeps: HandlerDeps = {
   statusManager,
   albumBuffer,
   watcher: inboundWatcher,
+  // Arms the progress card only for the chat whose message reaches the master
+  // session — cron / group-inbox turns no longer open one in the owner DM.
+  progressReporter,
   // Optional /mirror control surface — undefined when tmux_mirror.enabled=false.
   ...(tmuxMirror !== null ? { tmuxMirror } : {}),
   // Status pin (2026-07-04): re-anchor the pinned card on every inbound owner
@@ -1763,6 +1766,7 @@ void (async () => {
             bot: botIdentity,
             telegramApi,
             statusManager,
+            progressReporter,
             ...(multichatRouter !== undefined ? { router: multichatRouter } : {}),
             ...(multichatPolicy !== undefined ? { policy: multichatPolicy } : {}),
           },

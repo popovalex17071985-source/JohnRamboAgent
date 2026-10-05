@@ -376,6 +376,30 @@ describe('accepted inbound journal (accepted-inbound.jsonl)', () => {
   })
 })
 
+// Progress card arming (31.08.2026): a message delivered to the master session
+// arms the progress card for ITS chat; a dropped one arms nothing.
+describe('handleInboundText — progress card arming', () => {
+  test('delivered DM calls noteInbound with that chat id', async () => {
+    const noted: string[] = []
+    const { deps, statePaths } = makeDeps()
+    deps.progressReporter = { noteInbound: (id: string) => { noted.push(id) } }
+    const ctx = makeCtx({ text: 'сделай', chatId: 164795011, chatType: 'private', fromId: 164795011 })
+    await handleInboundText(ctx, deps)
+    expect(noted).toEqual(['164795011'])
+    rmSync(statePaths.root, { recursive: true, force: true })
+  })
+
+  test('gate-dropped sender does not arm the card', async () => {
+    const noted: string[] = []
+    const { deps, statePaths } = makeDeps()
+    deps.progressReporter = { noteInbound: (id: string) => { noted.push(id) } }
+    const ctx = makeCtx({ text: 'привет', chatId: 999001, chatType: 'private', fromId: 999001 })
+    await handleInboundText(ctx, deps)
+    expect(noted).toEqual([])
+    rmSync(statePaths.root, { recursive: true, force: true })
+  })
+})
+
 describe('handleInboundText — OOB allowed_chat_ids gate (Fix 6)', () => {
   test('allowed user in chat NOT in allowed_chat_ids: OOB rejected, falls through', async () => {
     // Config: user is allowed, but chat 99999 is NOT.

@@ -41,11 +41,14 @@ const silentLog = createLogger('test', {
 })
 
 // `overrides` patch the nested `progress` block (enabled / session_ttl_ms).
+// The queue-machinery tests below predate the inbound gate, so this fixture
+// turns it OFF (any event may open a card); the «inbound gate» block at the
+// bottom exercises the production default (gate ON).
 function makeConfig(overrides: Partial<AppConfig['progress']> = {}): AppConfig {
   const base = makeSharedConfig()
   return {
     ...base,
-    progress: { ...base.progress, ...overrides },
+    progress: { ...base.progress, open_on_inbound_only: false, ...overrides },
   }
 }
 
@@ -664,6 +667,154 @@ describe('ProgressReporter', () => {
       const sends = api.calls.filter((c) => c.kind === 'send')
       expect(sends.length).toBe(2)
       expect(sends[1]!.text).toContain('echo next turn')
+    })
+  })
+
+  // 31.08.2026 owner complaint: every hook event carries the owner DM chat id,
+  // so cron prompts and group-inbox turns opened a «работаю…» card in the DM.
+  // With the gate ON (production default) only a turn started by an inbound
+  // from that chat may open one.
+  describe('inbound gate (open_on_inbound_only, default ON)', () => {
+    const DM = '164995011'
+    function gated(overrides: Partial<AppConfig['progress']> = {}): AppConfig {
+      const base = makeSharedConfig()
+      const progress = { ...base.progress, ...overrides }
+      delete progress.open_on_inbound_only // absent = default ON
+      return { ...base, progress }
+    }
+    function forkBash(toolUseId = 'fork-1'): ActivityStatusEvent {
+      return {
+        kind: 'tool_start',
+        toolName: 'Bash',
+        toolInput: { command: 'No suggestion' },
+        toolUseId,
+        subagentId: 'a0123456789abcdef',
+      }
+    }
+    const sends = (api: FakeApi): ApiCall[] => api.calls.filter((c) => c.kind === 'send')
+
+    test('inbound, then tool events -> card opens and Stop closes it', async () => {
+      const { reporter, clock, api } = makeReporter({ config: gated() })
+      reporter.noteInbound(DM)
+      clock.advance(2_000)
+      await reporter.recordEvent(DM, bashStart('t1', 'echo answer'))
+      clock.advance(3_000)
+      await reporter.recordEvent(DM, readStart('t2'))
+      await reporter._idleForTests(DM)
+      expect(sends(api).length).toBe(1)
+      expect(sends(api)[0]!.text).toContain('echo answer')
+      await reporter.recordEvent(DM, STOP)
+      expect(api.calls.at(-1)!.text).toContain('done -- ')
+    })
+
+    test('tool events with no inbound -> no card', async () => {
+      const { reporter, api } = makeReporter({ config: gated() })
+      await reporter.recordEvent(DM, { kind: 'reasoning' })
+      await reporter.recordEvent(DM, bashStart('cron-1', 'echo cron'))
+      await reporter.recordEvent(DM, { kind: 'tool_end', toolName: 'Bash', toolInput: {}, toolUseId: 'cron-1' })
+      await reporter._idleForTests(DM)
+      expect(api.calls.length).toBe(0)
+      expect(reporter.isBusy(DM, 60_000)).toBe(false)
+    })
+
+    test('inbound from ANOTHER chat does not arm this one', async () => {
+      const { reporter, api } = makeReporter({ config: gated() })
+      reporter.noteInbound('-1001234567890') // group handled by the master session
+      await reporter.recordEvent(DM, bashStart('g1', 'echo group inbox'))
+      await reporter._idleForTests(DM)
+      expect(api.calls.length).toBe(0)
+    })
+
+    test('inbound, Stop, then a cron turn -> no new card', async () => {
+      const { reporter, clock, api } = makeReporter({ config: gated() })
+      reporter.noteInbound(DM)
+      clock.advance(1_000)
+      await reporter.recordEvent(DM, bashStart('t1', 'echo owner turn'))
+      await reporter._idleForTests(DM)
+      await reporter.recordEvent(DM, STOP)
+      const before = api.calls.length
+      clock.advance(5 * 60_000)
+      await reporter.recordEvent(DM, { kind: 'reasoning' })
+      await reporter.recordEvent(DM, bashStart('cron-1', 'echo cron'))
+      await reporter._idleForTests(DM)
+      expect(api.calls.length).toBe(before)
+      expect(sends(api).length).toBe(1)
+    })
+
+    test('a tool-less owner turn (inbound, Stop) also consumes the arm', async () => {
+      const { reporter, clock, api } = makeReporter({ config: gated() })
+      reporter.noteInbound(DM)
+      clock.advance(1_000)
+      await reporter.recordEvent(DM, STOP)
+      clock.advance(60_000)
+      await reporter.recordEvent(DM, bashStart('cron-1', 'echo cron'))
+      await reporter._idleForTests(DM)
+      expect(api.calls.length).toBe(0)
+    })
+
+    test('inbound after the last event of a running turn survives its Stop', async () => {
+      // Cron turn is busy; the owner writes after its last tool boundary, so
+      // Claude Code runs his message as the NEXT turn — that one gets a card.
+      const { reporter, clock, api } = makeReporter({ config: gated() })
+      await reporter.recordEvent(DM, bashStart('cron-1', 'echo cron'))
+      clock.advance(1_000)
+      reporter.noteInbound(DM)
+      clock.advance(1_000)
+      await reporter.recordEvent(DM, STOP)
+      expect(api.calls.length).toBe(0)
+      clock.advance(1_000)
+      await reporter.recordEvent(DM, bashStart('t1', 'echo owner turn'))
+      await reporter._idleForTests(DM)
+      expect(sends(api).length).toBe(1)
+      expect(sends(api)[0]!.text).toContain('echo owner turn')
+    })
+
+    test('an arm older than inbound_ttl_ms no longer opens a card', async () => {
+      const { reporter, clock, api } = makeReporter({ config: gated({ inbound_ttl_ms: 60_000 }) })
+      reporter.noteInbound(DM)
+      clock.advance(60_001)
+      await reporter.recordEvent(DM, bashStart('late-1'))
+      await reporter._idleForTests(DM)
+      expect(api.calls.length).toBe(0)
+    })
+
+    test('a card evicted by session_ttl_ms mid-turn reopens while the arm lives', async () => {
+      const { reporter, clock, api } = makeReporter({ config: gated({ session_ttl_ms: 60_000 }) })
+      reporter.noteInbound(DM)
+      await reporter.recordEvent(DM, bashStart('t1', 'echo first'))
+      await reporter._idleForTests(DM)
+      clock.advance(60_001) // long silent tool run
+      await reporter.recordEvent(DM, bashStart('t2', 'echo after long run'))
+      await settle()
+      await reporter._idleForTests(DM)
+      expect(sends(api).length).toBe(2)
+      expect(sends(api)[1]!.text).toContain('echo after long run')
+    })
+
+    test('sub-agent rule unchanged: armed chat, sub-agent event alone never opens a card', async () => {
+      const { reporter, api } = makeReporter({ config: gated() })
+      reporter.noteInbound(DM)
+      await reporter.recordEvent(DM, forkBash())
+      await reporter._idleForTests(DM)
+      expect(api.calls.length).toBe(0)
+      // ...but it still annotates the card the main loop opens.
+      await reporter.recordEvent(DM, bashStart('t1', 'echo main'))
+      await reporter._idleForTests(DM)
+      expect(sends(api).length).toBe(1)
+    })
+
+    test('an open card is still annotated by events of a non-inbound turn', async () => {
+      // Owner turn opens the card; a cron prompt merged before its Stop keeps
+      // feeding the same card (annotate, not open).
+      const { reporter, clock, api } = makeReporter({ config: gated() })
+      reporter.noteInbound(DM)
+      await reporter.recordEvent(DM, bashStart('t1', 'echo owner'))
+      await reporter._idleForTests(DM)
+      clock.advance(3_001)
+      await reporter.recordEvent(DM, readStart('t2', '/abs/cron.ts'))
+      await reporter._idleForTests(DM)
+      expect(sends(api).length).toBe(1)
+      expect(api.calls.at(-1)!.text).toContain('cron.ts')
     })
   })
 })

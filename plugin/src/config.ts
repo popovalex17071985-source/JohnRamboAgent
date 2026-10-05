@@ -143,11 +143,23 @@ export const AppConfigSchema = z.object({
   //
   // recent_buffer aligned with StatusManager.ACTIVITY_MAX_BUFFER (10)
   // so the two surfaces report the same "+N earlier" tail count.
+  //
+  // open_on_inbound_only (31.08.2026 owner complaint): every hook event is
+  // posted with the owner DM chat id, so cron prompts and group-inbox turns
+  // used to open a «работаю…» card in the owner DM. When true, a card opens
+  // only after an inbound Telegram message from that chat was delivered to
+  // the session (noteInbound) and before the turn's Stop; other turns may
+  // annotate an open card but never open one. inbound_ttl_ms bounds how long
+  // such an arm stays valid (generous, so a long turn still counts).
   progress: z.object({
     enabled: z.boolean().default(false),
     edit_throttle_ms: z.number().int().nonnegative().default(3000),
     recent_buffer: z.number().int().positive().default(10),
     session_ttl_ms: z.number().int().positive().default(10 * 60 * 1000),
+    // Optional (absent = true / 60 min, resolved in ProgressReporter) so the
+    // many hand-written AppConfig fixtures stay valid.
+    open_on_inbound_only: z.boolean().optional(),
+    inbound_ttl_ms: z.number().int().positive().optional(),
   }).default({}),
   // TaskMirror (PR-A2, 2026-05-20) — third rolling Telegram message per chat,
   // showing Claude's TodoWrite milestones (in-progress / pending / completed).
