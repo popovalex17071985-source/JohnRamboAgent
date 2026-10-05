@@ -35,6 +35,7 @@ grep -q 'secrets from the owner I put into secrets/' "$S" \
 grep -q 'chmod 660 "\$ENV_FILE"' "$S" || fail "конфиг с секретами не закрыт"
 # Restart=always безопасен с тех пор, как диалоги жмёт dashi-press-dialogs
 grep -q 'Restart=always'          "$S" || fail "сервис должен подниматься сам (Restart=always)"
+grep -q 'OOMPolicy=continue'      "$S" || fail "тяжёлый скрипт не должен ронять весь сервис (OOMPolicy=continue)"
 
 # Годовой токен вместо 30-дневного логина: setup-token + запись в channel.env
 grep -q 'claude setup-token'          "$S" || fail "нет входа через setup-token (годовой токен)"

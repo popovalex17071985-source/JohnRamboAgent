@@ -1009,6 +1009,10 @@ ExecStop=/usr/bin/tmux kill-session -t channel-$AGENT_NAME
 
 Restart=always
 RestartSec=15s
+# Один тяжёлый скрипт агента (фото, rembg), съевший память, не должен ронять
+# весь сервис: без этого OOM-killer убивает дочерний процесс, а systemd гасит
+# юнит целиком (Jarvis, 04.10.2026). С continue умирает только виновник.
+OOMPolicy=continue
 
 [Install]
 WantedBy=multi-user.target
