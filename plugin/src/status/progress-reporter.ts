@@ -74,6 +74,11 @@ const NOISY_TOOL_PREFIXES: ReadonlyArray<string> = [
   'mcp__dashi-gbrain-recall__',
 ]
 
+// How long an inbound arm stays valid when progress.inbound_ttl_ms is unset.
+// Generous: the first event of the answering turn may lag behind a busy
+// session, and a card evicted by session_ttl_ms mid-turn may reopen.
+const DEFAULT_INBOUND_TTL_MS = 60 * 60 * 1000
+
 export function shouldSkipTool(toolName: string): boolean {
   if (NOISY_TOOL_NAMES.has(toolName)) return true
   return NOISY_TOOL_PREFIXES.some((p) => toolName.startsWith(p))
@@ -82,6 +87,14 @@ export function shouldSkipTool(toolName: string): boolean {
 export class ProgressReporter extends PerChatMessageQueue<ChatProgressEntry> {
   private readonly config: AppConfig
   protected readonly logPrefix = 'progress reporter'
+  // chatId -> ms an inbound Telegram message from that chat was last handed
+  // to the session (noteInbound). While present and fresh, the chat may open
+  // a card; cleared by the Stop of the turn that consumed it.
+  private readonly inboundAt = new Map<string, number>()
+  // chatId -> ms of the latest main-loop (non-subagent, non-Stop) event of
+  // the current turn. Lets Stop tell an inbound this turn already drained
+  // from one that arrived after its last tool boundary (= the next turn's).
+  private readonly turnEventAt = new Map<string, number>()
 
   constructor(deps: ProgressReporterDeps) {
     super({
@@ -103,6 +116,7 @@ export class ProgressReporter extends PerChatMessageQueue<ChatProgressEntry> {
     if (!this.config.progress.enabled) return
     try {
       if (event.kind === 'session_stop') {
+        this.endTurn(chatId)
         await this.handleStop(chatId)
         return
       }
@@ -112,6 +126,15 @@ export class ProgressReporter extends PerChatMessageQueue<ChatProgressEntry> {
       if (isSubagentToolEvent(event)) {
         this.evictIfExpired(chatId)
         if (!this.hasLiveEntry(chatId)) return
+      } else {
+        this.turnEventAt.set(chatId, this.now())
+        // A turn nobody in this chat asked for (cron prompt, a group's inbox
+        // processed by the master session — all hook events carry the owner
+        // DM chat id) may annotate an open card but never opens one.
+        if (!this.mayOpenCard(chatId)) {
+          this.evictIfExpired(chatId)
+          if (!this.hasLiveEntry(chatId)) return
+        }
       }
 
       const entry = this.getOrCreate(chatId)
@@ -125,6 +148,15 @@ export class ProgressReporter extends PerChatMessageQueue<ChatProgressEntry> {
         error: err instanceof Error ? err.message : String(err),
       })
     }
+  }
+
+  /**
+   * Record that an inbound Telegram message from `chatId` was just handed to
+   * the agent session. Arms the chat: tool events of the turn that answers it
+   * may open a progress card (see `open_on_inbound_only`). Never throws.
+   */
+  noteInbound(chatId: string): void {
+    this.inboundAt.set(chatId, this.now())
   }
 
   /**
@@ -247,6 +279,33 @@ export class ProgressReporter extends PerChatMessageQueue<ChatProgressEntry> {
         // kept for exhaustiveness.
         break
     }
+  }
+
+  // True when the chat may open a NEW card: the gate is off, or an inbound
+  // from this chat arrived within inbound_ttl_ms and no Stop consumed it.
+  private mayOpenCard(chatId: string): boolean {
+    const cfg = this.config.progress
+    if (!(cfg.open_on_inbound_only ?? true)) return true
+    const at = this.inboundAt.get(chatId)
+    if (at === undefined) return false
+    if (this.now() - at > (cfg.inbound_ttl_ms ?? DEFAULT_INBOUND_TTL_MS)) {
+      this.inboundAt.delete(chatId)
+      return false
+    }
+    return true
+  }
+
+  // Turn boundary. The arm is consumed by this turn unless the inbound came
+  // in AFTER the turn's last main-loop event: Claude Code feeds a queued
+  // message at a tool boundary, so one that arrived later was not drained
+  // and starts the next turn — keep its arm for that turn.
+  private endTurn(chatId: string): void {
+    const at = this.inboundAt.get(chatId)
+    const lastEvent = this.turnEventAt.get(chatId)
+    this.turnEventAt.delete(chatId)
+    if (at === undefined) return
+    if (lastEvent !== undefined && at > lastEvent) return
+    this.inboundAt.delete(chatId)
   }
 
   // An entry getOrCreate would reuse. Call evictIfExpired first so a

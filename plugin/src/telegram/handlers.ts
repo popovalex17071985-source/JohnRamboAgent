@@ -138,6 +138,15 @@ export interface AlbumDispatchDeps {
   // concatenated). Otherwise the legacy MCP notify path runs.
   router?: MultichatRouter
   policy?: MultichatPolicy
+  progressReporter?: InboundProgressSink
+}
+
+// Progress card arming (31.08.2026): the master-session delivery paths tell
+// the ProgressReporter which chat just wrote, so only the turn answering that
+// chat may open a «работаю…» card there. Structural to keep handlers
+// decoupled from the concrete reporter.
+export interface InboundProgressSink {
+  noteInbound(chatId: string): void
 }
 
 export interface HandlerDeps {
@@ -197,6 +206,9 @@ export interface HandlerDeps {
   // resolved once at boot). Carries the `[1m]` window marker that the transcript's
   // model id drops, so /status can resolve a 1M window exactly like the pinned HUD.
   launchModel?: string | undefined
+  // Optional: arms the progress card for the chat whose message is delivered
+  // to the master session (see InboundProgressSink). Absent in older tests.
+  progressReporter?: InboundProgressSink
   // Multichat router. When present together with `policy`, all gated
   // inbound traffic is dispatched to the per-chat tmux session via
   // `router.dispatch(InboundMessage)` instead of the legacy
@@ -732,6 +744,7 @@ async function gateAndNotify(
     deps.statusManager.startTypingOnly(decision.chatId)
   }
 
+  deps.progressReporter?.noteInbound(decision.chatId)
   deps.log.info('inbound delivered', { kind, chat_id: decision.chatId })
   const delivered = await sendChannelNotification(deps.server, event, deps.log)
   if (!delivered) {
@@ -1043,6 +1056,7 @@ async function tryRouteToAlbumBuffer(
     ...(deps.statusManager !== undefined ? { statusManager: deps.statusManager } : {}),
     ...(deps.router !== undefined ? { router: deps.router } : {}),
     ...(deps.policy !== undefined ? { policy: deps.policy } : {}),
+    ...(deps.progressReporter !== undefined ? { progressReporter: deps.progressReporter } : {}),
   }
   const chatIdAtPush = decision.chatId
   const senderIdAtPush = decision.senderId
@@ -1332,6 +1346,7 @@ export async function sendAlbumNotification(
     media_group_id: ids.mediaGroupId,
     album_size: album.messages.length,
   })
+  deps.progressReporter?.noteInbound(ids.chatId)
   const delivered = await sendChannelNotification(deps.server, event, deps.log)
   if (!delivered) {
     deps.statusManager?.stopTypingOnly(ids.chatId)
