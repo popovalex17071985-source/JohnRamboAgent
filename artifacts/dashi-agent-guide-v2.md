@@ -107,8 +107,9 @@ ssh root@123.45.67.89
 Вставь обе строки целиком:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/popovalex17071985-source/JohnRamboAgent/main/scripts/install-agent.sh -o install-agent.sh
-sudo bash install-agent.sh
+K=КЛЮЧ_ДОСТУПА   # репозиторий закрытый: ключ только на чтение выдаёт хозяин репозитория
+curl -fsSL -H "Authorization: token $K" https://raw.githubusercontent.com/popovalex17071985-source/JohnRamboAgent/main/scripts/install-agent.sh -o install-agent.sh
+sudo DASHI_REPO_TOKEN=$K bash install-agent.sh
 ```
 
 Он спросит по очереди — ровно это и в этом порядке:
@@ -929,7 +930,7 @@ cd ~/.claude-lab/myagent/.claude
 
 **[СЕРВЕР]** (ты в `~/.claude-lab/myagent/.claude`):
 ```
-git clone https://github.com/popovalex17071985-source/JohnRamboAgent.git
+git clone https://x-access-token:$K@github.com/popovalex17071985-source/JohnRamboAgent.git   # K -- ключ доступа
 cd dashi-plugin-claude-code/plugin
 bun install
 ```

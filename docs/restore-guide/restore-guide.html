@@ -210,10 +210,12 @@
     <h3>Шаг 4. Восстановите агента</h3>
     <ol class="steps">
       <li>Подключитесь к новому серверу: <div class="cmdbox"><pre class="cmd">ssh -o ServerAliveInterval=30 root@<span class="ph">АДРЕС_СЕРВЕРА</span></pre></div></li>
-      <li>Скачайте программу восстановления — две команды по очереди, каждую отдельно:
-        <div class="cmdbox"><pre class="cmd">G=https://github.com/popovalex17071985-source</pre></div>
-        <div class="cmdbox"><pre class="cmd">git clone $G/JohnRamboAgent.git /root/dashi</pre></div></li>
-      <li>Запустите восстановление — две команды по очереди (замените ИМЯ и ИМЯ_ФАЙЛА):
+      <li>Скачайте программу восстановления — три команды по очереди, каждую отдельно. В первой замените <code>КЛЮЧ_ДОСТУПА</code> на ключ, который мы выдали при установке (строка вида <code>github_pat_...</code>). Потеряли ключ — напишите нам, выдадим новый.
+        <div class="cmdbox"><pre class="cmd">K=<span class="ph">КЛЮЧ_ДОСТУПА</span></pre></div>
+        <div class="cmdbox"><pre class="cmd">G=github.com/popovalex17071985-source</pre></div>
+        <div class="cmdbox"><pre class="cmd">git clone https://x-access-token:$K@$G/JohnRamboAgent.git /root/dashi</pre></div></li>
+      <li>Запустите восстановление — три команды по очереди (замените ИМЯ и ИМЯ_ФАЙЛА):
+        <div class="cmdbox"><pre class="cmd">export DASHI_REPO_TOKEN=$K</pre></div>
         <div class="cmdbox"><pre class="cmd">cd /root/dashi/scripts</pre></div>
         <div class="cmdbox"><pre class="cmd">bash restore-agent.sh --name <span class="ph">ИМЯ</span> --archive /root/<span class="ph">ИМЯ_ФАЙЛА</span></pre></div></li>
       <li>Введите <b>пароль от бэкапа</b>. Дальше программа сама поставит всё нужное, вернёт память, бота и расписание и запустит агента. Окно не закрывайте, ждите <b>«Готово»</b> и <b>«✓ агент ИМЯ восстановлен из бэкапа»</b>.</li>
