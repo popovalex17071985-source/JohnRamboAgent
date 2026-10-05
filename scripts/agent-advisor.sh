@@ -169,7 +169,18 @@ fi
 # Ключ с sha: новое письмо только когда в origin появились новые коммиты.
 REPO="$WS/dashi-plugin-claude-code"
 BRANCH="$(sed -n 's/^DASHI_BRANCH=//p' "$ENV_FILE" | head -1)"; BRANCH="${BRANCH:-main}"
-if [[ -d "$REPO/.git" ]] && git -C "$REPO" fetch -q --depth 30 origin "$BRANCH" 2>/dev/null; then
+# Репозиторий закрытый (05.10.2026): ключ доступа живёт ограниченный срок, и
+# протухший ключ раньше значил бы тихую остановку обновлений навсегда.
+FETCH_ERR=""
+if [[ -d "$REPO/.git" ]] && ! FETCH_ERR="$(GIT_TERMINAL_PROMPT=0 git -C "$REPO" fetch -q --depth 30 origin "$BRANCH" 2>&1)"; then
+  if grep -qiE 'could not read Username|Authentication failed|returned error: 40[134]|Repository not found' <<<"$FETCH_ERR"; then
+    advise "repo-access-$(date +%G-%V)" "Я перестал получать обновления: GitHub не пускает меня по ключу доступа к репозиторию. Скорее всего, ключ истёк или его отозвали.
+
+Попроси у того, кто ставил агента, новый ключ (только чтение) и запусти установщик ещё раз: <code>sudo DASHI_REPO_TOKEN=КЛЮЧ bash install-agent.sh --name ИМЯ</code>. Сам я работаю как работал."
+  fi
+  FETCH_ERR="failed"
+fi
+if [[ -d "$REPO/.git" && "$FETCH_ERR" != "failed" ]]; then
   # The advisor runs only on Claude agents (install-agent.sh). A commit whose every
   # file is Codex-side (install-codex.sh, codex bridge) changes nothing here -- 29.09
   # «Codex-мост принимает PDF» went to a Claude agent's owner: «а зачем мне такое?».
