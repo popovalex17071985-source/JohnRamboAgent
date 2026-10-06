@@ -55,6 +55,12 @@ export const ChatPolicySchema = z
     // (Саня 02.10.2026: «надо чтобы все кто в группе могли»). Заводит группу
     // по-прежнему только человек из allowlist.users.
     open_to_members: z.boolean().optional(),
+    // Слушать ВСЕ сообщения группы без @-тега и ответа на бота (06.10.2026, просил
+    // владелец клиента для своей группы: «чтобы нам не нужно было тебя тегать»).
+    // По умолчанию выключено. Бот должен видеть сообщения группы
+    // (админ или выключенный privacy mode). Кто вообще может писать, по-прежнему
+    // решает allowlist / open_to_members.
+    listen_all: z.boolean().optional(),
     idle_ttl_ms: z.number().int().positive().default(1_800_000),
     max_queue_depth: z.number().int().positive().default(1),
   })
@@ -424,4 +430,13 @@ export function mentionAllowlistFor(
   if (policy === undefined) return undefined
   if (chatId !== undefined && policy.chats[chatId]?.open_to_members === true) return undefined
   return policy.mention_allowlist
+}
+
+/** Группа, где агент берёт в работу каждое сообщение, а не только с @-тегом. */
+export function listensToAll(
+  policy: MultichatPolicy | undefined,
+  chatId: string | undefined,
+): boolean {
+  if (policy === undefined || chatId === undefined) return false
+  return policy.chats[chatId]?.listen_all === true
 }
