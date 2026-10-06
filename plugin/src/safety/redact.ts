@@ -194,6 +194,23 @@ const URL_RE = /https?:\/\/[^\s<>"'),;\]]+/g
 // the exemption past the real link.
 const URL_TRAILING_PUNCT_RE = /[.:!?]+$/
 
+// WORD-IDENTIFIER EXEMPTION (2026-10-06): snake_case file names and
+// SCREAMING_SNAKE env var names are names, not secrets — masking them broke
+// an instruction sent to another team (a memory-note filename lost its
+// middle). Single-case, starts with a letters-only word, and every segment
+// looks like a word: letters-only ≤16, digits-only ≤8 (dates), or a short
+// mixed chunk ≤4 (`v2`, `x86`). Random secrets fail on case or segment shape.
+const WORD_SEGMENT_RE = /^(?:[a-z]{1,16}|[0-9]{1,8}|[a-z0-9]{1,4})$/
+
+function isWordIdentifier(token: string): boolean {
+  const lower = token.toLowerCase()
+  if (token !== lower && token !== token.toUpperCase()) return false
+  const parts = lower.split('_')
+  const first = parts[0] ?? ''
+  if (parts.length < 2 || !/^[a-z]+$/.test(first)) return false
+  return parts.every((p) => WORD_SEGMENT_RE.test(p))
+}
+
 // Replace GENERIC_LONG_TOKEN_RE matches everywhere EXCEPT inside http(s)
 // URLs. Ranges are recomputed per call from the current text (earlier
 // rules may have shifted offsets). Idempotent: skipped matches are left
@@ -212,7 +229,7 @@ function maskLongTokensOutsideUrls(text: string): string {
       const inUrl = urlRanges.some(
         ([start, end]) => offset >= start && offset < end,
       )
-      return inUrl ? match : `${head}***${tail}`
+      return inUrl || isWordIdentifier(match) ? match : `${head}***${tail}`
     },
   )
 }

@@ -199,6 +199,29 @@ describe('redactSecrets — URL exemption for the generic long-token rule', () =
     expect(out).toMatch(/abcd\*\*\*WXYZ/)
   })
 
+  // 2026-10-06: a memory-note filename told to another team in a group chat
+  // arrived with its middle starred out — the instruction became useless.
+  // Word-shaped snake_case / SCREAMING_SNAKE identifiers are names, not secrets.
+  test('a snake_case file name survives (word-identifier exemption)', () => {
+    const out = redactSecrets('прочитай feedback_amo_session_survival.md в памяти')
+    expect(out).toContain('feedback_amo_session_survival.md')
+  })
+
+  test('an ALLCAPS env var name survives', () => {
+    const out = redactSecrets('export TELEGRAM_ALLOWED_USER_IDS=1')
+    expect(out).toContain('TELEGRAM_ALLOWED_USER_IDS')
+  })
+
+  test('a mixed-case token with underscores is STILL masked', () => {
+    const out = redactSecrets('key Ab3dE_fGh7iJkLmN_9pQrStUvWx end')
+    expect(out).not.toContain('Ab3dE_fGh7iJkLmN_9pQrStUvWx')
+  })
+
+  test('a long lowercase run without word breaks is STILL masked', () => {
+    const out = redactSecrets('key a1b2c3d4e5f6g7h8i9j0k1l2_m3n4 end')
+    expect(out).not.toContain('a1b2c3d4e5f6g7h8i9j0k1l2_m3n4')
+  })
+
   test('?token= query param inside a URL is STILL redacted', () => {
     const out = redactSecrets(
       'https://example.com/hook?token=supersecretvalue123456',
