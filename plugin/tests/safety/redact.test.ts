@@ -217,6 +217,21 @@ describe('redactSecrets — URL exemption for the generic long-token rule', () =
     expect(out).not.toContain('Ab3dE_fGh7iJkLmN_9pQrStUvWx')
   })
 
+  test('a bare lowercase word chain (diceware pass-phrase) is STILL masked', () => {
+    const out = redactSecrets('pass correct_horse_battery_staple here')
+    expect(out).not.toContain('correct_horse_battery_staple')
+  })
+
+  test('a secret-flavoured env var name is STILL masked', () => {
+    const out = redactSecrets('val MY_SECRET_ACCESS_VALUE_HERE end')
+    expect(out).not.toContain('MY_SECRET_ACCESS_VALUE_HERE')
+  })
+
+  test('a GitHub fine-grained PAT is redacted', () => {
+    const out = redactSecrets('t github_pat_11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ end')
+    expect(out).not.toContain('github_pat_11ABCDEFG')
+  })
+
   test('a long lowercase run without word breaks is STILL masked', () => {
     const out = redactSecrets('key a1b2c3d4e5f6g7h8i9j0k1l2_m3n4 end')
     expect(out).not.toContain('a1b2c3d4e5f6g7h8i9j0k1l2_m3n4')

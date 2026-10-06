@@ -39,6 +39,9 @@ const GROQ_KEY_RE = /gsk_[A-Za-z0-9]{40,}/g
 const OPENAI_PROJ_RE = /sk-proj-[A-Za-z0-9_-]{20,}/g
 const OPENAI_RE = /sk-[A-Za-z0-9_-]{20,}/g
 const GITHUB_PAT_RE = /ghp_[A-Za-z0-9]{30,}/g
+// Fine-grained PATs: github_pat_<22>_<59>. Caught explicitly so they never
+// depend on the generic backstop.
+const GITHUB_FGPAT_RE = /github_pat_[A-Za-z0-9_]{20,}/g
 const RESEND_RE = /re_[A-Za-z0-9_]{20,}/g
 const SLACK_BOT_RE = /xoxb-[A-Za-z0-9-]+/g
 
@@ -194,20 +197,31 @@ const URL_RE = /https?:\/\/[^\s<>"'),;\]]+/g
 // the exemption past the real link.
 const URL_TRAILING_PUNCT_RE = /[.:!?]+$/
 
-// WORD-IDENTIFIER EXEMPTION (2026-10-06): snake_case file names and
+// WORD-IDENTIFIER EXEMPTION (2026-10-06): snake_case FILE names and
 // SCREAMING_SNAKE env var names are names, not secrets — masking them broke
 // an instruction sent to another team (a memory-note filename lost its
-// middle). Single-case, starts with a letters-only word, and every segment
-// looks like a word: letters-only ≤16, digits-only ≤8 (dates), or a short
-// mixed chunk ≤4 (`v2`, `x86`). Random secrets fail on case or segment shape.
+// middle). Single-case, starts with a letters-only word, every segment looks
+// like a word: letters-only ≤16, digits-only ≤8 (dates), or a short mixed
+// chunk ≤4 (`v2`, `x86`). Lowercase only when followed by a file extension:
+// a bare lowercase word chain may be a diceware pass-phrase
+// (correct_horse_battery_staple) and stays masked. Any secret-flavoured
+// segment (`password`, `token`, …) refuses the exemption outright.
 const WORD_SEGMENT_RE = /^(?:[a-z]{1,16}|[0-9]{1,8}|[a-z0-9]{1,4})$/
+const FILE_EXT_AFTER_RE = /^\.[A-Za-z0-9]{1,5}\b/
+const SECRET_SEGMENTS = new Set([
+  'password', 'passwd', 'pwd', 'secret', 'token', 'auth', 'cred', 'creds',
+  'key', 'pass', 'bearer', 'access', 'refresh', 'sk', 'api', 'pat',
+])
 
-function isWordIdentifier(token: string): boolean {
+function isWordIdentifier(token: string, after: string): boolean {
   const lower = token.toLowerCase()
-  if (token !== lower && token !== token.toUpperCase()) return false
+  const isUpper = token === token.toUpperCase() && token !== lower
+  if (token !== lower && !isUpper) return false
+  if (!isUpper && !FILE_EXT_AFTER_RE.test(after)) return false
   const parts = lower.split('_')
   const first = parts[0] ?? ''
   if (parts.length < 2 || !/^[a-z]+$/.test(first)) return false
+  if (parts.some((p) => SECRET_SEGMENTS.has(p))) return false
   return parts.every((p) => WORD_SEGMENT_RE.test(p))
 }
 
@@ -229,7 +243,8 @@ function maskLongTokensOutsideUrls(text: string): string {
       const inUrl = urlRanges.some(
         ([start, end]) => offset >= start && offset < end,
       )
-      return inUrl || isWordIdentifier(match) ? match : `${head}***${tail}`
+      const after = text.slice(offset + match.length, offset + match.length + 8)
+      return inUrl || isWordIdentifier(match, after) ? match : `${head}***${tail}`
     },
   )
 }
@@ -245,6 +260,7 @@ const RULES: ReadonlyArray<RedactionRule> = [
   { pattern: OPENAI_PROJ_RE, replacement: '[REDACTED]' },
   { pattern: OPENAI_RE, replacement: '[REDACTED]' },
   { pattern: GITHUB_PAT_RE, replacement: '[REDACTED]' },
+  { pattern: GITHUB_FGPAT_RE, replacement: '[REDACTED]' },
   { pattern: RESEND_RE, replacement: '[REDACTED]' },
   { pattern: SLACK_BOT_RE, replacement: '[REDACTED]' },
   // 2. Firebase JSON fields — value replaced, key preserved.
