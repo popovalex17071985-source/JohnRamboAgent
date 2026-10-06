@@ -1668,6 +1668,18 @@ EOF
     ~/.claude/settings.json > ~/.claude/settings.json.new && mv ~/.claude/settings.json.new ~/.claude/settings.json" \
     && ok "хуки памяти прописаны (чистая запись + подсказки с порогом)" \
     || die "не смог прописать хуки памяти в settings.json"
+  # Сохранение перед сжатием контекста (06.10.2026). Скрипт синка и ключ клал
+  # только локальный путь (setup-memory.sh); на пути с ключом OpenAI хук
+  # flush-to-openviking звал несуществующий scripts/ov-session-sync.sh и молча
+  # ничего не сохранял (Жорик, первая же установка с --openai-key).
+  SYNC="$WORKSPACE/scripts/ov-session-sync.sh"
+  install -d -o "$SERVICE_USER" -g "$SERVICE_USER" "$WORKSPACE/scripts"
+  install -o "$SERVICE_USER" -g "$SERVICE_USER" -m 755 "$REPO_DIR/agent-kit/scripts/ov-session-sync.sh" "$SYNC"
+  OV_KEYF="/home/$SERVICE_USER/.claude-lab/shared/secrets/openviking.key"
+  install -d -o "$SERVICE_USER" -g "$SERVICE_USER" "$(dirname "$(dirname "$OV_KEYF")")"
+  install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 700 "$(dirname "$OV_KEYF")"
+  [[ -s "$OV_KEYF" ]] || { head -c 24 /dev/urandom | base64 > "$OV_KEYF"; chmod 600 "$OV_KEYF"; chown "$SERVICE_USER:$SERVICE_USER" "$OV_KEYF"; }
+  ok "сохранение памяти перед сжатием подключено ($SYNC)"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
