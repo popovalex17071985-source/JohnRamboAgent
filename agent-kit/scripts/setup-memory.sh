@@ -179,7 +179,10 @@ SYNC="$WORKSPACE/scripts/ov-session-sync.sh"
 install -o "$OWNER" -g "$OWNER" -m 755 "$KIT/ov-session-sync.sh" "$SYNC" 2>/dev/null || true
 HOOK="$WORKSPACE/.claude/hooks/flush-to-openviking.sh"
 if [ -f "$HOOK" ]; then
-  sed -i "s#SYNC=\"\$HOME/.claude-lab/[^/]*/scripts/ov-session-sync.sh\"#SYNC=\"$SYNC\"#; s#AGENT_NAME=[a-zA-Z0-9_-]*#AGENT_NAME=$AGENT#" "$HOOK"
+  # Only the legacy hard-coded SYNC path is rewritten. AGENT_NAME is already
+  # filled by the installer; the old `AGENT_NAME=[..]*` rewrite matched the
+  # empty string before a quote and produced AGENT_NAME=x"x" (06.10.2026).
+  sed -i "s#SYNC=\"\$HOME/.claude-lab/[^/]*/scripts/ov-session-sync.sh\"#SYNC=\"$SYNC\"#" "$HOOK"
 fi
 install -d -o "$OWNER" -g "$OWNER" -m 700 "$OWNER_HOME/.claude-lab/shared/secrets"
 KEYF="$OWNER_HOME/.claude-lab/shared/secrets/openviking.key"
