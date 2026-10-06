@@ -1536,7 +1536,7 @@ if [[ -z "$OPENAI_KEY" && ! -s "$OV_DIR/ov.conf" ]]; then
     mkdir -p "$(dirname "$MEM_LOG")"
     if bash "$KIT_MEM" --workspace "/home/$SERVICE_USER/.claude-lab/$AGENT_NAME" --agent "$AGENT_NAME" >"$MEM_LOG" 2>&1 \
        && curl -sf -m 5 http://127.0.0.1:1933/health >/dev/null 2>&1; then
-      ok "память на локальных эмбеддингах (ключ OpenAI не нужен)"
+      ok "память на локальной модели, без ключа OpenAI (с ключом точнее)"
     else
       skip "память не поднялась локально ($MEM_LOG) -- прогон с --openai-key KEY поставит её на OpenAI"
     fi
