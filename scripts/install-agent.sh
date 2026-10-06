@@ -1309,7 +1309,10 @@ EOF
       as_agent "mkdir -p ~/.config/rclone && umask 077 && { grep -q '^\[gdrive\]' ~/.config/rclone/rclone.conf 2>/dev/null || printf '[gdrive]\ntype = drive\nscope = drive\n${GD_KEYS}token = %s\n' \"\$(cat '$TOKFILE')\" >> ~/.config/rclone/rclone.conf; }"
       # Причину показываем словами rclone: «403 quota» — это не битый токен, а лимит Google
       # на минуту, конфиг уже записан и ночью заработает сам (живой прогон 02.09).
-      rc_err="$(as_agent "rclone lsd gdrive: --retries 1 --low-level-retries 1 --timeout 20s 2>&1 >/dev/null" | tail -1 | cut -c1-160)"
+      # NOTICE lines are not errors: a broken shortcut on the owner's Drive printed
+      # «Dangling shortcut ... detected» and a working Drive was reported as failed
+      # (live install 06.10.2026, rclone exit code 0).
+      rc_err="$(as_agent "rclone lsd gdrive: --retries 1 --low-level-retries 1 --timeout 20s 2>&1 >/dev/null" | { grep -v ' NOTICE: ' || true; } | tail -1 | cut -c1-160)"
       if [[ -z "$rc_err" ]]; then
         ok "Google Drive подключён — ночная копия уедет в облако"
       elif grep -qiE "quota|rate ?limit|403" <<<"$rc_err"; then
