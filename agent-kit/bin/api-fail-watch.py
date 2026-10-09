@@ -65,17 +65,22 @@ ERROR_CLASSES: dict[str, re.Pattern[str]] = {
                         re.I),
 }
 # A line after which an error streak counts as broken (the source is alive again).
-SUCCESS = re.compile(r"Done at |selfcheck ok|selftest ok|HTTP/1\.[01]\" 200 |status(=|: ?)200\b")
+# 09.10.2026: the backup log lives on rclone, which retries Drive's per-minute quota itself;
+# «Attempt 2/3 succeeded» and the script's «OK off-site» mean the upload landed.
+SUCCESS = re.compile(r"Done at |selfcheck ok|selftest ok|HTTP/1\.[01]\" 200 |status(=|: ?)200\b"
+                     r"|OK off-site|Attempt \d+/\d+ succeeded")
 # строки, которые не считаются ни ошибкой, ни успехом (шум health-чеков)
 IGNORE = re.compile(r"GET /health")
-STAMP = re.compile(r"^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})")
+# «2026-10-09 05:40:02», «[2026-10-09 05:40:02 +05]» (backup script), «2026/10/09 05:40:03»
+# (rclone). Unstamped logs fall back to the whole tail and old errors keep alerting.
+STAMP = re.compile(r"^\[?(\d{4}[-/]\d{2}[-/]\d{2})[ T](\d{2}:\d{2}:\d{2})")
 
 
 def parse_stamp(line: str) -> dt.datetime | None:
     m = STAMP.match(line)
     if not m:
         return None
-    return dt.datetime.fromisoformat(f"{m.group(1)}T{m.group(2)}").replace(
+    return dt.datetime.fromisoformat(f"{m.group(1).replace('/', '-')}T{m.group(2)}").replace(
         tzinfo=dt.datetime.now().astimezone().tzinfo)     # логи пишутся в локальном времени сервера
 
 
@@ -214,6 +219,21 @@ def selftest() -> int:
         log4.write_text("\n".join(["fetch page=1: empty response, total=0"] * 3) + "\n")
         got = scan([log4], 60, st, out.append, now=now)
         assert len(got) == 1 and "пустой ответ" in got[0], got
+        # backup: rclone retries Drive quota and lands the upload -- not an alarm
+        log5 = d / "backup.log"
+        q = "Failed to create file system: googleapi: Error 403: Quota exceeded for quota metric"
+        log5.write_text("\n".join([
+            "[" + stamp(9) + " +05] OK local: smith.tar.gz.gpg (268K)",
+            stamp(8).replace("-", "/") + " " + q,
+            stamp(8).replace("-", "/") + " " + q,
+            stamp(8).replace("-", "/") + " " + q,
+            "[" + stamp(7) + " +05] OK off-site: gdrive:x/smith.tar.gz.gpg",
+        ]) + "\n")
+        assert scan([log5], 60, st, out.append, now=now) == [], "бэкап долетел -- не тревога"
+        # the same quota errors with no success after them still alert
+        log5.write_text("\n".join([stamp(8).replace("-", "/") + " " + q] * 3) + "\n")
+        assert len(scan([log5], 60, st, out.append, now=now)) == 1, "бэкап не долетел"
+        out.pop()
         # dry-run ничего не шлёт и не запоминает
         st2 = d / "state2.json"
         got = scan([log], 60, st2, out.append, dry_run=True, now=now)
