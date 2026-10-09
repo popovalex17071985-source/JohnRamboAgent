@@ -9,10 +9,14 @@
 # Idempotent: re-running replaces files and never double-registers a hook.
 #
 # Usage: install-kit.sh --claude-dir DIR [--chat-id ID] [--agent NAME] [--settings FILE] [--tz TZ]
+#                       [--keep TARGET[,TARGET...]]
+#
+# --keep: target paths (as rendered, absolute) that are left exactly as they are.
+# /update passes the owner's own tweaks and the items he chose not to install.
 set -euo pipefail
 
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CLAUDE_DIR=""; CHAT_ID=""; AGENT=""; SETTINGS=""; OWNER_TZ=""
+CLAUDE_DIR=""; CHAT_ID=""; AGENT=""; SETTINGS=""; OWNER_TZ=""; KEEP=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -21,6 +25,7 @@ while [[ $# -gt 0 ]]; do
     --agent)      AGENT="$2";      shift 2 ;;
     --settings)   SETTINGS="$2";   shift 2 ;;
     --tz)         OWNER_TZ="$2";   shift 2 ;;   # пояс ХОЗЯИНА: сводка в 09:00 по нему
+    --keep)       KEEP="$2";       shift 2 ;;   # не трогать эти файлы (через запятую)
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -39,6 +44,7 @@ mkdir -p "$CLAUDE_DIR"/{hooks,core,agents} "$WORKSPACE/bin" "$WORKSPACE/logs" "$
 BACKUP_DIR="$WORKSPACE/.kit-backup/$(date +%Y%m%d-%H%M)"
 BACKED=0
 render() {
+  case ",$KEEP," in *",$2,"*) echo "  = $2 оставляю как есть (--keep)"; return 0 ;; esac
   local tmp; tmp="$(mktemp)"
   sed -e "s|__CLAUDE_DIR__|$CLAUDE_DIR|g" \
       -e "s|__WORKSPACE__|$WORKSPACE|g" \
