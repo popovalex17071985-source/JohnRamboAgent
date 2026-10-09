@@ -32,6 +32,7 @@ import html
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -632,6 +633,119 @@ def cmd_plan(ctx: Ctx) -> dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# apply
+# ─────────────────────────────────────────────────────────────────────────────
+
+STALE_TEXT = "<b>update</b> — вышло ещё обновление, набери <code>/update</code> заново."
+NOPLAN_TEXT = ("<b>update</b> — сначала набери <code>/update</code>: покажу, что вышло, "
+               "потом выбирай.")
+
+
+def saved_plan(ctx: Ctx) -> tuple[dict[str, Any] | None, str | None]:
+    """(plan, refusal text). Refuse when the update moved since the owner saw it."""
+    saved = ctx.load("update-plan.json", None)
+    if not isinstance(saved, dict) or "items" not in saved:
+        return None, NOPLAN_TEXT
+    if saved.get("fetch_head") != ctx.git.rev(ctx.ref) or saved.get("head") != ctx.git.rev("HEAD"):
+        return None, STALE_TEXT
+    return saved, None
+
+
+def pick(items: dict[str, dict[str, Any]], rest: list[str]) -> tuple[list[int], str | None]:
+    words = [w for arg in rest for w in re.split(r"[\s,;]+", arg) if w]
+    if words == ["all"]:
+        return sorted(int(n) for n in items), None
+    if words == ["keep"]:
+        return sorted(int(n) for n, i in items.items() if not i.get("tweak")), None
+    nums: list[int] = []
+    for w in words:
+        if not w.isdigit() or w not in items:
+            have = ", ".join(sorted(items, key=int)) or "нет"
+            return [], f"<b>update</b> — нет пункта «{esc(w)}». Пункты в плане: {have}."
+        if int(w) not in nums:
+            nums.append(int(w))
+    return sorted(nums), None
+
+
+def label(item: dict[str, Any]) -> str:
+    if item["kind"] == "bridge":
+        return f"п.{item['n']} (основное)"
+    return f"п.{item['n']} ({esc(item['path'].rpartition('/')[2])})"
+
+
+def bun_path() -> str:
+    return os.environ.get("DASHI_BUN") or str(Path.home() / ".bun" / "bin" / "bun")
+
+
+def apply_bridge(ctx: Ctx, fetch_head: str, keep: list[str]) -> tuple[bool, str]:
+    """Backup -> reset -> bun install -> install-kit --keep. (ok, kit warning)."""
+    bak = ctx.repo.with_name(ctx.repo.name + ".bak")
+    if bak.exists():
+        shutil.rmtree(bak)
+    subprocess.run(["cp", "-a", str(ctx.repo), str(bak)], check=True)
+    ctx.git.close()
+    ctx.git.run("reset", "-q", "--hard", fetch_head)
+    subprocess.run([bun_path(), "install", "--silent"], cwd=ctx.repo / "plugin",
+                   capture_output=True, timeout=600)
+    return True, run_install_kit(ctx, keep)
+
+
+def run_install_kit(ctx: Ctx, keep: list[str]) -> str:
+    kit = ctx.repo / "agent-kit" / "install-kit.sh"
+    if not kit.is_file():
+        return ""
+    cmd = ["bash", str(kit), "--claude-dir", str(ctx.claude_dir), "--chat-id", ctx.chat_id,
+           "--agent", ctx.agent, "--settings", str(ctx.settings)]
+    if ctx.tz:
+        cmd += ["--tz", ctx.tz]
+    if keep:
+        cmd += ["--keep", ",".join(keep)]
+    log = ctx.workspace / "logs" / "update-kit.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with log.open("a") as fh:
+        fh.write(f"--- {time.strftime('%Y-%m-%d %H:%M:%S')} {' '.join(cmd)}\n")
+        fh.flush()
+        res = subprocess.run(cmd, stdout=fh, stderr=subprocess.STDOUT)
+    if res.returncode != 0:
+        return ("Файлы комплекта разложились с ошибкой — подробности в "
+                "<code>logs/update-kit.log</code>.")
+    return ""
+
+
+def cmd_apply(ctx: Ctx, rest: list[str]) -> dict[str, Any]:
+    saved, refusal = saved_plan(ctx)
+    if saved is None:
+        return {"status": "STALE", "restart": False, "text_html": refusal}
+    items: dict[str, dict[str, Any]] = saved["items"]
+    nums, error = pick(items, rest)
+    if error:
+        return {"status": "NOTHING", "restart": False, "text_html": error}
+    if not nums:
+        return {"status": "NOTHING", "restart": False,
+                "text_html": "<b>update</b> — ставить нечего: все пункты с вашими правками."}
+    chosen = [items[str(n)] for n in nums]
+    left = [i for n, i in sorted(items.items(), key=lambda kv: int(kv[0])) if int(n) not in nums]
+    lines: list[str] = []
+    if any(i["kind"] == "bridge" for i in chosen):
+        keep = list(saved.get("keep_always", [])) + [i["target"] for i in left if i["kind"] == "kit"]
+        ok, warn = apply_bridge(ctx, saved["fetch_head"], keep)
+        # HEAD is the new baseline for everything install-kit rendered; files it
+        # was told to keep stay on the blob they were on.
+        baselines: dict[str, str] = saved.get("baselines", {})
+        ctx.save("update-applied.json", {
+            path: blob for path, blob in baselines.items()
+            if str(ctx.kit_target(path)) in keep})
+        lines.append("<b>update</b> — поставил: " + ", ".join(label(i) for i in chosen) + ".")
+        if left:
+            lines.append("Оставил как было: " + ", ".join(label(i) for i in left) + ".")
+        if warn:
+            lines.append(warn)
+        lines.append("Перезапускаю — связь моргнёт на ~10 сек.")
+        return {"status": "UPDATED", "restart": True, "text_html": "\n".join(lines)}
+    return {"status": "NOTHING", "restart": False, "text_html": "<b>update</b> — пока не умею."}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # main
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -668,6 +782,7 @@ def make_ctx(ns: argparse.Namespace) -> Ctx:
 
 COMMANDS = {
     "plan": lambda ctx, rest: cmd_plan(ctx),
+    "apply": cmd_apply,
 }
 
 
