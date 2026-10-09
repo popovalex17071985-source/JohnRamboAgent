@@ -28,6 +28,11 @@ import { resolveContextWindowForModel } from '../config.js'
 import { buildAutonomyHudLine, loadAutonomyState } from '../autonomy/store.js'
 import { classifyEditError } from '../safety/telegram-edit-classifier.js'
 import {
+  DEFAULT_STATUSLINE_FILE,
+  readStatusline,
+  renderRateLimits,
+} from './statusline-snapshot.js'
+import {
   formatWindowTokens,
   readContextUsage as realReadContextUsage,
   type ContextUsage,
@@ -205,8 +210,12 @@ export function renderHud(
   model?: string,
   work?: HudWorkView,
   autonomyLine?: string,
+  limitsBlock?: string,
 ): { text: string; keyboard: InlineKeyboardLike } {
   const keyboard = buildHudKeyboard()
+  // Subscription rate limits (statusline snapshot), right under the context
+  // line: both answer «how much room is left». HTML-safe by construction.
+  const limits = limitsBlock !== undefined && limitsBlock.length > 0 ? `\n${limitsBlock}` : ''
   const modelLine = model !== undefined && model.length > 0 ? `\n<i>${escapeHtml(model)}</i>` : ''
   const modeLine =
     work?.permissionMode !== undefined && work.permissionMode.length > 0
@@ -219,7 +228,7 @@ export function renderHud(
     autonomyLine !== undefined && autonomyLine.length > 0 ? `\n${autonomyLine}` : ''
   const tasksBlock = work !== undefined ? renderStatusTasks(work.todos, work.freshness) : ''
   const tasksSection = tasksBlock.length > 0 ? `\n\n${tasksBlock}` : ''
-  const tail = `${modelLine}${modeLine}${autonomyBlock}${tasksSection}`
+  const tail = `${limits}${modelLine}${modeLine}${autonomyBlock}${tasksSection}`
 
   if (usage === null) {
     return { text: `🧠 <b>Контекст</b>: —${tail}`, keyboard }
@@ -302,6 +311,11 @@ export interface ContextHudOptions {
   ownerChatIds: ReadonlyArray<string | number>
   // Plugin state dir; the HUD writes `context-hud-<chatId>.json` here.
   stateDir: string
+  // Statusline snapshot written by scripts/statusline-capture.sh (default
+  // ~/.claude/dashi-statusline.json, env JARVIS_STATUSLINE_FILE) and the zone
+  // the limit reset times are shown in (env JARVIS_OPERATOR_TZ).
+  statuslineFile?: string
+  operatorTimeZone?: string
   // Feature flag (resolveHudEnabled). When false every method is a no-op.
   enabled: boolean
   // Injected for tests; defaults to the real transcript reader.
@@ -322,6 +336,8 @@ export class ContextHud {
   private readonly launchModel?: string | undefined
   private readonly owner: ReadonlySet<string>
   private readonly stateDir: string
+  private readonly statuslineFile: string
+  private readonly operatorTimeZone: string
   private readonly enabled: boolean
   private readonly readUsage: ReadContextUsageFn
   // In-memory message-id cache per chat (mirrors the on-disk persistence).
@@ -384,6 +400,10 @@ export class ContextHud {
     this.launchModel = opts.launchModel
     this.owner = new Set(opts.ownerChatIds.map((id) => String(id)))
     this.stateDir = opts.stateDir
+    this.statuslineFile =
+      opts.statuslineFile ?? process.env.JARVIS_STATUSLINE_FILE ?? DEFAULT_STATUSLINE_FILE
+    this.operatorTimeZone =
+      opts.operatorTimeZone ?? process.env.JARVIS_OPERATOR_TZ ?? 'Asia/Yekaterinburg'
     this.enabled = opts.enabled
     this.readUsage = opts.readContextUsage ?? realReadContextUsage
   }
@@ -793,11 +813,16 @@ export class ContextHud {
       ? transcriptModel
       : undefined)
       ?? (hookModel !== undefined && hookModel.length > 0 ? hookModel : undefined)
+    // The statusline snapshot carries the session's REAL window and the
+    // subscription limits. Operator override still wins; the snapshot beats the
+    // model table, which guessed 200k for a 1M Opus 5.5 session (09.10.2026).
+    const snap = readStatusline(this.statuslineFile, info.transcriptPath, Date.now())
     const windowTokens = resolveContextWindowForModel(model, {
-      override: this.windowOverride,
+      override: this.windowOverride ?? snap?.windowTokens,
       fallback: this.windowTokens,
       launchModel: this.launchModel,
     })
+    const limitsBlock = renderRateLimits(snap, Date.now(), this.operatorTimeZone)
     // M3: the reconciled (pane-verified) view wins over the event-only snapshot.
     const rv = this.reconciled.get(chatId)
     const permissionMode =
@@ -821,7 +846,7 @@ export class ContextHud {
       })
       autonomyLine = undefined
     }
-    const rendered = renderHud(usage, windowTokens, model, work, autonomyLine)
+    const rendered = renderHud(usage, windowTokens, model, work, autonomyLine, limitsBlock)
     // M4 heartbeat suffix (append last so it is always the final line). Escaped
     // for the card's HTML parse mode — the task text is user/tool-supplied.
     const suffix = this.heartbeatSuffix.get(chatId)
