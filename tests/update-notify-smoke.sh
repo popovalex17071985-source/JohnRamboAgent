@@ -37,3 +37,30 @@ check_ok; run
 check_fails; run
 [ "$(sent)" = 2 ] || fail "новая серия сбоев: ждали 2 сообщения, есть $(sent)"
 echo "✓ update-notify failure-path smoke ok"
+
+# ── Plain-words path: the planner from FETCH_HEAD writes the message ──────────
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
+ORIGIN="$T/origin"; REPO="$CD/dashi-plugin-claude-code"
+mkdir -p "$ORIGIN/agent-kit/hooks" "$CD/hooks"
+git -C "$ORIGIN" init -q -b main
+printf 'echo v1 __AGENT__\n' > "$ORIGIN/agent-kit/hooks/a.sh"
+git -C "$ORIGIN" add -A && git -C "$ORIGIN" commit -q -m "База"
+git clone -q "$ORIGIN" "$REPO"
+printf 'echo v1 smoke\n' > "$CD/hooks/a.sh"            # installed = render(HEAD)
+printf 'echo v2 __AGENT__\n' > "$ORIGIN/agent-kit/hooks/a.sh"
+mkdir -p "$ORIGIN/scripts"; cp "$ROOT/scripts/update-plan.py" "$ORIGIN/scripts/"
+git -C "$ORIGIN" add -A
+git -C "$ORIGIN" commit -q -m "tz-guard refactor" -m "Хозяину: Сторож времени стал вежливее"
+# the real `dashi-ctl check`: fetch, then list HEAD..FETCH_HEAD
+printf '#!/bin/sh\ngit -C "%s" fetch -q origin main && git -C "%s" log --oneline HEAD..FETCH_HEAD\n' \
+  "$REPO" "$REPO" > "$CHECK"; chmod +x "$CHECK"
+: > "$SENT"
+run
+[ "$(sent)" = 1 ] || fail "план: ждали 1 сообщение, есть $(sent)"
+grep -q "Сторож времени стал вежливее" "$SENT" || fail "в сообщении нет человеческой заметки: $(cat "$SENT")"
+grep -q "/update" "$SENT" || fail "в сообщении нет подсказки /update"
+grep -q "tz-guard refactor" "$SENT" && fail "в сообщение попала заготовка коммита вместо заметки"
+run
+[ "$(sent)" = 1 ] || fail "тот же план не должен приходить второй раз"
+echo "✓ update-notify plain-plan smoke ok"
