@@ -439,11 +439,16 @@ def build_plan(ctx: Ctx) -> Plan:
             elif note not in shown:
                 shown.append(note)
         repo_tweaks = repo_tweak_list(ctx)
+        local = local_commits(ctx)
         item = {"n": 1, "kind": "bridge", "title": "Основное обновление агента",
                 "notes": shown, "hidden": hidden,
                 "earlier_skipped": len(bridge_all) - len(bridge_new),
-                "commits": [c.sha for c in bridge_all], "tweak": bool(repo_tweaks)}
+                "commits": [c.sha for c in bridge_all],
+                "local": len(local), "tweak": bool(repo_tweaks or local)}
         items.append(item)
+        for sha, subject in local[:MAX_LOCAL_SHOWN]:
+            tweaks.append({"n": 1, "kind": "local", "target": sha[:7], "subject": subject,
+                           "added": 0, "removed": 0, "deleted": False, "lines": []})
         for path, summary in repo_tweaks:
             tweaks.append({"n": 1, "target": path, **summary})
 
@@ -525,6 +530,41 @@ def kit_notes(path: str, baseline: str | None, history: dict[str, list[tuple[str
     return out
 
 
+MAX_LOCAL_SHOWN = 5
+
+
+def local_commits(ctx: Ctx, base: str | None = None) -> list[tuple[str, str]]:
+    """Commits on HEAD that the shared version does not have: local work a reset
+    to the update would drop (Albert 09.10.2026, a local feature branch)."""
+    try:
+        raw = ctx.git.run("log", "--no-merges", "--format=%H%x1f%s", f"{base or ctx.ref}..HEAD")
+    except GitError:
+        return []
+    out = []
+    for line in raw.splitlines():
+        sha, _, subject = line.partition("\x1f")
+        if sha:
+            out.append((sha, subject.strip() or sha[:7]))
+    return out
+
+
+def save_local_commits(ctx: Ctx, fetch_head: str) -> tuple[bool, str]:
+    """Before a reset: a backup ref and a patch file of the local commits."""
+    if not local_commits(ctx, fetch_head):
+        return True, ""
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    ref = f"refs/dashi-backup/{stamp}"
+    patch = ctx.workspace / ".kit-backup" / stamp / "local-commits.patch"
+    try:
+        ctx.git.run("update-ref", ref, "HEAD")
+        patch.parent.mkdir(parents=True, exist_ok=True)
+        patch.write_text(ctx.git.run("format-patch", "--stdout", f"{fetch_head}..HEAD"))
+    except (GitError, OSError) as err:
+        return False, f"не смог сохранить вашу доработку ({esc(type(err).__name__)})"
+    return True, (f"Вашу доработку сохранил: <code>{esc(ctx.shown(patch))}</code> "
+                  f"и в репозитории <code>{ref}</code>.")
+
+
 def repo_tweak_list(ctx: Ctx) -> list[tuple[str, dict[str, Any]]]:
     """Repo files the owner changed that a reset to ref would overwrite."""
     changed = set(ctx.git.run("diff", "--name-only", "-z", "--no-renames", "HEAD").split("\0"))
@@ -594,6 +634,10 @@ def tweak_block(plan: Plan) -> str:
         return ""
     lines = ["<b>У вас своё</b> — эти пункты перезапишут ваши правки:"]
     for tw in plan.tweaks:
+        if tw.get("kind") == "local":
+            lines.append(f"• п.{tw['n']}: у вас стоит своя доработка, которой нет в общей версии: "
+                         f"«{esc(tw['subject'])}»")
+            continue
         if tw.get("deleted"):
             what = "у вас файл удалён"
         else:
@@ -601,7 +645,7 @@ def tweak_block(plan: Plan) -> str:
         lines.append(f"• п.{tw['n']}, <code>{esc(tw['target'])}</code>: {what}")
         for line in tw.get("lines", []):
             lines.append(f"   <code>{esc(line)}</code>")
-    lines.append("Если перезапишу — копия вашего файла останется рядом, ничего не пропадёт.")
+    lines.append("Если перезапишу — копии останутся рядом, ничего не пропадёт.")
     return "\n".join(lines)
 
 
@@ -799,6 +843,10 @@ def cmd_apply(ctx: Ctx, rest: list[str]) -> dict[str, Any]:
     lines: list[str] = []
     if any(i["kind"] == "bridge" for i in chosen):
         keep = list(saved.get("keep_always", [])) + [i["target"] for i in left if i["kind"] == "kit"]
+        saved_ok, saved_note = save_local_commits(ctx, saved["fetch_head"])
+        if not saved_ok:
+            return {"status": "ROLLBACK", "restart": False,
+                    "text_html": f"<b>update</b> — {saved_note}, поэтому ничего не трогал."}
         ok, warn = apply_bridge(ctx, saved["fetch_head"], keep)
         drop_saved_plan(ctx)
         if not ok:
@@ -816,6 +864,8 @@ def cmd_apply(ctx: Ctx, rest: list[str]) -> dict[str, Any]:
             lines.append("Оставил как было: " + ", ".join(label(i) for i in left) + ".")
         if warn:
             lines.append(warn)
+        if saved_note:
+            lines.append(saved_note)
         lines.append("Перезапускаю — связь моргнёт на ~10 сек.")
         return {"status": "UPDATED", "restart": True, "text_html": "\n".join(lines)}
     # Kit files only: HEAD stays, each chosen file is rendered from its new blob.

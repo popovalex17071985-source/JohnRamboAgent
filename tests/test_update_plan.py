@@ -512,7 +512,7 @@ class LocalCommitsTest(unittest.TestCase):
         self.assertTrue(refs[0].endswith(self.local))
         patches = list((self.fx.ws / ".kit-backup").glob("*/local-commits.patch"))
         self.assertEqual(len(patches), 1)
-        self.assertIn("listen_all", patches[0].read_text())
+        self.assertIn("+export const listenAll = true", patches[0].read_text())  # the diff itself
         text = out["text_html"]
         self.assertIn("local-commits.patch", text)
         self.assertIn(refs[0].split()[0], text)
