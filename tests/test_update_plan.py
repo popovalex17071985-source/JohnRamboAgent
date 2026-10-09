@@ -207,7 +207,7 @@ class PlanTest(unittest.TestCase):
             "<code>/update 1 3</code> — только выбранные",
             "<code>/update пропусти 3</code> — не ставить и больше не предлагать",
         ]))
-        self.assertNotIn("своё", self.fx.run("plan")["text_html"])
+        self.assertNotIn("/update своё", self.fx.run("plan")["text_html"])
 
     def test_answer_hint_without_tweaks(self) -> None:
         self.fx.standard_update()

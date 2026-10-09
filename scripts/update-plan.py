@@ -604,14 +604,26 @@ def tweak_block(plan: Plan) -> str:
 
 
 def commands_block(plan: Plan) -> str:
+    """How to answer. A repeated bare /update installs the plan it just showed,
+    minus the items with the owner's own tweaks; /update всё includes them."""
     nums = [i["n"] for i in plan.items]
     example = f"{nums[0]} {nums[-1]}" if len(nums) > 1 else str(nums[0])
-    lines = ["<b>Как ответить</b>",
-             "<code>/update всё</code> — поставить всё"
-             + (" (ваши правки перезапишу, копию сохраню)" if plan.tweaks else "")]
-    if plan.tweaks:
-        lines.append("<code>/update своё</code> — всё, кроме пунктов с вашими правками")
-    lines.append(f"<code>/update {example}</code> — только выбранные пункты")
+    tweaked = [i["n"] for i in plan.items if i.get("tweak")]
+    one = len(tweaked) == 1
+    which = "п." + (str(tweaked[0]) if one else
+                    ", ".join(map(str, tweaked[:-1])) + f" и {tweaked[-1]}") if tweaked else ""
+    overwrite = ("вашу правку перезапишу, копия останется" if one
+                 else "ваши правки перезапишу, копии останутся")
+    lines = ["<b>Как ответить</b>"]
+    if not tweaked:
+        lines.append("<code>/update</code> ещё раз — поставить всё")
+    elif len(tweaked) < len(nums):
+        there = "там ваша правка" if one else "там ваши правки"
+        lines.append(f"<code>/update</code> ещё раз — поставить всё, кроме {which} ({there})")
+        lines.append(f"<code>/update всё</code> — и {which} тоже ({overwrite})")
+    else:
+        lines.append(f"<code>/update всё</code> — поставить ({overwrite})")
+    lines.append(f"<code>/update {example}</code> — только выбранные")
     lines.append(f"<code>/update пропусти {nums[-1]}</code> — не ставить и больше не предлагать")
     return "\n".join(lines)
 
