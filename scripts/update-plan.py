@@ -788,6 +788,69 @@ def render_to(ctx: Ctx, target: Path, data: bytes, stamp: str) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# skip / skipped / unskip
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def cmd_skip(ctx: Ctx, rest: list[str]) -> dict[str, Any]:
+    saved, refusal = saved_plan(ctx)
+    if saved is None:
+        return {"status": "STALE", "text_html": refusal}
+    items: dict[str, dict[str, Any]] = saved["items"]
+    nums, error = pick(items, rest)
+    if error or not nums or rest in (["all"], ["keep"]):
+        return {"status": "NOTHING", "text_html": error or
+                "<b>update</b> — какой пункт пропустить? Например: <code>/update пропусти 2</code>"}
+    skipped = ctx.load("update-skipped.json", {})
+    kit: dict[str, str] = skipped.setdefault("kit", {})
+    bridge: list[str] = skipped.setdefault("bridge", [])
+    chosen = [items.pop(str(n)) for n in nums]
+    for item in chosen:
+        if item["kind"] == "bridge":
+            bridge.extend(c for c in item["commits"] if c not in bridge)
+        else:
+            kit[item["path"]] = item["blob"]
+            saved.setdefault("keep_always", []).append(item["target"])
+    ctx.save("update-skipped.json", skipped)
+    # The owner keeps his numbering: skipped items just leave the saved plan.
+    ctx.save("update-plan.json", saved)
+    return {"status": "SKIPPED", "text_html":
+            "<b>update</b> — пропустил: " + ", ".join(label(i) for i in chosen) + ". "
+            "Больше не предложу, пока там не выйдет что-то новое. "
+            "Вернуть: <code>/update верни</code>"}
+
+
+def cmd_skipped(ctx: Ctx, rest: list[str]) -> dict[str, Any]:
+    skipped = ctx.load("update-skipped.json", {})
+    kit: dict[str, str] = skipped.get("kit", {})
+    bridge: list[str] = skipped.get("bridge", [])
+    if not kit and not bridge:
+        return {"status": "NONE", "text_html": "<b>update</b> — пропущенного нет."}
+    lines = ["<b>Пропущено</b>"]
+    if bridge:
+        lines.append(f"• основное обновление: {len(bridge)} "
+                     f"{plural(len(bridge), 'правка', 'правки', 'правок')}")
+    for path in sorted(kit, key=kit_sort_key):
+        lines.append(f"• {esc(kit_title(path).rsplit(' ', 1)[0])} "
+                     f"<code>{esc(path.rpartition('/')[2])}</code>")
+    lines.append("Вернуть всё в план: <code>/update верни</code>")
+    return {"status": "LIST", "text_html": "\n".join(lines)}
+
+
+def cmd_unskip(ctx: Ctx, rest: list[str]) -> dict[str, Any]:
+    skipped = ctx.load("update-skipped.json", {})
+    count = len(skipped.get("kit", {})) + (1 if skipped.get("bridge") else 0)
+    for name in ("update-skipped.json", "update-plan.json"):
+        try:
+            ctx.state_file(name).unlink()
+        except FileNotFoundError:
+            pass
+    return {"status": "UNSKIPPED", "text_html":
+            f"<b>update</b> — вернул пропущенное ({count}). "
+            "Набери <code>/update</code> — покажу план заново."}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # main
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -825,6 +888,9 @@ def make_ctx(ns: argparse.Namespace) -> Ctx:
 COMMANDS = {
     "plan": lambda ctx, rest: cmd_plan(ctx),
     "apply": cmd_apply,
+    "skip": cmd_skip,
+    "skipped": cmd_skipped,
+    "unskip": cmd_unskip,
 }
 
 
