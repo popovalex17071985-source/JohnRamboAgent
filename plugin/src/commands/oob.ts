@@ -1156,7 +1156,10 @@ export async function handleOobCommand(
         }
       }
       if (outcome.kind === 'error') {
-        ctx.log.warn('oob /update planner failed', { detail: outcome.detail })
+        ctx.log.warn('oob /update planner failed', {
+          detail: outcome.detail,
+          ...(outcome.stderr !== undefined ? { stderr: outcome.stderr } : {}),
+        })
         return {
           handled: true,
           command: 'update',

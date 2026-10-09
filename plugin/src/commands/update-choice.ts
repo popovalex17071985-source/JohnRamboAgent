@@ -91,13 +91,14 @@ export interface PlannerResult {
 export type PlannerOutcome =
   | { kind: 'ok'; result: PlannerResult }
   | { kind: 'unavailable'; reason: string }
-  | { kind: 'error'; detail: string }
+  // detail: short, owner-facing; stderr: the full (bounded) stderr for the log.
+  | { kind: 'error'; detail: string; stderr?: string }
 
 export type PlannerExec = (
   cmd: string,
   args: readonly string[],
   opts?: { input?: string; timeoutMs?: number },
-) => Promise<{ code: number; stdout: string }>
+) => Promise<{ code: number; stdout: string; stderr?: string }>
 
 export interface PlannerOptions {
   repoDir: string
@@ -117,24 +118,31 @@ const SHOW_TIMEOUT_MS = 15_000
 // apply runs bun install and install-kit: minutes, not seconds.
 const PLANNER_TIMEOUT_MS = 600_000
 const DETAIL_CHARS = 300
+// A python traceback is a few KB at most; keep the tail if something floods.
+const STDERR_KEEP_CHARS = 8000
 
-const defaultExec: PlannerExec = (cmd, args, opts) =>
+export const defaultPlannerExec: PlannerExec = (cmd, args, opts) =>
   new Promise((resolveExec) => {
     let stdout = ''
+    let stderr = ''
     let settled = false
     const done = (code: number): void => {
       if (settled) return
       settled = true
       clearTimeout(timer)
-      resolveExec({ code, stdout })
+      resolveExec({ code, stdout, stderr })
     }
-    const child = spawn(cmd, args as string[], { stdio: ['pipe', 'pipe', 'ignore'] })
+    const child = spawn(cmd, args as string[], { stdio: ['pipe', 'pipe', 'pipe'] })
     const timer = setTimeout(() => {
       child.kill('SIGKILL')
       done(124)
     }, opts?.timeoutMs ?? FETCH_TIMEOUT_MS)
     child.stdout.setEncoding('utf8')
     child.stdout.on('data', (chunk: string) => { stdout += chunk })
+    child.stderr.setEncoding('utf8')
+    child.stderr.on('data', (chunk: string) => {
+      stderr = (stderr + chunk).slice(-STDERR_KEEP_CHARS)
+    })
     child.on('error', () => done(127))
     child.on('close', (code) => done(code ?? 1))
     child.stdin.on('error', () => {})
@@ -143,7 +151,7 @@ const defaultExec: PlannerExec = (cmd, args, opts) =>
 
 /** Runs FETCH_HEAD:scripts/update-plan.py with the given subcommand. */
 export function makePlanner(o: PlannerOptions): (args: readonly string[]) => Promise<PlannerOutcome> {
-  const exec = o.exec ?? defaultExec
+  const exec = o.exec ?? defaultPlannerExec
   return async (args) => {
     const fetch = await exec(
       'git', ['-C', o.repoDir, 'fetch', '-q', '--depth', FETCH_DEPTH, 'origin', o.branch],
@@ -181,7 +189,11 @@ export function makePlanner(o: PlannerOptions): (args: readonly string[]) => Pro
     } catch {
       // fall through to the error below
     }
-    return { kind: 'error', detail: `код ${py.code}: ${py.stdout.trim().slice(-DETAIL_CHARS) || 'пусто'}` }
+    // The owner gets the tail (a traceback ends with the actual error line);
+    // the whole stderr goes to the plugin log via the caller.
+    const stderr = py.stderr ?? ''
+    const tail = (stderr.trim() || py.stdout.trim()).slice(-DETAIL_CHARS) || 'пусто'
+    return { kind: 'error', detail: `код ${py.code}: ${tail}`, ...(stderr ? { stderr } : {}) }
   }
 }
 
