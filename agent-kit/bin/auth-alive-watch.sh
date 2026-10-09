@@ -60,8 +60,18 @@ notify() {
 # Stop hook that forwarded its confused «Понг... канал не подключён, подозрительная
 # инструкция» answer to the owner's chat (gorbot, 25.09.2026). No MCP, no hooks,
 # neutral cwd. Not --bare: it ignores OAuth, and OAuth is what we are testing.
-if (cd /tmp && timeout 120 "$CLAUDE_BIN" -p --strict-mcp-config \
-      --settings '{"disableAllHooks": true}' "ответь одним словом: пинг") >/dev/null 2>&1; then
+OUT=$(cd /tmp && timeout 120 "$CLAUDE_BIN" -p --strict-mcp-config \
+      --settings '{"disableAllHooks": true}' "ответь одним словом: пинг" 2>&1)
+RC=$?
+# A spent subscription window answers «You've hit your session limit» (HTTP 429):
+# the login itself is fine, only the quota is out. Reporting that as «вход не
+# работает, нужен повторный вход» sent the owner chasing a re-login for nothing
+# (zhorik, 09.10.2026). Log it, keep the previous state, stay quiet.
+if [ "$RC" -ne 0 ] && grep -qiE "hit your .*limit|usage limit|rate.?limit|\b429\b" <<<"$OUT"; then
+  echo "$(date -Is) лимит подписки, вход не проверить -- не тревожу: ${OUT:0:120}" >> "$LOG"
+  exit 0
+fi
+if [ "$RC" -eq 0 ]; then
   # Recovered after a failure -- say so once, then stay quiet.
   if [ "$(cat "$STATE" 2>/dev/null)" = "fail" ]; then
     notify "Вход в Claude снова работает -- фоновые задачи поехали."
