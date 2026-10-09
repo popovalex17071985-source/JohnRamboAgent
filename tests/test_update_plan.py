@@ -231,13 +231,17 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(out["tweaks"][0]["n"], 3)
         self.assertEqual(len(out["tweaks"]), 1)
         self.assertFalse(out["items"][0]["tweak"])
-        # A real local edit to a repo file IS a tweak of the bridge item.
+        # A local edit the update does not touch is carried over: not a question.
         (self.fx.repo / "README.md").write_text("readme with my notes\n")
+        out = self.fx.run("plan")
+        self.assertFalse(out["items"][0]["tweak"])
+        # A local edit of the place the update changes IS a tweak of the bridge item.
+        (self.fx.repo / "plugin" / "src.ts").write_text("export const v = 7\n")
         out = self.fx.run("plan")
         self.assertTrue(out["items"][0]["tweak"])
         names = [t["target"] for t in out["tweaks"]]
-        self.assertIn("README.md", names)
-        self.assertNotIn("plugin/src.ts", names)
+        self.assertIn("plugin/src.ts", names)
+        self.assertNotIn("README.md", names)
 
     def test_uptodate_when_nothing_pending(self) -> None:
         self.fx.fetch()
@@ -753,6 +757,7 @@ class ScanTest(unittest.TestCase):
         self.assertIn("plugin/local.ts", lc["diffstat"])
         self.assertIs(lc["replays_clean"], True)
         self.assertEqual(sorted(out["uncommitted"]), ["README.md", "notes.txt"])
+        self.assertIs(out["uncommitted_replays_clean"], True)
         tweaks = {t["path"]: t for t in out["kit_tweaks"]}
         self.assertEqual(sorted(tweaks), ["agent-kit/bin/c.py", "agent-kit/hooks/a.sh"])
         c = tweaks["agent-kit/bin/c.py"]
@@ -791,6 +796,16 @@ class ScanTest(unittest.TestCase):
                          [(sha, False)])
         self.assertIsNone(out["blocked"])
         self.assertEqual(out["extra_files"], [])
+        self.assertIsNone(out["uncommitted_replays_clean"])    # nothing uncommitted
+
+    def test_scan_marks_conflicting_uncommitted_changes(self) -> None:
+        self.fx.standard_update()
+        (self.fx.repo / "plugin" / "src.ts").write_text("export const v = 7\n")
+        before = snapshot(self.tmp / "ws")
+        out = self.scan()
+        self.assertEqual(snapshot(self.tmp / "ws"), before)
+        self.assertEqual(out["uncommitted"], ["plugin/src.ts"])
+        self.assertIs(out["uncommitted_replays_clean"], False)
 
     def test_scan_without_fetch_head_uses_origin_main(self) -> None:
         self.fx.standard_update()
@@ -814,6 +829,222 @@ class ScanTest(unittest.TestCase):
         self.assertEqual(res.returncode, 0)
         for word in ("scan", "--repo", "--claude-dir", "--workspace", "python3 -"):
             self.assertIn(word, res.stdout)
+
+
+def work_tree(fx: Fixture) -> dict[str, bytes | None]:
+    """The agent repo's files with their bytes, .git aside."""
+    return {k: v for k, v in snapshot(fx.repo).items() if k != ".git" and not k.startswith(".git/")}
+
+
+UNCOMMITTED_TEXT = ("У вас есть незакреплённые правки в 1 файле ядра (src.ts). "
+                    "Обновление меняет те же места.")
+
+
+class UncommittedTest(unittest.TestCase):
+    """Uncommitted changes in the agent repo are the owner's own, like a local
+    commit (Gena 10.10.2026: edits in 7 core files the owner never committed).
+    A reset must never drop them silently: backed up first, carried over when
+    they go on cleanly, asked about only when the update changes the same place."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.fx = Fixture(Path(self._tmp.name))
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def bridge_update(self) -> str:
+        """Upstream: plugin/src.ts v=2, nothing else (no kit item in the plan)."""
+        self.fx.write_origin("plugin/src.ts", "export const v = 2\n")
+        self.fx.commit("Мост\n\nХозяину: Карточка «работаю» закрывается сама\n")
+        return self.fx.fetch()
+
+    def status(self) -> list[str]:
+        return git(self.fx.repo, "status", "--porcelain", "--untracked-files=all").splitlines()
+
+    def backups(self, pattern: str) -> list[Path]:
+        return sorted((self.fx.ws / ".kit-backup").glob(pattern))
+
+    def blocked(self) -> dict:
+        return json.loads((self.fx.ws / "state" / "update-blocked.json").read_text())
+
+    def clash(self) -> None:
+        """The owner edited the line the update changes, plus a new file of his own."""
+        (self.fx.repo / "plugin" / "src.ts").write_text("export const v = 5\n")
+        (self.fx.repo / "plugin" / "mine.ts").write_text("export const mine = 1\n")
+
+    # -- goes on cleanly: no question, carried over ---------------------------
+    def test_clean_uncommitted_changes_are_not_asked_and_stay_after_update(self) -> None:
+        (self.fx.repo / "README.md").write_text("readme with my notes\n")
+        (self.fx.repo / "plugin" / "mine.ts").write_text("export const mine = 1\n")
+        fetch_head = self.bridge_update()
+        plan = self.fx.run("plan")
+        self.assertFalse(plan["items"][0]["tweak"])
+        self.assertEqual(plan["tweaks"], [])
+        self.assertEqual(plan["buttons"], [])
+        self.assertNotIn("незакреплённ", plan["text_html"])
+        out = self.fx.run("auto")
+        self.assertEqual(out["status"], "UPDATED")
+        self.assertTrue(out["restart"])
+        self.assertEqual(self.fx.head(), fetch_head)
+        self.assertEqual((self.fx.repo / "plugin" / "src.ts").read_text(), "export const v = 2\n")
+        # still the owner's, still uncommitted, on top of the new version
+        self.assertEqual((self.fx.repo / "README.md").read_text(), "readme with my notes\n")
+        self.assertEqual(self.status(), [" M README.md", "?? plugin/mine.ts"])
+        self.assertNotIn("незакреплённ", out["text_html"])
+        # and saved before the reset anyway
+        [patch] = self.backups("*/uncommitted.patch")
+        self.assertIn("+readme with my notes", patch.read_text())
+        self.assertEqual((patch.parent / "untracked" / "plugin" / "mine.ts").read_text(),
+                         "export const mine = 1\n")
+        log = (self.fx.ws / "logs" / "update.log").read_text()
+        self.assertIn(str(patch), log)
+
+    def test_keep_button_carries_uncommitted_changes_with_local_commits(self) -> None:
+        local = local_commit(self.fx, "Своя доработка", {"plugin/local.ts": "export const x = 1\n"})
+        (self.fx.repo / "README.md").write_text("readme with my notes\n")
+        self.fx.standard_update()                         # kit tweak -> buttons
+        plan = self.fx.run("auto")
+        self.assertEqual(plan["status"], "PLAN")
+        self.assertFalse(plan["items"][0]["tweak"])
+        out = self.fx.run("--expect", plan["fetch_head"][:12], "apply", "keep")
+        self.assertEqual(out["status"], "UPDATED")
+        self.assertTrue(out["restart"])
+        log = git(self.fx.repo, "log", "--format=%s", "FETCH_HEAD..HEAD").splitlines()
+        self.assertEqual(log, ["Своя доработка"])
+        self.assertNotEqual(self.fx.head(), local)
+        self.assertEqual((self.fx.repo / "plugin" / "src.ts").read_text(), "export const v = 2\n")
+        self.assertEqual(self.status(), [" M README.md"])
+        self.assertEqual((self.fx.repo / "README.md").read_text(), "readme with my notes\n")
+
+    # -- the update changes the same place: asked -----------------------------
+    def test_conflicting_uncommitted_changes_are_shown_in_the_plan(self) -> None:
+        self.clash()
+        self.bridge_update()
+        out = self.fx.run("plan")
+        bridge = out["items"][0]
+        self.assertEqual(bridge["kind"], "bridge")
+        self.assertTrue(bridge["tweak"])
+        self.assertEqual([(t["n"], t.get("kind"), t["target"]) for t in out["tweaks"]],
+                         [(1, "uncommitted", "plugin/src.ts")])
+        text = out["text_html"]
+        self.assertIn(UNCOMMITTED_TEXT, text)
+        self.assertNotIn("plugin/", text)
+        self.assertNotIn("mine.ts", text)                 # a new file the update does not touch
+        self.assertEqual([a for a, _ in out["buttons"]], ["keep", "all", "no"])
+
+    def test_keep_with_conflicting_uncommitted_blocks_and_leaves_everything_as_was(self) -> None:
+        self.clash()
+        fetch_head = self.bridge_update()
+        head = self.fx.head()
+        before = work_tree(self.fx)
+        status = self.status()
+        plan = self.fx.run("auto")
+        self.assertEqual(plan["status"], "PLAN")
+        out = self.fx.run("--expect", plan["fetch_head"][:12], "apply", "keep")
+        self.assertEqual(out["status"], "BLOCKED")
+        self.assertFalse(out["restart"])
+        text = out["text_html"]
+        self.assertTrue(text.startswith("Основную часть обновления поставить не смог"), text)
+        self.assertIn("незакреплённые правки в 1 файле ядра (src.ts)", text)
+        self.assertIn("работаю на прежней версии", text)
+        self.assertNotIn("plugin/", text)
+        self.assertNotIn("связь моргнёт", text)
+        # byte for byte as before, the untracked file too
+        self.assertEqual(self.fx.head(), head)
+        self.assertEqual(work_tree(self.fx), before)
+        self.assertEqual(self.status(), status)
+        self.assertFalse(self.fx.bun_log.exists())
+        names = sorted(p.name for p in self.fx.cd.iterdir() if p.name.startswith(self.fx.repo.name))
+        self.assertEqual(names, [self.fx.repo.name])
+        # saved anyway, and the developer's signal
+        [patch] = self.backups("*/uncommitted.patch")
+        self.assertIn("+export const v = 5", patch.read_text())
+        blocked = self.blocked()
+        self.assertEqual(blocked["kind"], "uncommitted")
+        self.assertEqual(blocked["fetch_head"], fetch_head)
+        self.assertEqual(blocked["files"], ["plugin/src.ts"])
+        self.assertIsInstance(blocked["ts"], int)
+
+    def test_keep_with_kit_items_installs_them_and_says_the_block(self) -> None:
+        self.clash()
+        self.fx.standard_update()
+        head = self.fx.head()
+        before = work_tree(self.fx)
+        self.fx.run("plan")
+        out = self.fx.run("apply", "keep")
+        self.assertEqual(out["status"], "UPDATED")
+        self.assertFalse(out["restart"])
+        self.assertIn("a2", self.fx.installed("hooks/a.sh"))
+        self.assertIn("незакреплённые правки в 1 файле ядра (src.ts)", out["text_html"])
+        self.assertEqual(self.fx.head(), head)
+        self.assertEqual(work_tree(self.fx), before)
+        self.assertEqual(self.blocked()["kind"], "uncommitted")
+
+    def test_update_all_backs_up_uncommitted_and_installs_the_clean_new_version(self) -> None:
+        self.clash()
+        fetch_head = self.bridge_update()
+        self.fx.run("plan")
+        out = self.fx.run("apply", "all")
+        self.assertEqual(out["status"], "UPDATED")
+        self.assertTrue(out["restart"])
+        self.assertEqual(self.fx.head(), fetch_head)
+        self.assertEqual((self.fx.repo / "plugin" / "src.ts").read_text(), "export const v = 2\n")
+        self.assertEqual(git(self.fx.repo, "status", "--porcelain", "--untracked-files=no"), "")
+        self.assertTrue((self.fx.repo / "plugin" / "mine.ts").exists())   # not the update's
+        [patch] = self.backups("*/uncommitted.patch")
+        self.assertIn("+export const v = 5", patch.read_text())
+        self.assertEqual((patch.parent / "untracked" / "plugin" / "mine.ts").read_text(),
+                         "export const mine = 1\n")
+        text = out["text_html"]
+        self.assertIn("незакреплённые правки", text)
+        self.assertIn("копию сохранил", text)
+        self.assertNotIn("uncommitted.patch", text)
+        self.assertIn("uncommitted.patch", (self.fx.ws / "logs" / "update.log").read_text())
+        self.assertFalse((self.fx.ws / "state" / "update-blocked.json").exists())
+
+    def test_blocked_uncommitted_signal_is_removed_once_the_bridge_goes_in(self) -> None:
+        self.clash()
+        self.bridge_update()
+        self.fx.run("plan")
+        self.assertEqual(self.fx.run("apply", "keep")["status"], "BLOCKED")
+        self.fx.run("plan")
+        self.assertEqual(self.fx.run("apply", "all")["status"], "UPDATED")
+        self.assertFalse((self.fx.ws / "state" / "update-blocked.json").exists())
+
+    # -- not the owner's work ----------------------------------------------------
+    def test_leftovers_are_ignored(self) -> None:
+        plugin = self.fx.repo / "plugin"
+        (plugin / "tmp-out").mkdir()
+        (plugin / "tmp-out" / "dump.json").write_text("{}\n")
+        (plugin / "src.ts.bak-1").write_text("old\n")
+        (plugin / "build").mkdir()
+        (plugin / "build" / "out.js").write_text("local build\n")
+        # the update ships a file where the owner has a leftover of his own
+        self.fx.write_origin("plugin/build/out.js", "shipped build\n")
+        fetch_head = self.bridge_update()
+        plan = self.fx.run("plan")
+        self.assertFalse(plan["items"][0]["tweak"])
+        self.assertEqual(plan["tweaks"], [])
+        out = self.fx.run("auto")
+        self.assertEqual(out["status"], "UPDATED")
+        self.assertEqual(self.fx.head(), fetch_head)
+        self.assertEqual(self.backups("*/uncommitted.patch"), [])
+        self.assertEqual(self.backups("*/untracked"), [])
+
+    def test_file_identical_to_the_update_is_ignored(self) -> None:
+        (self.fx.repo / "plugin" / "src.ts").write_text("export const v = 2\n")
+        (self.fx.repo / "plugin" / "new.ts").write_text("export const n = 1\n")
+        self.fx.write_origin("plugin/new.ts", "export const n = 1\n")
+        fetch_head = self.bridge_update()
+        plan = self.fx.run("plan")
+        self.assertFalse(plan["items"][0]["tweak"])
+        self.assertEqual(plan["tweaks"], [])
+        out = self.fx.run("auto")
+        self.assertEqual(out["status"], "UPDATED")
+        self.assertEqual(self.fx.head(), fetch_head)
+        self.assertEqual(self.status(), [])
+        self.assertNotIn("незакреплённ", out["text_html"])
 
 
 class StaleTest(unittest.TestCase):
