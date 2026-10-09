@@ -11,6 +11,15 @@
 set -euo pipefail
 OUT="${JARVIS_STATUSLINE_FILE:-$HOME/.claude/dashi-statusline.json}"
 payload="$(cat)"
+# Claude Code compacts at CLAUDE_CODE_AUTO_COMPACT_WINDOW (settings.json env), not at
+# the model's full window; stamp it in so the HUD bar fills up to the real limit.
+if [[ "${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-}" =~ ^[0-9]+$ ]]; then
+  payload="$(printf '%s' "$payload" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+d["dashi_autocompact_window"] = int(sys.argv[1])
+print(json.dumps(d))' "$CLAUDE_CODE_AUTO_COMPACT_WINDOW")"
+fi
 mkdir -p "$(dirname "$OUT")"
 tmp="$(mktemp "$OUT.XXXXXX")"
 printf '%s' "$payload" > "$tmp" && chmod 600 "$tmp" && mv -f "$tmp" "$OUT"

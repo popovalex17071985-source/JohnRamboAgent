@@ -27,6 +27,11 @@ describe('statusline snapshot', () => {
     expect(s?.sevenDay?.usedPct).toBe(33)
   })
 
+  test('auto-compact window caps the model window', () => {
+    expect(parseStatusline(doc({ dashi_autocompact_window: 400_000 }), T)?.windowTokens).toBe(400_000)
+    expect(parseStatusline(doc({ dashi_autocompact_window: 2_000_000 }), T)?.windowTokens).toBe(1_000_000)
+  })
+
   test('another session, garbage or empty doc -> null', () => {
     expect(parseStatusline(doc(), '/other.jsonl')).toBeNull()
     expect(parseStatusline('{not json', T)).toBeNull()

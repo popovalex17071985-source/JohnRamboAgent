@@ -72,6 +72,12 @@ export function parseStatusline(raw: string, transcriptPath?: string): Statuslin
     const size = num((cw as Record<string, unknown>).context_window_size)
     if (size !== undefined && size > 0) out.windowTokens = Math.round(size)
   }
+  // Auto-compact fires before the model window is full (operator runs 400k on a
+  // 1M model): the bar must fill up to where the context actually gets cut.
+  const compact = num(d.dashi_autocompact_window)
+  if (compact !== undefined && compact > 0 && (out.windowTokens === undefined || compact < out.windowTokens)) {
+    out.windowTokens = Math.round(compact)
+  }
   const rl = d.rate_limits
   if (rl !== null && typeof rl === 'object') {
     const r = rl as Record<string, unknown>
