@@ -80,6 +80,7 @@ fi
 check "crontab -u $USER_NAME -l | grep -q dead-letter-digest" "читатель карантина в расписании"
 check "crontab -u $USER_NAME -l | grep -q api-fail-watch" "сторож отказов API в расписании"
 check "crontab -u $USER_NAME -l | grep -q stack-updates-check" "недельная сводка версий в расписании"
+check "crontab -u $USER_NAME -l | grep -q backup-tidy" "недельная уборка старых копий в расписании"
 
 echo "=== 7. Канал ==="
 check "[ -s /etc/dashi-plugin/$NAME/channel.env ]" "конфигурация канала на месте"

@@ -172,11 +172,16 @@ printf '%s\n' "$OWNER_TZ" > "$CLAUDE_DIR/core/owner-tz"
 # python3 -c, не heredoc: вложенный heredoc внутри $( ) вешал установку на stdin.
 DIG_H="$(OWNER_TZ="$OWNER_TZ" python3 -c 'import os,datetime as dt,zoneinfo; own=zoneinfo.ZoneInfo(os.environ["OWNER_TZ"]); srv=dt.datetime.now().astimezone().tzinfo; print(dt.datetime.now(own).replace(hour=9,minute=0,second=0,microsecond=0).astimezone(srv).hour)' 2>/dev/null || true)"
 [[ -n "$DIG_H" ]] || { DIG_H=7; echo "  ! не смог посчитать пояс ($OWNER_TZ, нет tzdata?) — сводка в 07:00 по серверу"; }
+# Weekly tidy of old backup copies: Sunday 04:00 OWNER time -> "minute hour
+# weekday" on the server clock. The weekday can shift too (owner +5, server UTC:
+# Saturday 23:00), so it is computed, not assumed.
+TIDY_AT="$(OWNER_TZ="$OWNER_TZ" python3 -c 'import os,datetime as dt,zoneinfo; own=zoneinfo.ZoneInfo(os.environ["OWNER_TZ"]); srv=dt.datetime.now().astimezone().tzinfo; n=dt.datetime.now(own); s=(n.replace(hour=4,minute=0,second=0,microsecond=0)+dt.timedelta(days=(6-n.weekday())%7)).astimezone(srv); print(s.minute, s.hour, "* *", (s.weekday()+1)%7)' 2>/dev/null || true)"
+[[ -n "$TIDY_AT" ]] || { TIDY_AT="0 4 * * 0"; echo "  ! не смог посчитать пояс ($OWNER_TZ) — уборка копий в воскресенье 04:00 по серверу"; }
 # Порядок утра (минуты после часа сводки): 00 сводка, 10 советник по обновлениям
 # (что вышло нового + напоминание про /update), 20 самопроверка (хуки, крон,
 # канарейка, модель, память — шлёт ТОЛЬКО подозрения), 30 будильник по срокам
 # и отчёт о сервере (диск, память, сервисы, вход в Claude — шлётся всегда).
-CRON_SCRIPTS=(promise-sweeper.py open-threads-digest.py update-notify.sh self-audit-morning.sh health-daily.sh job-watch.py job-fail-watch.py memory-index-trim.py fallback-reply-sweeper.sh claude-link-guard.sh auth-alive-watch.sh multichat-nudge.sh dead-letter-digest.py stack-updates-check.py api-fail-watch.py)
+CRON_SCRIPTS=(promise-sweeper.py open-threads-digest.py update-notify.sh self-audit-morning.sh health-daily.sh job-watch.py job-fail-watch.py memory-index-trim.py fallback-reply-sweeper.sh claude-link-guard.sh auth-alive-watch.sh multichat-nudge.sh dead-letter-digest.py stack-updates-check.py api-fail-watch.py backup-tidy.py)
 CRON_LINES=(
   "0 $DIG_H * * * /usr/bin/python3 $WORKSPACE/bin/open-threads-digest.py --send >> $WORKSPACE/logs/open-threads-digest.log 2>&1"
   "10 $DIG_H * * * /bin/bash $WORKSPACE/bin/update-notify.sh >> $WORKSPACE/logs/update-notify.log 2>&1"
@@ -217,6 +222,9 @@ CRON_LINES=(
   # An external API answering 401/403 or empty three times in a row goes silent
   # otherwise: one message to the owner per source per day. Minutes, no tz.
   "*/30 * * * * /usr/bin/python3 $WORKSPACE/bin/api-fail-watch.py >> $WORKSPACE/logs/api-fail-watch.log 2>&1"
+  # Agents copy a file before every edit and never clean up (Гор: 714 copies,
+  # 964 MB). Weekly, Sunday 04:00 owner time: old copies -> one verified archive.
+  "$TIDY_AT /usr/bin/python3 $WORKSPACE/bin/backup-tidy.py >> $WORKSPACE/logs/backup-tidy.log 2>&1"
 )
 if [[ -n "${KIT_NO_CRON:-}" ]]; then
   echo "  крон не трогаю (KIT_NO_CRON)"
