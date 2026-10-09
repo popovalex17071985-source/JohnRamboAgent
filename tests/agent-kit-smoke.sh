@@ -164,6 +164,20 @@ dups="$(grep -F "$T/bin/" "$CRONTAB_FILE" | sort | uniq -d)"
 [[ "$(grep -c "$T/data/cron-heartbeat" "$CRONTAB_FILE")" == 1 ]] || fail "перестройка крона задвоила канарейку"
 grep -q "/srv/other/bin/promise-sweeper.py" "$CRONTAB_FILE" || fail "смена --tz затёрла чужую строку"
 
+# Weekly tidy of old backup copies: Sunday 04:00 OWNER time. With the server on
+# UTC and the owner in Yekaterinburg (+5) that is Saturday 23:00 server time --
+# the weekday shifts too, not just the hour.
+TZ=UTC bash "$KIT/install-kit.sh" --claude-dir "$T/.claude" --chat-id 42 --agent smoke --tz Asia/Yekaterinburg >/dev/null
+[[ "$(grep -c "$T/bin/backup-tidy.py" "$CRONTAB_FILE")" == 1 ]] || fail "уборка копий не в кроне или задвоена"
+grep -q "^0 23 \* \* 6 /usr/bin/python3 $T/bin/backup-tidy.py >> $T/logs/backup-tidy.log 2>&1$" "$CRONTAB_FILE" \
+  || fail "уборка копий не в воскресенье 04:00 по хозяину: $(grep backup-tidy "$CRONTAB_FILE")"
+TZ=UTC bash "$KIT/install-kit.sh" --claude-dir "$T/.claude" --chat-id 42 --agent smoke --tz UTC >/dev/null
+grep -q "^0 4 \* \* 0 /usr/bin/python3 $T/bin/backup-tidy.py " "$CRONTAB_FILE" \
+  || fail "уборка копий: смена --tz не переписала строку"
+[[ "$(grep -c "$T/bin/backup-tidy.py" "$CRONTAB_FILE")" == 1 ]] || fail "смена --tz задвоила уборку копий"
+python3 "$T/bin/backup-tidy.py" --workspace "$T" --dry-run >/dev/null || fail "уборка копий: пробный прогон упал"
+grep -q "__WORKSPACE__" "$T/bin/backup-tidy.py" && fail "в backup-tidy.py не подставлен путь"
+
 # Будильник, переживающий рестарт: разложен, исполняемый, время считает по Перми
 R="$T/bin/remind-at.sh"
 [[ -x "$R" ]] || fail "remind-at.sh не разложен или не исполняемый"
