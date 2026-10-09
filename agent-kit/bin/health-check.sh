@@ -382,11 +382,14 @@ probe_embed() {
 probe_sizes() {
   local big proj logs data out=""
   proj=$(du -sm "$HOME/.claude/projects" 2>/dev/null | cut -f1); proj=${proj:-0}
-  big=$(find "$HOME/.claude/projects" -name '*.jsonl' -printf '%s\n' 2>/dev/null | sort -rn | head -1)
+  # The LIVE session is the most recently written transcript. The largest file
+  # is usually an old, already-closed session: measuring it kept «сессию пора
+  # начать заново» on even right after a restart (gorbot, 09.10.2026).
+  big=$(find "$HOME/.claude/projects" -name '*.jsonl' -printf '%T@ %s\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2)
   big=$(( ${big:-0} / 1048576 ))
   logs=$(du -sm "$WORKSPACE/logs" 2>/dev/null | cut -f1); logs=${logs:-0}
   data=$(du -sm "$WORKSPACE/data" 2>/dev/null | cut -f1); data=${data:-0}
-  out="переписка ${proj}М (крупнейшая сессия ${big}М), логи ${logs}М, данные ${data}М"
+  out="переписка ${proj}М (текущая сессия ${big}М), логи ${logs}М, данные ${data}М"
   if [ "$big" -ge 20 ]; then echo "WARN|$out -- сессию пора начать заново, ответы начнут теряться"; return; fi
   if [ "$logs" -ge 500 ] || [ "$data" -ge 2000 ]; then echo "WARN|$out -- нужна ротация"; return; fi
   echo "ok|$out"
