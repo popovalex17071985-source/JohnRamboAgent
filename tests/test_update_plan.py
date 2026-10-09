@@ -765,6 +765,22 @@ class ScanTest(unittest.TestCase):
         self.assertEqual(sorted(out["extra_files"]), [".claude/hooks/mine.sh", "bin/my-own.sh"])
         self.assertEqual(out["blocked"], {"fetch_head": "f" * 40, "local_commits": [], "ts": 5})
 
+    def test_scan_ignores_backup_copies_and_temp_output(self) -> None:
+        # Gor 10.10.2026: «c.py.bak-20.09» and an untracked plugin/tmp-out/ showed up
+        # in the owner's digest as «свой файл» / «правки в 21 файле ядра».
+        bin_dir = self.fx.ws / "bin"
+        for name in ("c.py.bak-20.09", "c.py.bak-names-1790878214", "c.py.orig", "c.py~"):
+            (bin_dir / name).write_text("old copy\n")
+        tmp_out = self.fx.repo / "plugin" / "tmp-out"
+        tmp_out.mkdir(parents=True)
+        (tmp_out / "dump.json").write_text("{}\n")
+        (self.fx.repo / "plugin" / "src.ts.bak-1").write_text("old\n")
+        (self.fx.repo / "plugin" / "mine.ts").write_text("export const mine = 1\n")
+        self.fx.fetch()
+        out = self.scan()
+        self.assertEqual(out["extra_files"], [])
+        self.assertEqual(out["uncommitted"], ["plugin/mine.ts"])
+
     def test_scan_marks_a_conflicting_local_commit(self) -> None:
         sha = local_commit(self.fx, self.SUBJECT,
                            {"plugin/src.ts": "export const listenAll = true\n"})
