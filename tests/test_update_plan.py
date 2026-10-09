@@ -305,6 +305,35 @@ class ApplyTest(unittest.TestCase):
         # kit files are not touched by a failed update
         self.assertEqual(self.fx.installed("hooks/a.sh"), a_before)
 
+    def test_rollback_leaves_no_aside_copy(self) -> None:
+        self.fx.standard_update()
+        self.fx.set_bun(1)
+        self.fx.run("plan")
+        self.assertEqual(self.fx.run("apply", "all")["status"], "ROLLBACK")
+        names = sorted(p.name for p in self.fx.cd.iterdir() if p.name.startswith(self.fx.repo.name))
+        self.assertEqual(names, [self.fx.repo.name])
+
+    @unittest.skipIf(os.geteuid() == 0, "root can delete a read-only folder")
+    def test_rollback_restores_repo_even_if_broken_copy_cannot_be_deleted(self) -> None:
+        # The failed half-update leaves something this user cannot delete. The
+        # old order (delete repo, then rename the copy back) died halfway and
+        # left neither; the repo must come back first, the broken copy aside.
+        self.fx.standard_update()
+        head = self.fx.head()
+        self.fx.bun.write_text("#!/bin/sh\nmkdir -p locked && touch locked/f && chmod 500 locked\nexit 1\n")
+        self.fx.run("plan")
+        try:
+            out = self.fx.run("apply", "all")
+        finally:
+            for locked in self.fx.cd.glob("*/plugin/locked"):
+                locked.chmod(0o700)
+        self.assertEqual(out["status"], "ROLLBACK")
+        self.assertEqual(self.fx.head(), head)
+        self.assertEqual((self.fx.repo / "plugin" / "src.ts").read_text(), "export const v = 1\n")
+        self.assertFalse((self.fx.repo / "plugin" / "locked").exists())
+        aside = [p.name for p in self.fx.cd.glob(self.fx.repo.name + ".failed-*")]
+        self.assertEqual(len(aside), 1, aside)
+
     @unittest.skipIf(os.geteuid() == 0, "root can delete a read-only folder")
     def test_backup_failure_touches_nothing(self) -> None:
         self.fx.standard_update()
