@@ -491,7 +491,10 @@ class LocalCommitsTest(unittest.TestCase):
         self.assertEqual([t["n"] for t in out["tweaks"] if t.get("kind") == "local"], [1])
         self.assertIn("у вас стоит своя доработка, которой нет в общей версии: "
                       f"«{self.SUBJECT}»", out["text_html"])
-        self.assertIn("кроме п.1 и 3", out["text_html"])
+        self.assertIn("<code>/update</code> ещё раз — поставить всё, кроме п.1 и 3 (там ваши правки)",
+                      out["text_html"])
+        self.assertIn("<code>/update всё</code> — и их тоже (ваши правки перезапишу, копии останутся)",
+                      out["text_html"])
 
     def test_repeated_update_keeps_local_work(self) -> None:
         self.fx.run("auto")
