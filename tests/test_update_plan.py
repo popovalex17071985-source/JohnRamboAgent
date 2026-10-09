@@ -108,6 +108,9 @@ class Fixture:
         return git(self.repo, "rev-parse", "HEAD")
 
     def run(self, *args: str) -> dict:
+        return json.loads(self.run_raw(*args))
+
+    def run_raw(self, *args: str) -> str:
         res = subprocess.run(
             ["python3", str(SCRIPT), "--repo", str(self.repo), "--claude-dir", str(self.cd),
              "--agent", "smoke", "--chat-id", "42", "--settings", str(self.settings),
@@ -115,7 +118,7 @@ class Fixture:
             capture_output=True, text=True, env=self.env())
         if res.returncode != 0:
             raise AssertionError(f"update-plan.py {args} exit {res.returncode}: {res.stderr}")
-        return json.loads(res.stdout)
+        return res.stdout
 
     def installed(self, rel: str) -> str:
         """rel like 'hooks/a.sh' (under .claude) or 'bin/c.py' (under workspace)."""
@@ -360,6 +363,38 @@ class SkipTest(unittest.TestCase):
         self.assertEqual(out["status"], "UNSKIPPED")
         plan = self.fx.run("plan")
         self.assertEqual(plan["items"][0]["kind"], "bridge")
+
+
+class NotifyTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.fx = Fixture(Path(self._tmp.name))
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_notify_plain_once_per_plan_and_without_skipped(self) -> None:
+        self.fx.standard_update()
+        text = self.fx.run_raw("notify")
+        self.assertIn("Карточка «работаю» закрывается сама", text)
+        self.assertIn("Напоминание о времени теперь по часам хозяина", text)
+        self.assertIn("/update", text)
+        self.assertNotIn("Заметки для хозяина", text)
+        self.assertEqual(self.fx.run_raw("notify"), text)   # not marked until sent
+        self.assertEqual(self.fx.run_raw("notify", "--sent"), "")
+        self.assertEqual(self.fx.run_raw("notify"), "")      # same plan -> silence
+        # the owner skips a.sh -> the plan changed, a.sh is no longer mentioned
+        self.fx.run("plan")
+        self.fx.run("skip", "2")
+        text = self.fx.run_raw("notify")
+        self.assertNotIn("Напоминание о времени", text)
+        self.assertIn("Отчёт о сервере стал короче", text)
+
+    def test_notify_silent_when_only_hidden_changes(self) -> None:
+        self.fx.write_origin("tests/x.txt", "x\n")
+        self.fx.commit("tests: fixture\n\nХозяину: -\n")
+        self.fx.fetch()
+        self.assertEqual(self.fx.run_raw("notify"), "")
 
 
 if __name__ == "__main__":
