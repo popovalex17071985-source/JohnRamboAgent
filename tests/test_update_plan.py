@@ -941,6 +941,7 @@ class UncommittedTest(unittest.TestCase):
         head = self.fx.head()
         before = work_tree(self.fx)
         status = self.status()
+        inode = self.fx.repo.stat().st_ino
         plan = self.fx.run("auto")
         self.assertEqual(plan["status"], "PLAN")
         out = self.fx.run("--expect", plan["fetch_head"][:12], "apply", "keep")
@@ -959,6 +960,9 @@ class UncommittedTest(unittest.TestCase):
         self.assertFalse(self.fx.bun_log.exists())
         names = sorted(p.name for p in self.fx.cd.iterdir() if p.name.startswith(self.fx.repo.name))
         self.assertEqual(names, [self.fx.repo.name])
+        # never reset and swapped back: the running plugin keeps its folder
+        self.assertEqual(self.fx.repo.stat().st_ino, inode)
+        self.assertEqual(git(self.fx.repo, "worktree", "list", "--porcelain").count("worktree "), 1)
         # saved anyway, and the developer's signal
         [patch] = self.backups("*/uncommitted.patch")
         self.assertIn("+export const v = 5", patch.read_text())
