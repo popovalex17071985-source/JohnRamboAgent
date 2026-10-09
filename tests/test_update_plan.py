@@ -287,5 +287,36 @@ class ApplyTest(unittest.TestCase):
         self.assertEqual(self.fx.installed("hooks/a.sh"), a_before)
 
 
+class StaleTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.fx = Fixture(Path(self._tmp.name))
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_apply_and_skip_refuse_when_fetch_head_moved(self) -> None:
+        self.fx.standard_update()
+        head = self.fx.head()
+        self.fx.run("plan")
+        self.fx.write_origin("plugin/src.ts", "export const v = 3\n")
+        self.fx.commit("ещё правка")
+        self.fx.fetch()
+        for args in (("apply", "all"), ("skip", "2")):
+            out = self.fx.run(*args)
+            self.assertEqual(out["status"], "STALE", args)
+            self.assertIn("вышло ещё обновление", out["text_html"])
+            self.assertIn("/update", out["text_html"])
+        self.assertEqual(self.fx.head(), head)
+        self.assertFalse(self.fx.bun_log.exists())
+        self.assertFalse((self.fx.ws / "state" / "update-skipped.json").exists())
+
+    def test_apply_without_a_plan_asks_for_update_first(self) -> None:
+        self.fx.standard_update()
+        out = self.fx.run("apply", "all")
+        self.assertEqual(out["status"], "STALE")
+        self.assertIn("сначала", out["text_html"])
+
+
 if __name__ == "__main__":
     unittest.main()
