@@ -12,20 +12,25 @@ WORKSPACE="__WORKSPACE__"
 CTL="/usr/local/bin/dashi-ctl-$AGENT"
 REPO="__CLAUDE_DIR__/dashi-plugin-claude-code"
 SEEN="$WORKSPACE/state/update-notified"
+# Test seams: a stub check command and a stub sender. Unset in production, so
+# the check is `sudo -n dashi-ctl check` and the sender is bin/tg-send.py.
+CHECK="${DASHI_UPDATE_CHECK:-}"
+TG_SEND="${DASHI_TG_SEND:-$WORKSPACE/bin/tg-send.py}"
 
-[ -x "$CTL" ] || exit 0
+if [ -z "$CHECK" ]; then [ -x "$CTL" ] || exit 0; fi
+run_check() { if [ -n "$CHECK" ]; then "$CHECK"; else sudo -n "$CTL" check; fi; }
 
 # Проверка не прошла -- хозяину об этом раз на серию сбоев, а не молча выйти:
 # 05–09.10.2026 у трёх агентов закрыли репо, проверка падала на входе в GitHub,
 # а скрипт тихо выходил, и хозяева неделю сидели на старой версии, не зная этого.
 FAILED="$WORKSPACE/state/update-check-failed"
 ERR="$(mktemp)"
-if ! LIST="$(sudo -n "$CTL" check 2>"$ERR")"; then
+if ! LIST="$(run_check 2>"$ERR")"; then
   WHY="$(grep -v '^[[:space:]]*$' "$ERR" | tail -1 | cut -c1-200)"
   rm -f "$ERR"
   [ -e "$FAILED" ] && exit 0
   mkdir -p "$(dirname "$FAILED")"
-  /usr/bin/python3 "$WORKSPACE/bin/tg-send.py" "Не могу проверить обновления: сервер не достучался до хранилища кода.
+  /usr/bin/python3 "$TG_SEND" "Не могу проверить обновления: сервер не достучался до хранилища кода.
 
 Ошибка: ${WHY:-без текста}
 
@@ -61,7 +66,7 @@ LIST="$SHOW"
 N="$(printf '%s\n' "$LIST" | grep -c .)"
 BODY="$(printf '%s\n' "$LIST" | head -15 | sed 's/^[0-9a-f]* /• /')"
 
-/usr/bin/python3 "$WORKSPACE/bin/tg-send.py" "Вышло обновление: $N шт.
+/usr/bin/python3 "$TG_SEND" "Вышло обновление: $N шт.
 
 $BODY
 
