@@ -9,8 +9,10 @@ set -uo pipefail
 
 AGENT="__AGENT__"
 WORKSPACE="__WORKSPACE__"
+CLAUDE_DIR="__CLAUDE_DIR__"
+CHAT_ID="__CHAT_ID__"
 CTL="/usr/local/bin/dashi-ctl-$AGENT"
-REPO="__CLAUDE_DIR__/dashi-plugin-claude-code"
+REPO="$CLAUDE_DIR/dashi-plugin-claude-code"
 SEEN="$WORKSPACE/state/update-notified"
 # Test seams: a stub check command and a stub sender. Unset in production, so
 # the check is `sudo -n dashi-ctl check` and the sender is bin/tg-send.py.
@@ -39,6 +41,21 @@ if ! LIST="$(run_check 2>"$ERR")"; then
   exit 0
 fi
 rm -f "$ERR" "$FAILED"
+
+# Простыми словами и по пунктам: план считает планировщик из ТОЙ версии, что
+# пришла сверху (FETCH_HEAD), -- заметки «Хозяину:», пропущенные хозяином пункты,
+# свои правки. Пишет только когда план изменился. Нет планировщика в свежей
+# версии -- старый список заголовков ниже.
+PLANNER="scripts/update-plan.py"
+plan() {
+  git -C "$REPO" show "FETCH_HEAD:$PLANNER" | /usr/bin/python3 - --repo "$REPO" \
+    --claude-dir "$CLAUDE_DIR" --workspace "$WORKSPACE" --agent "$AGENT" --chat-id "$CHAT_ID" "$@"
+}
+if git -C "$REPO" cat-file -e "FETCH_HEAD:$PLANNER" 2>/dev/null && TEXT="$(plan notify)"; then
+  [ -n "$TEXT" ] || exit 0
+  /usr/bin/python3 "$TG_SEND" "$TEXT" --html && plan notify --sent
+  exit 0
+fi
 [ -n "$LIST" ] || exit 0
 
 # Хеш списка: тот же список — молчим, иначе будем долбить каждый день.
