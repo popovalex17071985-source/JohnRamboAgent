@@ -684,9 +684,18 @@ def apply_bridge(ctx: Ctx, fetch_head: str, keep: list[str]) -> tuple[bool, str]
         shutil.rmtree(bak)
     subprocess.run(["cp", "-a", str(ctx.repo), str(bak)], check=True)
     ctx.git.close()
-    ctx.git.run("reset", "-q", "--hard", fetch_head)
-    subprocess.run([bun_path(), "install", "--silent"], cwd=ctx.repo / "plugin",
-                   capture_output=True, timeout=600)
+    try:
+        ctx.git.run("reset", "-q", "--hard", fetch_head)
+        res = subprocess.run([bun_path(), "install", "--silent"], cwd=ctx.repo / "plugin",
+                             capture_output=True, timeout=600)
+        ok = res.returncode == 0
+    except (GitError, OSError, subprocess.SubprocessError):
+        ok = False
+    if not ok:
+        # Same as dashi-ctl: the copy taken a moment ago becomes the repo again.
+        shutil.rmtree(ctx.repo)
+        os.rename(bak, ctx.repo)
+        return False, ""
     return True, run_install_kit(ctx, keep)
 
 
@@ -729,6 +738,10 @@ def cmd_apply(ctx: Ctx, rest: list[str]) -> dict[str, Any]:
     if any(i["kind"] == "bridge" for i in chosen):
         keep = list(saved.get("keep_always", [])) + [i["target"] for i in left if i["kind"] == "kit"]
         ok, warn = apply_bridge(ctx, saved["fetch_head"], keep)
+        if not ok:
+            return {"status": "ROLLBACK", "restart": False,
+                    "text_html": "<b>update</b> — обновление упало, откатил на прежнюю версию. "
+                                 "Сервис не трогал, всё работает как раньше."}
         # HEAD is the new baseline for everything install-kit rendered; files it
         # was told to keep stay on the blob they were on.
         baselines: dict[str, str] = saved.get("baselines", {})
