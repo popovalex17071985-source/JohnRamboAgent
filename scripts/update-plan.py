@@ -1443,6 +1443,19 @@ def scan_kit_tweaks(ctx: Ctx, base: str | None) -> list[dict[str, Any]]:
     return out
 
 
+# Leftovers that are not the owner's work: hand-made backup copies («x.sh.bak-20.09»,
+# «x.orig», «x~») and scratch/build output. Gor 10.10.2026: these filled the digest.
+BACKUP_NAME_RX = re.compile(r"\.(bak|orig|old|save)([-._]|$)|~$|\.sw[op]$")
+SCRATCH_DIRS = {"node_modules", "dist", "build", "logs", ".kit-backup", "__pycache__"}
+
+
+def is_leftover(rel: str) -> bool:
+    parts = rel.split("/")
+    if BACKUP_NAME_RX.search(parts[-1]):
+        return True
+    return any(p in SCRATCH_DIRS or p.startswith("tmp") for p in parts[:-1])
+
+
 def scan_extra_files(ctx: Ctx, base: str | None) -> list[str]:
     """Files in the agent's bin/ and hooks/ that no kit version ships."""
     kit: set[str] = set()
@@ -1455,7 +1468,7 @@ def scan_extra_files(ctx: Ctx, base: str | None) -> list[str]:
             continue
         for path in sorted(root.rglob("*")):
             rel = path.relative_to(root)
-            if path.is_dir() or "__pycache__" in rel.parts or path.suffix == ".pyc":
+            if path.is_dir() or path.suffix == ".pyc" or is_leftover(rel.as_posix()):
                 continue
             if len(rel.parts) == 1 and f"agent-kit/{folder}/{rel}" in kit:
                 continue
@@ -1465,7 +1478,8 @@ def scan_extra_files(ctx: Ctx, base: str | None) -> list[str]:
 
 def scan_uncommitted(ctx: Ctx) -> list[str]:
     raw = ctx.git.run("status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames")
-    return [entry[3:] for entry in raw.split("\0") if len(entry) > 3]
+    return [entry[3:] for entry in raw.split("\0")
+            if len(entry) > 3 and not (entry.startswith("??") and is_leftover(entry[3:]))]
 
 
 def cmd_scan(ctx: Ctx, agent: str | None) -> dict[str, Any]:
