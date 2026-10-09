@@ -851,6 +851,45 @@ def cmd_unskip(ctx: Ctx, rest: list[str]) -> dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# notify (daily advisor, update-notify.sh)
+# ─────────────────────────────────────────────────────────────────────────────
+
+NOTIFY_HASH = "update-notify.hash"
+NOTIFY_MAX_NOTES = 2
+
+
+def notify_text(plan: Plan) -> str:
+    parts = [f"<b>Вышло обновление</b> — {len(plan.items)} "
+             f"{plural(len(plan.items), 'пункт', 'пункта', 'пунктов')}"]
+    parts += [item_block(i, NOTIFY_MAX_NOTES) for i in plan.items]
+    parts.append("Посмотреть подробно и выбрать, что ставить: <code>/update</code>")
+    text = "\n\n".join(parts)
+    return text if len(text) <= TEXT_BUDGET else text[:TEXT_BUDGET - 1] + "…"
+
+
+def cmd_notify(ctx: Ctx, rest: list[str], sent: bool) -> str:
+    """Text for the owner, only when the plan changed since the last sent one.
+
+    `--sent` records the current plan as delivered (call it after tg-send ok).
+    """
+    plan = build_plan(ctx)
+    key = plan.unit_key()
+    if sent:
+        ctx.state_dir.mkdir(parents=True, exist_ok=True)
+        ctx.state_file(NOTIFY_HASH).write_text(key + "\n")
+        return ""
+    visible = [i for i in plan.items if i["kind"] == "kit" or i.get("notes")]
+    if not visible:
+        return ""
+    try:
+        if ctx.state_file(NOTIFY_HASH).read_text().strip() == key:
+            return ""
+    except OSError:
+        pass
+    return notify_text(plan) + "\n"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # main
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -865,6 +904,7 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     ap.add_argument("--tz", default="")
     ap.add_argument("--settings", type=Path)
     ap.add_argument("--ref", default=DEFAULT_REF)
+    ap.add_argument("--sent", action="store_true", help="notify: mark the current plan as sent")
     ap.add_argument("command")
     ap.add_argument("rest", nargs="*")
     ns = ap.parse_args(argv)
@@ -898,12 +938,18 @@ def main(argv: list[str]) -> int:
     ns, rest = parse_args(argv)
     ctx = make_ctx(ns)
     handler = COMMANDS.get(ns.command)
+    if ns.command == "notify":
+        def handler(c: Ctx, r: list[str]) -> str:
+            return cmd_notify(c, r, ns.sent)
     if handler is None:
         print(f"unknown command: {ns.command}", file=sys.stderr)
         return 2
     try:
         out = handler(ctx, rest)
     except GitError as err:
+        if ns.command == "notify":
+            print(f"update-plan notify: {err}", file=sys.stderr)
+            return 1
         out = {"status": "ERROR",
                "text_html": f"<b>update</b> — не смог разобрать обновление: <code>{esc(str(err))[:300]}</code>"}
     finally:
