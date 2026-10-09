@@ -15,7 +15,25 @@ SEEN="$WORKSPACE/state/update-notified"
 
 [ -x "$CTL" ] || exit 0
 
-LIST="$(sudo -n "$CTL" check 2>/dev/null)" || exit 0
+# Проверка не прошла -- хозяину об этом раз на серию сбоев, а не молча выйти:
+# 05–09.10.2026 у трёх агентов закрыли репо, проверка падала на входе в GitHub,
+# а скрипт тихо выходил, и хозяева неделю сидели на старой версии, не зная этого.
+FAILED="$WORKSPACE/state/update-check-failed"
+ERR="$(mktemp)"
+if ! LIST="$(sudo -n "$CTL" check 2>"$ERR")"; then
+  WHY="$(grep -v '^[[:space:]]*$' "$ERR" | tail -1 | cut -c1-200)"
+  rm -f "$ERR"
+  [ -e "$FAILED" ] && exit 0
+  mkdir -p "$(dirname "$FAILED")"
+  /usr/bin/python3 "$WORKSPACE/bin/tg-send.py" "Не могу проверить обновления: сервер не достучался до хранилища кода.
+
+Ошибка: ${WHY:-без текста}
+
+Пока это не починят, обновления до агента не дойдут. Перешлите это сообщение тому, кто ставил агента." \
+    && : > "$FAILED"
+  exit 0
+fi
+rm -f "$ERR" "$FAILED"
 [ -n "$LIST" ] || exit 0
 
 # Хеш списка: тот же список — молчим, иначе будем долбить каждый день.
