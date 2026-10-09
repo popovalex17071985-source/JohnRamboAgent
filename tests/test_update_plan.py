@@ -726,6 +726,8 @@ class PlainTextTest(unittest.TestCase):
         self.assertEqual(up.plain_name("agent-kit/bin/auth-alive-watch.sh"), "сторож входа")
         self.assertEqual(up.plain_name("agent-kit/bin/api-fail-watch.py"),
                          "сторож внешних сервисов")
+        self.assertEqual(up.plain_name("agent-kit/bin/backup-tidy.py"),
+                         "уборка старых копий файлов")
         self.assertEqual(up.plain_name("agent-kit/hooks/tz-guard.sh"), "правила поведения агента")
         self.assertEqual(up.plain_name("agent-kit/core/constitution.md"), "основные правила агента")
         self.assertEqual(up.plain_name("agent-kit/bin/never-heard-of.sh"), "служебная часть")
