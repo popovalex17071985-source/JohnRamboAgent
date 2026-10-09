@@ -426,6 +426,25 @@ class NotifyTest(unittest.TestCase):
         self.assertNotIn("Напоминание о времени", text)
         self.assertIn("Отчёт о сервере стал короче", text)
 
+    def test_unannotated_bridge_commit_is_never_silent(self) -> None:
+        # No trailer, no update-notes.json entry: the owner must still hear.
+        # Only an explicit "-" hides a commit.
+        self.fx.write_origin("plugin/src.ts", "export const v = 2\n")
+        sha_plain = self.fx.commit("Очередь: гонка при двух сообщениях подряд")
+        self.fx.write_origin("plugin/src.ts", "export const v = 3\n")
+        git(self.fx.origin, "add", "-A")
+        git(self.fx.origin, "commit", "-q", "--allow-empty-message", "-m", "")
+        sha_empty = git(self.fx.origin, "rev-parse", "HEAD")
+        self.fx.fetch()
+        plan = self.fx.run("plan")
+        self.assertEqual(plan["items"][0]["kind"], "bridge")
+        for text in (self.fx.run_raw("notify"), plan["text_html"]):
+            self.assertIn("Очередь: гонка при двух сообщениях подряд", text)
+            self.assertIn("Мелкие исправления в работе агента", text)  # instead of a bare sha
+            self.assertNotIn(sha_empty[:7], text)
+            self.assertNotIn(sha_plain[:7], text)
+            self.assertIn("/update", text)
+
     def test_notify_silent_when_only_hidden_changes(self) -> None:
         self.fx.write_origin("tests/x.txt", "x\n")
         self.fx.commit("tests: fixture\n\nХозяину: -\n")
