@@ -214,5 +214,34 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(out["items"], [])
 
 
+
+class ApplyTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.fx = Fixture(Path(self._tmp.name))
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_apply_keep_moves_head_and_leaves_tweaked_file(self) -> None:
+        self.fx.standard_update()
+        fetch_head = git(self.fx.repo, "rev-parse", "FETCH_HEAD")
+        self.fx.run("plan")
+        out = self.fx.run("apply", "keep")
+        self.assertEqual(out["status"], "UPDATED")
+        self.assertTrue(out["restart"])
+        self.assertEqual(self.fx.head(), fetch_head)
+        self.assertIn("install --silent", self.fx.bun_log.read_text())
+        # the owner's tweak survived, the untweaked kit change landed
+        self.assertIn("# my tweak", self.fx.installed("bin/c.py"))
+        self.assertIn("c1", self.fx.installed("bin/c.py"))
+        self.assertEqual(self.fx.installed("hooks/a.sh"), "#!/bin/sh\necho a2 smoke\n")
+        # the kept item is offered again next time, still marked as the owner's
+        again = self.fx.run("plan")
+        self.assertEqual([i["kind"] for i in again["items"]], ["kit"])
+        self.assertTrue(again["items"][0]["target"].endswith("/bin/c.py"))
+        self.assertTrue(again["items"][0]["tweak"])
+
+
 if __name__ == "__main__":
     unittest.main()
