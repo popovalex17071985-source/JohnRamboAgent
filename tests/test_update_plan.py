@@ -318,5 +318,49 @@ class StaleTest(unittest.TestCase):
         self.assertIn("сначала", out["text_html"])
 
 
+class SkipTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.fx = Fixture(Path(self._tmp.name))
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def targets(self, out: dict) -> list[str]:
+        return [i.get("target", "bridge").rpartition("/")[2] for i in out["items"]]
+
+    def test_skip_hides_item_and_new_upstream_change_brings_it_back(self) -> None:
+        self.fx.standard_update()
+        self.fx.run("plan")
+        out = self.fx.run("skip", "2")
+        self.assertEqual(out["status"], "SKIPPED")
+        self.assertIn("a.sh", out["text_html"])
+        plan = self.fx.run("plan")
+        self.assertEqual(self.targets(plan), ["bridge", "c.py"])
+        self.assertIn("/update пропущенные", plan["text_html"])
+        listed = self.fx.run("skipped")
+        self.assertIn("a.sh", listed["text_html"])
+        # a bridge apply must not lay the skipped file out either
+        self.fx.run("apply", "1")
+        self.assertIn("a1", self.fx.installed("hooks/a.sh"))
+        # upstream changes the same file again -> offered again, new version
+        self.fx.write_origin("agent-kit/hooks/a.sh", "#!/bin/sh\necho a3 __AGENT__\n")
+        self.fx.commit("a.sh снова")
+        self.fx.fetch()
+        plan = self.fx.run("plan")
+        self.assertIn("a.sh", self.targets(plan))
+
+    def test_skip_bridge_then_unskip(self) -> None:
+        self.fx.standard_update()
+        self.fx.run("plan")
+        self.fx.run("skip", "1")
+        plan = self.fx.run("plan")
+        self.assertNotIn("bridge", [i["kind"] for i in plan["items"]])
+        out = self.fx.run("unskip", "all")
+        self.assertEqual(out["status"], "UNSKIPPED")
+        plan = self.fx.run("plan")
+        self.assertEqual(plan["items"][0]["kind"], "bridge")
+
+
 if __name__ == "__main__":
     unittest.main()
