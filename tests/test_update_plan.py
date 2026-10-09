@@ -217,6 +217,22 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(out["items"], [])
 
 
+    def test_shallow_fetch_far_behind_is_deepened_before_planning(self) -> None:
+        # The plugin fetches with --depth: an agent further behind than that has
+        # HEAD outside the fetched history, and HEAD..FETCH_HEAD gets cut short.
+        for i in range(8):
+            self.fx.write_origin("plugin/src.ts", f"export const v = {i + 10}\n")
+            self.fx.commit(f"правка {i}\n\nХозяину: Правка номер {i}\n")
+        git(self.fx.repo, "fetch", "-q", "--depth", "3", "origin", "main")
+        self.assertEqual(git(self.fx.repo, "rev-parse", "--is-shallow-repository"), "true")
+        out = self.fx.run("plan")
+        self.assertEqual([i["kind"] for i in out["items"]], ["bridge"])
+        self.assertEqual(out["items"][0]["notes"], [f"Правка номер {i}" for i in range(8)])
+        self.assertEqual(out["items"][0]["hidden"], 0)
+        saved = json.loads((self.fx.ws / "state" / "update-plan.json").read_text())
+        self.assertEqual(len(saved["items"]["1"]["commits"]), 8)
+        self.assertEqual(saved["fetch_head"], git(self.fx.origin, "rev-parse", "HEAD"))
+
 
 class ApplyTest(unittest.TestCase):
     def setUp(self) -> None:
