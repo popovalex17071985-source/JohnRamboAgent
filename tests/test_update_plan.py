@@ -1038,6 +1038,14 @@ class UncommittedTest(unittest.TestCase):
         self.assertEqual(self.backups("*/uncommitted.patch"), [])
         self.assertEqual(self.backups("*/untracked"), [])
 
+    def test_mode_only_change_is_carried_over(self) -> None:
+        readme = self.fx.repo / "README.md"
+        readme.chmod(0o755)
+        self.bridge_update()
+        self.assertEqual(self.fx.run("auto")["status"], "UPDATED")
+        self.assertTrue(readme.stat().st_mode & 0o100)
+        self.assertEqual(self.status(), [" M README.md"])
+
     def test_file_identical_to_the_update_is_ignored(self) -> None:
         (self.fx.repo / "plugin" / "src.ts").write_text("export const v = 2\n")
         (self.fx.repo / "plugin" / "new.ts").write_text("export const n = 1\n")
