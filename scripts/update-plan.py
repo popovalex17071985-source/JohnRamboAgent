@@ -666,7 +666,8 @@ def commands_block(plan: Plan) -> str:
     elif len(tweaked) < len(nums):
         there = "там ваша правка" if one else "там ваши правки"
         lines.append(f"<code>/update</code> ещё раз — поставить всё, кроме {which} ({there})")
-        lines.append(f"<code>/update всё</code> — и {which} тоже ({overwrite})")
+        also = f"и {which} тоже" if one else "и их тоже"
+        lines.append(f"<code>/update всё</code> — {also} ({overwrite})")
     else:
         lines.append(f"<code>/update всё</code> — поставить ({overwrite})")
     lines.append(f"<code>/update {example}</code> — только выбранные")
