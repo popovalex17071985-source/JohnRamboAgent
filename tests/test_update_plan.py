@@ -239,9 +239,9 @@ class PlanTest(unittest.TestCase):
         (self.fx.repo / "plugin" / "src.ts").write_text("export const v = 7\n")
         out = self.fx.run("plan")
         self.assertTrue(out["items"][0]["tweak"])
-        names = [t["target"] for t in out["tweaks"]]
-        self.assertIn("plugin/src.ts", names)
-        self.assertNotIn("README.md", names)
+        # ...and then every uncommitted file a reset would replace is named.
+        names = [t["target"] for t in out["tweaks"] if t.get("kind") == "uncommitted"]
+        self.assertEqual(names, ["README.md", "plugin/src.ts"])
 
     def test_uptodate_when_nothing_pending(self) -> None:
         self.fx.fetch()
@@ -860,7 +860,9 @@ class UncommittedTest(unittest.TestCase):
         return self.fx.fetch()
 
     def status(self) -> list[str]:
-        return git(self.fx.repo, "status", "--porcelain", "--untracked-files=all").splitlines()
+        res = subprocess.run(["git", "-C", str(self.fx.repo), "status", "--porcelain",
+                              "--untracked-files=all"], check=True, capture_output=True, text=True)
+        return res.stdout.splitlines()                    # not stripped: « M» keeps its space
 
     def backups(self, pattern: str) -> list[Path]:
         return sorted((self.fx.ws / ".kit-backup").glob(pattern))
