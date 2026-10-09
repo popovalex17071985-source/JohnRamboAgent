@@ -463,6 +463,61 @@ class AutoTest(unittest.TestCase):
         self.assertEqual([i["n"] for i in out["items"]], [1, 2])
 
 
+class LocalCommitsTest(unittest.TestCase):
+    """HEAD carries a local commit that the shared version does not have
+    (Albert, 09.10.2026: feat/group-listen-all on a shallow clone)."""
+
+    SUBJECT = "Группа с listen_all: слушать все сообщения"
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.fx = Fixture(Path(self._tmp.name))
+        git(self.fx.repo, "checkout", "-q", "-b", "feat/group-listen-all")
+        (self.fx.repo / "plugin" / "local.ts").write_text("export const listenAll = true\n")
+        git(self.fx.repo, "add", "-A")
+        git(self.fx.repo, "commit", "-q", "-m", self.SUBJECT)
+        self.local = self.fx.head()
+        self.fx.standard_update()
+        git(self.fx.repo, "fetch", "-q", "--depth", "2", "origin", "main")  # shallow, as live
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_plan_warns_that_the_bridge_would_remove_local_work(self) -> None:
+        out = self.fx.run("plan")
+        bridge = out["items"][0]
+        self.assertEqual(bridge["kind"], "bridge")
+        self.assertTrue(bridge["tweak"])
+        self.assertEqual([t["n"] for t in out["tweaks"] if t.get("kind") == "local"], [1])
+        self.assertIn("у вас стоит своя доработка, которой нет в общей версии: "
+                      f"«{self.SUBJECT}»", out["text_html"])
+        self.assertIn("кроме п.1 и 3", out["text_html"])
+
+    def test_repeated_update_keeps_local_work(self) -> None:
+        self.fx.run("auto")
+        out = self.fx.run("auto")
+        self.assertEqual(out["status"], "UPDATED")
+        self.assertFalse(out["restart"])
+        self.assertEqual(self.fx.head(), self.local)          # bridge not applied
+        self.assertIn("a2", self.fx.installed("hooks/a.sh"))  # kit item still went
+
+    def test_update_all_saves_local_work_before_reset(self) -> None:
+        self.fx.run("plan")
+        out = self.fx.run("apply", "all")
+        self.assertEqual(out["status"], "UPDATED")
+        self.assertEqual(self.fx.head(), git(self.fx.repo, "rev-parse", "FETCH_HEAD"))
+        refs = git(self.fx.repo, "for-each-ref", "--format=%(refname) %(objectname)",
+                   "refs/dashi-backup/").splitlines()
+        self.assertEqual(len(refs), 1)
+        self.assertTrue(refs[0].endswith(self.local))
+        patches = list((self.fx.ws / ".kit-backup").glob("*/local-commits.patch"))
+        self.assertEqual(len(patches), 1)
+        self.assertIn("listen_all", patches[0].read_text())
+        text = out["text_html"]
+        self.assertIn("local-commits.patch", text)
+        self.assertIn(refs[0].split()[0], text)
+
+
 class StaleTest(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
