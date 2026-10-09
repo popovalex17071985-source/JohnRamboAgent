@@ -8,7 +8,7 @@ import {
   type PlannerExec,
   type PlannerOutcome,
 } from '../../src/commands/update-choice.js'
-import { handleOobCommand, parseOobCommand, type OobContext } from '../../src/commands/oob.js'
+import { BOT_COMMANDS, handleOobCommand, parseOobCommand, type OobContext } from '../../src/commands/oob.js'
 import type { TelegramApi } from '../../src/channel/tools.js'
 import { makeConfig, makeLogger } from '../helpers/config.js'
 
@@ -117,6 +117,22 @@ describe('makePlanner (FETCH_HEAD copy of scripts/update-plan.py)', () => {
     ])
   })
 
+  test('buttons and the plan version pass through; junk in them is dropped', async () => {
+    const fh = 'a'.repeat(40)
+    const { exec } = fakeExec({
+      show: { code: 0, stdout: 'x' },
+      python3: { code: 0, stdout: JSON.stringify({
+        status: 'PLAN', text_html: 'план', fetch_head: fh,
+        buttons: [['keep', 'Обновить, своё не трогать'], ['no', 'Не сейчас'], [1, 2], 'x'],
+      }) + '\n' },
+    })
+    const out = await makePlanner({ ...opts, exec })(['auto'])
+    expect(out).toEqual({ kind: 'ok', result: {
+      status: 'PLAN', text_html: 'план', fetch_head: fh,
+      buttons: [['keep', 'Обновить, своё не трогать'], ['no', 'Не сейчас']],
+    } })
+  })
+
   test('fetch failure → unavailable (old ctl flow takes over)', async () => {
     const { exec, calls } = fakeExec({ fetch: { code: 128, stdout: '' } })
     const out = await makePlanner({ ...opts, exec })(['plan'])
@@ -177,6 +193,26 @@ describe('/update through the planner', () => {
     expect(s.plannerCalls).toEqual([['auto']])
     expect(s.ctlCalls).toHaveLength(0)
     expect(s.spawned).toHaveLength(0)
+  })
+
+  test('/update with the owner\'s own changes → plan with the buttons, nothing to the model', async () => {
+    const fh = 'b'.repeat(40)
+    const s = setup({ kind: 'ok', result: {
+      status: 'PLAN', text_html: 'Вышло обновление. Оно заденет…', fetch_head: fh,
+      buttons: [['keep', 'Обновить, своё не трогать'], ['all', 'Обновить всё, даже своё (копию сохраню)'], ['no', 'Не сейчас']],
+    } })
+    const res = await handleOobCommand(parseOobCommand('/update')!, s.ctx)
+    expect(res.notifyChannel).toBeUndefined()
+    expect(res.replyToTelegram!.inlineKeyboard!.inline_keyboard.map((r) => r[0]!.callback_data)).toEqual([
+      `upd:keep:${fh.slice(0, 12)}`, `upd:all:${fh.slice(0, 12)}`, `upd:no:${fh.slice(0, 12)}`,
+    ])
+  })
+
+  test('/update with nothing of the owner\'s → installed at once, no keyboard', async () => {
+    const s = setup({ kind: 'ok', result: { status: 'UPDATED', restart: true, text_html: 'Обновил. Что нового:', buttons: [] } })
+    const res = await handleOobCommand(parseOobCommand('/update')!, s.ctx)
+    expect(res.replyToTelegram!.inlineKeyboard).toBeUndefined()
+    expect(s.spawned).toHaveLength(1)
   })
 
   test('/update 1,3 with restart=true → detached ctl restart', async () => {
@@ -250,12 +286,16 @@ describe('/update through the planner', () => {
     expect(res.replyToTelegram!.text).toContain('/update всё')
   })
 
-  test('/help mentions the choice commands, not the своё alias', async () => {
+  test('/help explains /update plainly, typed power-user commands not advertised', async () => {
     const res = await handleOobCommand(parseOobCommand('/help')!, makeCtx({}))
     const text = res.replyToTelegram!.text
-    expect(text).toContain('/update всё')
-    expect(text).toContain('/update пропусти')
-    expect(text).toContain('ещё раз')
-    expect(text).not.toContain('своё')
+    expect(text).toContain('обновить агента; если где-то у вас своё, сначала объясню и спрошу')
+    for (const raw of ['/update всё', '/update пропусти', '/update 1 3', '/update пропущенные']) {
+      expect(text).not.toContain(raw)
+    }
+  })
+
+  test('menu description is plain', () => {
+    expect(BOT_COMMANDS.find((c) => c.command === 'update')!.description).toBe('обновить агента')
   })
 })

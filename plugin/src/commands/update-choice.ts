@@ -88,6 +88,18 @@ export interface PlannerResult {
   status: string
   text_html: string
   restart?: boolean
+  // Inline buttons the planner wants under its message, as [action, label]
+  // (see update-buttons.ts). Absent/empty: plain message, nothing to choose.
+  buttons?: Array<[string, string]>
+  // The FETCH_HEAD the plan was built for; a button press carries its prefix
+  // back so a press under an old message cannot install a newer plan.
+  fetch_head?: string
+}
+
+function parseButtons(raw: unknown): Array<[string, string]> | undefined {
+  if (!Array.isArray(raw)) return undefined
+  return raw.filter((b): b is [string, string] =>
+    Array.isArray(b) && b.length === 2 && typeof b[0] === 'string' && typeof b[1] === 'string')
 }
 
 export type PlannerOutcome =
@@ -177,14 +189,17 @@ export function makePlanner(o: PlannerOptions): (args: readonly string[]) => Pro
     ], { input: show.stdout, timeoutMs: PLANNER_TIMEOUT_MS })
     const last = py.stdout.trim().split('\n').pop() ?? ''
     try {
-      const parsed = JSON.parse(last) as Partial<PlannerResult>
+      const parsed = JSON.parse(last) as Record<string, unknown>
       if (typeof parsed.status === 'string' && typeof parsed.text_html === 'string') {
+        const buttons = parseButtons(parsed.buttons)
         return {
           kind: 'ok',
           result: {
             status: parsed.status,
             text_html: parsed.text_html,
             ...(parsed.restart === true ? { restart: true } : parsed.restart === false ? { restart: false } : {}),
+            ...(buttons !== undefined ? { buttons } : {}),
+            ...(typeof parsed.fetch_head === 'string' ? { fetch_head: parsed.fetch_head } : {}),
           },
         }
       }
@@ -202,4 +217,43 @@ export function makePlanner(o: PlannerOptions): (args: readonly string[]) => Pro
 /** The repo this plugin runs from: <repo>/plugin/src/commands/update-choice.ts. */
 export function ownRepoDir(): string {
   return resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
+}
+
+/** Root-owned dashi-ctl of this agent, or undefined when the id is unsafe. */
+export function updateCtlPath(agentId: string | undefined): string | undefined {
+  return agentId !== undefined && /^[A-Za-z0-9_-]+$/.test(agentId)
+    ? `/usr/local/bin/dashi-ctl-${agentId}`
+    : undefined
+}
+
+export type SpawnDetached = (cmd: string, args: readonly string[]) => void
+
+const defaultSpawnDetached: SpawnDetached = (cmd, args) => {
+  const child = spawn(cmd, args as string[], { detached: true, stdio: 'ignore' })
+  child.unref()
+}
+
+/**
+ * Restart through the ctl, detached: `sleep 2` lets the reply leave first and
+ * decouples the restart from this process. The ctl path is passed as $0, never
+ * interpolated into the script text.
+ */
+export function ctlRestarter(ctl: string, spawnDetached: SpawnDetached = defaultSpawnDetached): () => void {
+  return () => spawnDetached('bash', ['-c', 'sleep 2; exec sudo -n "$0" restart', ctl])
+}
+
+/** Production planner of this plugin's own repo. */
+export function defaultPlanner(agentId: string | undefined, ownerChatId: string): (args: readonly string[]) => Promise<PlannerOutcome> {
+  const repoDir = ownRepoDir()
+  const claudeDir = dirname(repoDir)
+  const tz = process.env.DASHI_OWNER_TZ
+  return makePlanner({
+    repoDir,
+    claudeDir,
+    workspace: dirname(claudeDir),
+    agent: agentId ?? 'agent',
+    chatId: ownerChatId,
+    branch: process.env.DASHI_BRANCH || 'main',
+    ...(tz ? { tz } : {}),
+  })
 }

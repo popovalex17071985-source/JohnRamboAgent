@@ -27,7 +27,6 @@
 
 import { spawn, execFile } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname } from 'node:path'
 import type { AppConfig } from '../config.js'
 import type { Logger } from '../log.js'
 import type { TelegramApi, InlineKeyboardLike } from '../channel/tools.js'
@@ -64,13 +63,15 @@ import {
 } from '../autonomy/store.js'
 import { grantLease, parseLeaseCommandArgs } from '../autonomy/grant.js'
 import {
-  makePlanner,
-  ownRepoDir,
+  ctlRestarter,
+  defaultPlanner,
   parseUpdateArgs,
   plannerArgs,
+  updateCtlPath,
   UPDATE_USAGE,
   type PlannerOutcome,
 } from './update-choice.js'
+import { buildUpdateKeyboard } from './update-buttons.js'
 
 export type OobCommandName =
   | 'help'
@@ -281,10 +282,7 @@ function helpText(): string {
     + '<code>/cc</code> — панель команд Claude Code (тап = выполнить); либо <code>/cc &lt;команда&gt;</code>: <code>/cc model opus</code>\n'
     + '<code>/relogin</code> — обновить вход в Claude: пришлю ссылку, потом жду код сюда\n'
     + '<code>/restart</code> — перезапустить мост (systemd, связь моргнёт)\n'
-    + '<code>/update</code> — что вышло нового, простыми словами и по пунктам; '
-    + '<code>/update</code> ещё раз — поставить (пункты с вашими правками не трогаю); '
-    + '<code>/update всё</code> — и их тоже; <code>/update 1 3</code> — только выбранные; '
-    + '<code>/update пропусти 2</code>, <code>/update пропущенные</code>, <code>/update верни</code>\n'
+    + '<code>/update</code> — обновить агента; если где-то у вас своё, сначала объясню и спрошу\n'
     + '<code>/lease &lt;scope&gt;</code> — выдать мандат автономии (напр. <code>/lease деплой стейджинга; ttl=48h</code>); без аргумента — список активных\n\n'
     + '<i>примечание: /stop — best-effort: посылает Escape в сессию, но не может '
     + 'гарантировать прерывание посреди вызова инструмента.</i>'
@@ -307,7 +305,7 @@ export const BOT_COMMANDS: ReadonlyArray<BotCommandSpec> = [
   { command: 'new', description: 'новый диалог (очистит контекст, с подтверждением)' },
   { command: 'relogin', description: 'обновить вход в Claude (ссылка + код)' },
   { command: 'restart', description: 'перезапустить мост (systemd)' },
-  { command: 'update', description: 'что вышло нового и выбрать, что ставить' },
+  { command: 'update', description: 'обновить агента' },
 ]
 
 // ponytail: Jarvis-specific paths hardcoded — this is Jarvis's own fork, not
@@ -1102,10 +1100,7 @@ export async function handleOobCommand(
       // translate. Either way a restart is the same detached ctl call.
       const agentId = ctx.restart?.agentId ?? process.env.AGENT_ID
       const fileExists = ctx.restart?.fileExists ?? existsSync
-      const ctl =
-        agentId !== undefined && /^[A-Za-z0-9_-]+$/.test(agentId)
-          ? `/usr/local/bin/dashi-ctl-${agentId}`
-          : undefined
+      const ctl = updateCtlPath(agentId)
       if (ctl === undefined || !fileExists(ctl)) {
         return {
           handled: true,
@@ -1116,43 +1111,29 @@ export async function handleOobCommand(
           },
         }
       }
-      const spawnRestart = (): void => {
-        const spawnDetached =
-          ctx.restart?.spawnDetached
-          ?? ((cmd: string, a: readonly string[]): void => {
-            const child = spawn(cmd, a as string[], { detached: true, stdio: 'ignore' })
-            child.unref()
-          })
-        spawnDetached('bash', ['-c', 'sleep 2; exec sudo -n "$0" restart', ctl])
-      }
+      const spawnRestart = ctlRestarter(ctl, ctx.restart?.spawnDetached)
       const req = parseUpdateArgs(parsed.args)
       if (req.kind === 'invalid') {
         return { handled: true, command: 'update', replyToTelegram: { text: UPDATE_USAGE, parseMode: 'HTML' } }
       }
       const runPlanner =
         ctx.restart?.runPlanner
-        ?? ((): ((a: readonly string[]) => Promise<PlannerOutcome>) => {
-          const repoDir = ownRepoDir()
-          const claudeDir = dirname(repoDir)
-          const tz = process.env.DASHI_OWNER_TZ
-          return makePlanner({
-            repoDir,
-            claudeDir,
-            workspace: dirname(claudeDir),
-            agent: agentId ?? 'agent',
-            chatId: String(ctx.config.allowed_user_ids[0] ?? ctx.chatId),
-            branch: process.env.DASHI_BRANCH || 'main',
-            ...(tz ? { tz } : {}),
-          })
-        })()
+        ?? defaultPlanner(agentId, String(ctx.config.allowed_user_ids[0] ?? ctx.chatId))
       ctx.log.info('oob /update', { chat_id: ctx.chatId, ctl, request: req.kind })
       const outcome = await runPlanner(plannerArgs(req))
       if (outcome.kind === 'ok') {
         if (outcome.result.restart === true) spawnRestart()
+        // With the owner's own changes in play the planner asks with buttons;
+        // their presses are handled by update-buttons.ts, out-of-band like this.
+        const keyboard = buildUpdateKeyboard(outcome.result)
         return {
           handled: true,
           command: 'update',
-          replyToTelegram: { text: outcome.result.text_html, parseMode: 'HTML' },
+          replyToTelegram: {
+            text: outcome.result.text_html,
+            parseMode: 'HTML',
+            ...(keyboard !== undefined ? { inlineKeyboard: keyboard } : {}),
+          },
         }
       }
       if (outcome.kind === 'error') {

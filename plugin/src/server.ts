@@ -98,6 +98,8 @@ import { BOT_COMMANDS } from './commands/oob.js'
 import { handleKkeyCallback } from './telegram/keys-panel-ui.js'
 import { handleCcmdCallback } from './telegram/cc-panel-ui.js'
 import { isActionCallback, handleActionCallback } from './telegram/action-buttons.js'
+import { handleUpdateCallback, isUpdateCallback } from './commands/update-buttons.js'
+import { ctlRestarter, defaultPlanner, updateCtlPath } from './commands/update-choice.js'
 import { isReviewCallback, handleReviewCallback, tryHandleReviewReply } from './telegram/review-buttons.js'
 import { handleNewqCallback } from './telegram/newq-confirm-ui.js'
 import { registerOwnerScopedCommands } from './telegram/command-scope.js'
@@ -922,6 +924,49 @@ bot.on('callback_query:data', async ctx => {
       })
     } catch (err) {
       log.error('pgate callback_query handler threw', {
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+    return
+  }
+  // /update buttons (upd:*) — «Обновить, своё не трогать» / «Обновить всё» /
+  // «Не сейчас». Out-of-band: the plugin runs the planner and answers in
+  // Telegram itself; nothing reaches the model. Same allowlist as /update.
+  if (isUpdateCallback(data)) {
+    try {
+      const pressChat = ctx.chat?.id ?? ctx.from?.id
+      await handleUpdateCallback(
+        {
+          data,
+          fromId: ctx.from?.id,
+          answerCallbackQuery: async text => {
+            if (text) await ctx.answerCallbackQuery({ text })
+            else await ctx.answerCallbackQuery()
+          },
+          editReplyMarkup: async keyboard => {
+            await ctx.editMessageReplyMarkup({ reply_markup: { inline_keyboard: keyboard } })
+          },
+          sendMessage: async html => {
+            if (pressChat === undefined) return
+            await telegramApi.sendMessage(String(pressChat), html, { parse_mode: 'HTML' })
+          },
+        },
+        {
+          allowedUserIds: config.allowed_user_ids,
+          log,
+          runtime: () => {
+            const agentId = process.env.AGENT_ID
+            const ctl = updateCtlPath(agentId)
+            if (ctl === undefined || !existsSync(ctl)) return undefined
+            return {
+              runPlanner: defaultPlanner(agentId, String(config.allowed_user_ids[0] ?? pressChat ?? '')),
+              spawnRestart: ctlRestarter(ctl),
+            }
+          },
+        },
+      )
+    } catch (err) {
+      log.error('upd callback_query handler threw', {
         error: err instanceof Error ? err.message : String(err),
       })
     }
