@@ -8,9 +8,12 @@ Agents copy a file before every edit (`x.py.bak-20.09`, `feed.xlsx.bak-names-
 Per (directory, original name) the tidy KEEPS the newest KEEP_NEWEST copies and
 every copy younger than KEEP_YOUNGER_DAYS. Everything older is packed into ONE
 archive per run, `archive/old-copies/old-copies-YYYYMMDD-HHMM.tar.gz`; the
-archive is re-opened and every member checked (present, same size, readable to
-the end) and ONLY THEN the originals are removed. A failed check removes nothing
-and exits non-zero. Files that are not copies are never touched.
+sha256 of every copy is taken from the very bytes packed; the archive is then
+re-opened and every member re-read to the end and checked (present, same
+sha256) and ONLY THEN the originals are removed. A failed check removes nothing
+and exits non-zero. Right before each delete the copy is hashed again: one that
+changed since it was packed (even to the same size) stays and is logged. Files
+that are not copies are never touched.
 
 The owner hears one plain line only when something was archived.
 
@@ -19,6 +22,8 @@ Usage: backup-tidy.py [--workspace DIR] [--dry-run]
 from __future__ import annotations
 
 import argparse
+import hashlib
+import io
 import os
 import re
 import stat
@@ -121,27 +126,69 @@ def select_old(groups: dict[tuple[Path, str], list[Path]], now: float) -> list[P
     return sorted(picked)
 
 
-def build_archive(ws: Path, files: list[Path], dest: Path) -> None:
+class _HashingReader:
+    """File reader that feeds every byte it hands out into a sha256."""
+
+    def __init__(self, fh: io.BufferedReader) -> None:
+        self._fh = fh
+        self.digest = hashlib.sha256()
+
+    def read(self, size: int = -1) -> bytes:
+        data = self._fh.read(size)
+        self.digest.update(data)
+        return data
+
+
+def _open_regular(path: Path) -> io.BufferedReader:
+    """Open `path` for reading without following a symlink swapped in for it."""
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    return os.fdopen(fd, "rb")
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with _open_regular(path) as fh:
+        while chunk := fh.read(READ_CHUNK):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def build_archive(ws: Path, files: list[Path], dest: Path) -> dict[str, str]:
     """Pack `files` (paths relative to the workspace) into a new tar.gz at `dest`.
 
+    Returns {archive name: sha256} of the exact bytes packed for each file.
     Created 0600: copies of config files may carry credentials.
     """
     dest.parent.mkdir(parents=True, exist_ok=True)
+    digests: dict[str, str] = {}
     fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "wb") as raw, tarfile.open(fileobj=raw, mode="w:gz") as tar:
         for path in files:
-            tar.add(path, arcname=path.relative_to(ws).as_posix(), recursive=False)
+            name = path.relative_to(ws).as_posix()
+            with _open_regular(path) as fh:
+                info = tar.gettarinfo(arcname=name, fileobj=fh)
+                if not info.isfile():
+                    raise OSError(f"не обычный файл: {path}")
+                reader = _HashingReader(fh)
+                tar.addfile(info, reader)
+            digests[name] = reader.digest.hexdigest()
+    return digests
 
 
-def verify_archive(ws: Path, files: list[Path], archive: Path) -> list[str]:
-    """Problems found re-reading the archive; an empty list means it is sound."""
-    want: dict[str, int] = {}
+def verify_archive(ws: Path, files: list[Path], archive: Path,
+                   digests: dict[str, str]) -> list[str]:
+    """Problems found re-reading the archive; an empty list means it is sound.
+
+    Every member is read to the end and its sha256 compared with `digests`,
+    taken while packing: a same-size change does not slip through.
+    """
+    want: dict[str, str] = {}
     for path in files:
-        try:
-            want[path.relative_to(ws).as_posix()] = path.lstat().st_size
-        except OSError as exc:
-            return [f"не читается {path}: {exc}"]
-    seen: dict[str, int] = {}
+        name = path.relative_to(ws).as_posix()
+        if name not in digests:
+            return [f"нет контрольной суммы: {name}"]
+        want[name] = digests[name]
+    seen: dict[str, str] = {}
     try:
         with tarfile.open(archive, "r:gz") as tar:
             for member in tar:
@@ -151,18 +198,20 @@ def verify_archive(ws: Path, files: list[Path], archive: Path) -> list[str]:
                 if handle is None:
                     return [f"в архиве не читается: {member.name}"]
                 read = 0
+                digest = hashlib.sha256()
                 while chunk := handle.read(READ_CHUNK):
                     read += len(chunk)
+                    digest.update(chunk)
                 if read != member.size:
                     return [f"в архиве обрезан: {member.name}"]
-                seen[member.name] = member.size
+                seen[member.name] = digest.hexdigest()
     except (tarfile.TarError, OSError, EOFError, zlib.error) as exc:
         return [f"архив не открывается: {exc}"]
     problems = [f"нет в архиве: {name}" for name in sorted(set(want) - set(seen))]
     problems += [
-        f"размер не совпал: {name} ({seen[name]} != {size})"
-        for name, size in sorted(want.items())
-        if name in seen and seen[name] != size
+        f"содержимое не совпало: {name}"
+        for name, sha in sorted(want.items())
+        if name in seen and seen[name] != sha
     ]
     return problems
 
@@ -253,8 +302,8 @@ def run(ws: Path, now: float) -> int:
     dest = archive_path(ws, now)
     part = dest.with_name(f".{dest.name}.part")
     try:
-        build_archive(ws, old, part)
-        problems = verify_archive(ws, old, part)
+        digests = build_archive(ws, old, part)
+        problems = verify_archive(ws, old, part, digests)
     except (OSError, tarfile.TarError) as exc:
         problems = [f"архив не собрался: {exc}"]
     if problems:
@@ -271,6 +320,15 @@ def run(ws: Path, now: float) -> int:
     removed = 0
     removed_bytes = 0
     for path, size in sizes_of(old).items():
+        rel = path.relative_to(ws).as_posix()
+        try:
+            changed = file_sha256(path) != digests[rel]
+        except OSError as exc:
+            log(ws, f"не смог перепроверить {rel}: {exc} -- оставил на месте")
+            continue
+        if changed:
+            log(ws, f"{rel} изменился после упаковки -- оставил на месте, в архиве прежняя версия")
+            continue
         try:
             path.unlink()
         except OSError as exc:
