@@ -313,6 +313,10 @@ describe('oob /relogin and /restart', () => {
     expect(calls[0]!.args[calls[0]!.args.length - 1]).toBe('/usr/local/bin/dashi-ctl-canary')
   })
 
+  // These cover the dashi-ctl fallback: the planner from FETCH_HEAD is reported
+  // unreachable, exactly as when the fetch fails or the fresh version has none.
+  const UNAVAILABLE = async () => ({ kind: 'unavailable' as const, reason: 'test' })
+
   test('/update without a ctl script replies gracefully, runs nothing', async () => {
     let ran = 0
     const ctx = makeCtx({
@@ -320,6 +324,7 @@ describe('oob /relogin and /restart', () => {
         agentId: 'canary',
         fileExists: () => false,
         runCtl: async () => { ran++; return { code: 0, out: 'UPTODATE' } },
+        runPlanner: UNAVAILABLE,
       },
     })
     const res = await handleOobCommand(parseOobCommand('/update')!, ctx)
@@ -335,6 +340,7 @@ describe('oob /relogin and /restart', () => {
         agentId: 'canary',
         fileExists: (p) => p === '/usr/local/bin/dashi-ctl-canary',
         runCtl: async (_ctl, args) => { calls.push([...args]); return { code: 3, out: 'DIRTY plugin/src/x.ts\n' } },
+        runPlanner: UNAVAILABLE,
         spawnDetached: (cmd) => { spawned.push(cmd) },
       },
     })
@@ -353,6 +359,7 @@ describe('oob /relogin and /restart', () => {
         agentId: 'canary',
         fileExists: (p) => p === '/usr/local/bin/dashi-ctl-canary',
         runCtl: async () => ({ code: 0, out: 'UPDATED 3 abc1234\n' }),
+        runPlanner: UNAVAILABLE,
         spawnDetached: (cmd, args) => { calls.push({ cmd, args }) },
       },
     })
@@ -371,6 +378,7 @@ describe('oob /relogin and /restart', () => {
           agentId: 'canary',
           fileExists: () => true,
           runCtl: async () => ({ code: 0, out }),
+          runPlanner: UNAVAILABLE,
           spawnDetached: (cmd) => { spawned.push(cmd) },
         },
       })

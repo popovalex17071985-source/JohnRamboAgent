@@ -27,6 +27,7 @@
 
 import { spawn, execFile } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
+import { dirname } from 'node:path'
 import type { AppConfig } from '../config.js'
 import type { Logger } from '../log.js'
 import type { TelegramApi, InlineKeyboardLike } from '../channel/tools.js'
@@ -62,6 +63,14 @@ import {
   type AutonomyPaths,
 } from '../autonomy/store.js'
 import { grantLease, parseLeaseCommandArgs } from '../autonomy/grant.js'
+import {
+  makePlanner,
+  ownRepoDir,
+  parseUpdateArgs,
+  plannerArgs,
+  UPDATE_USAGE,
+  type PlannerOutcome,
+} from './update-choice.js'
 
 export type OobCommandName =
   | 'help'
@@ -233,6 +242,10 @@ export interface OobContext {
     // /update: runs `sudo -n <ctl> update [force]` and returns its status
     // line (see install-agent.sh ctl template). Tests inject a fake.
     runCtl?: (ctl: string, args: readonly string[]) => Promise<{ code: number; out: string }>
+    // /update with a choice: runs FETCH_HEAD:scripts/update-plan.py with these
+    // subcommand args (see update-choice.ts). Tests inject a fake; production
+    // fetches and pipes the fresh script into python3.
+    runPlanner?: (args: readonly string[]) => Promise<PlannerOutcome>
   }
   // Autonomy M2: inbound message id, used to build the idempotent grantSourceId
   // (`cmd:<chatId>:<messageId>`) for /lease so a replayed command mints one
@@ -268,7 +281,10 @@ function helpText(): string {
     + '<code>/cc</code> — панель команд Claude Code (тап = выполнить); либо <code>/cc &lt;команда&gt;</code>: <code>/cc model opus</code>\n'
     + '<code>/relogin</code> — обновить вход в Claude: пришлю ссылку, потом жду код сюда\n'
     + '<code>/restart</code> — перезапустить мост (systemd, связь моргнёт)\n'
-    + '<code>/update</code> — обновить мост до свежей версии (бэкап, откат при сбое, рестарт)\n'
+    + '<code>/update</code> — что вышло нового, простыми словами и по пунктам; дальше на выбор: '
+    + '<code>/update всё</code>, <code>/update своё</code> (всё, кроме ваших правок), '
+    + '<code>/update 1 3</code>, <code>/update пропусти 2</code>, '
+    + '<code>/update пропущенные</code>, <code>/update верни</code>\n'
     + '<code>/lease &lt;scope&gt;</code> — выдать мандат автономии (напр. <code>/lease деплой стейджинга; ttl=48h</code>); без аргумента — список активных\n\n'
     + '<i>примечание: /stop — best-effort: посылает Escape в сессию, но не может '
     + 'гарантировать прерывание посреди вызова инструмента.</i>'
@@ -291,7 +307,7 @@ export const BOT_COMMANDS: ReadonlyArray<BotCommandSpec> = [
   { command: 'new', description: 'новый диалог (очистит контекст, с подтверждением)' },
   { command: 'relogin', description: 'обновить вход в Claude (ссылка + код)' },
   { command: 'restart', description: 'перезапустить мост (systemd)' },
-  { command: 'update', description: 'обновить мост до свежей версии' },
+  { command: 'update', description: 'что вышло нового и выбрать, что ставить' },
 ]
 
 // ponytail: Jarvis-specific paths hardcoded — this is Jarvis's own fork, not
@@ -1078,10 +1094,12 @@ export async function handleOobCommand(
     }
 
     case 'update': {
-      // Plugin self-update from chat. The work (dirty check → backup → git
-      // reset → bun install, rollback on failure) lives in the root-owned
-      // dashi-ctl script; here we only translate its one-word status into a
-      // reply and, on UPDATED, schedule the same detached restart as /restart.
+      // Plugin self-update from chat. First choice: the planner from the
+      // freshly fetched version (scripts/update-plan.py, see update-choice.ts)
+      // explains what came out and installs what the owner picks. Fallback when
+      // it is unreachable: the root-owned dashi-ctl (dirty check → backup → git
+      // reset → bun install, rollback on failure), whose one-word status we
+      // translate. Either way a restart is the same detached ctl call.
       const agentId = ctx.restart?.agentId ?? process.env.AGENT_ID
       const fileExists = ctx.restart?.fileExists ?? existsSync
       const ctl =
@@ -1098,6 +1116,73 @@ export async function handleOobCommand(
           },
         }
       }
+      const spawnRestart = (): void => {
+        const spawnDetached =
+          ctx.restart?.spawnDetached
+          ?? ((cmd: string, a: readonly string[]): void => {
+            const child = spawn(cmd, a as string[], { detached: true, stdio: 'ignore' })
+            child.unref()
+          })
+        spawnDetached('bash', ['-c', 'sleep 2; exec sudo -n "$0" restart', ctl])
+      }
+      const req = parseUpdateArgs(parsed.args)
+      if (req.kind === 'invalid') {
+        return { handled: true, command: 'update', replyToTelegram: { text: UPDATE_USAGE, parseMode: 'HTML' } }
+      }
+      const runPlanner =
+        ctx.restart?.runPlanner
+        ?? ((): ((a: readonly string[]) => Promise<PlannerOutcome>) => {
+          const repoDir = ownRepoDir()
+          const claudeDir = dirname(repoDir)
+          const tz = process.env.DASHI_OWNER_TZ
+          return makePlanner({
+            repoDir,
+            claudeDir,
+            workspace: dirname(claudeDir),
+            agent: agentId ?? 'agent',
+            chatId: String(ctx.config.allowed_user_ids[0] ?? ctx.chatId),
+            branch: process.env.DASHI_BRANCH || 'main',
+            ...(tz ? { tz } : {}),
+          })
+        })()
+      ctx.log.info('oob /update', { chat_id: ctx.chatId, ctl, request: req.kind })
+      const outcome = await runPlanner(plannerArgs(req))
+      if (outcome.kind === 'ok') {
+        if (outcome.result.restart === true) spawnRestart()
+        return {
+          handled: true,
+          command: 'update',
+          replyToTelegram: { text: outcome.result.text_html, parseMode: 'HTML' },
+        }
+      }
+      if (outcome.kind === 'error') {
+        ctx.log.warn('oob /update planner failed', { detail: outcome.detail })
+        return {
+          handled: true,
+          command: 'update',
+          replyToTelegram: {
+            text:
+              '<b>update</b> — разбор обновления сломался, ничего не ставил: '
+              + `<code>${escapeHtml(outcome.detail)}</code>. Перешлите это тому, кто ставил агента.`,
+            parseMode: 'HTML',
+          },
+        }
+      }
+      // Planner unreachable: only «show/install everything» map onto the old flow.
+      if (req.kind !== 'plan' && !(req.kind === 'apply' && req.mode === 'all')) {
+        return {
+          handled: true,
+          command: 'update',
+          replyToTelegram: {
+            text:
+              '<b>update</b> — выбрать пункты сейчас не выйдет: не дотянулся до свежей версии. '
+              + 'Можно поставить целиком — <code>/update всё</code> — или попробовать позже.',
+            parseMode: 'HTML',
+          },
+        }
+      }
+      ctx.log.info('oob /update fallback to ctl', { reason: outcome.reason })
+      const force = req.kind === 'apply'
       const runCtl =
         ctx.restart?.runCtl
         ?? ((cmd: string, args: readonly string[]) =>
@@ -1109,8 +1194,7 @@ export async function handleOobCommand(
               resolve({ code, out: String(stdout ?? '') })
             })
           }))
-      const args = parsed.hasForceFlag ? ['update', 'force'] : ['update']
-      ctx.log.info('oob /update', { chat_id: ctx.chatId, ctl, force: parsed.hasForceFlag })
+      const args = force ? ['update', 'force'] : ['update']
       const { code, out } = await runCtl(ctl, args)
       const line = out.trim().split('\n').pop() ?? ''
       const [word = '', ...rest] = line.split(/\s+/)
@@ -1141,15 +1225,7 @@ export async function handleOobCommand(
         default:
           text = `<b>update</b> — dashi-ctl ответил непонятно (код ${code}): <code>${escapeHtml(line || 'пусто')}</code>. Посмотри логи.`
       }
-      if (restart) {
-        const spawnDetached =
-          ctx.restart?.spawnDetached
-          ?? ((cmd: string, a: readonly string[]): void => {
-            const child = spawn(cmd, a as string[], { detached: true, stdio: 'ignore' })
-            child.unref()
-          })
-        spawnDetached('bash', ['-c', 'sleep 2; exec sudo -n "$0" restart', ctl])
-      }
+      if (restart) spawnRestart()
       return { handled: true, command: 'update', replyToTelegram: { text, parseMode: 'HTML' } }
     }
   }
