@@ -901,8 +901,9 @@ def save_uncommitted(ctx: Ctx, target: str) -> tuple[bool, dict[str, Any] | None
             dst = folder / "untracked" / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ctx.repo / rel, dst, follow_symlinks=False)
-        # Put back only what the target does not already have.
-        redo = [p for p in tracked if p not in IGNORED_REPO_PATHS and not same_as(ctx, target, p)]
+        # Put back only what the target does not already have (a chmod counts).
+        redo = [p for p in tracked if p not in IGNORED_REPO_PATHS
+                and work_entry(ctx, p) != ref_entry(ctx, target, p)]
         redo_patch = ctx.git.out("diff", "--binary", "--no-renames", "HEAD", "--",
                                  *(f":(literal){p}" for p in redo)) if redo else b""
         replaced = redo + [p for p in untracked if ctx.git.entry(target, p)
@@ -1311,6 +1312,8 @@ def apply_bridge(ctx: Ctx, target: str, keep: list[str], carry: bool = True) -> 
         return BridgeOutcome(False, "не смог сохранить копию ваших правок, поэтому ничего не трогал")
     if carry and unc:
         clash = trial_reapply(ctx, target, unc)
+        # None = the trial could not run: the real attempt below decides, with
+        # repo.bak and restore_repo as the way back.
         if clash:
             log_update(ctx, f"uncommitted changes clash with {target[:12]}: {', '.join(clash)}; "
                             "repo not touched")
