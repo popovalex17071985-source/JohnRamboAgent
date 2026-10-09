@@ -733,9 +733,15 @@ def apply_bridge(ctx: Ctx, fetch_head: str, keep: list[str]) -> tuple[bool, str]
     except (GitError, OSError, subprocess.SubprocessError):
         ok = False
     if not ok:
-        # Same as dashi-ctl: the copy taken a moment ago becomes the repo again.
-        shutil.rmtree(ctx.repo)
+        # The copy taken a moment ago becomes the repo again. Order matters: two
+        # renames first (a kill between them leaves both copies on disk), the
+        # broken tree is deleted only once the repo is back.
+        aside = ctx.repo.with_name(f"{ctx.repo.name}.failed-{time.strftime('%Y%m%d-%H%M%S')}")
+        os.rename(ctx.repo, aside)
         os.rename(bak, ctx.repo)
+        shutil.rmtree(aside, ignore_errors=True)
+        if aside.exists():
+            print(f"update-plan: broken copy left at {aside}", file=sys.stderr)
         return False, "откатил на прежнюю версию"
     return True, run_install_kit(ctx, keep)
 
