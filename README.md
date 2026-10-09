@@ -801,6 +801,8 @@ For migration context see `docs/04-migration-from-gateway.md` and section 13.
 
 Release highlights, newest first. Full history: [CHANGELOG.md](CHANGELOG.md); how releases are cut: [docs/RELEASING.md](docs/RELEASING.md).
 
+> **Contributors: write a note for the agent's owner.** `/update` in Telegram and the morning update message show every commit to the owner in plain words. Add a trailer line to the commit message: `Хозяину: <one short line in plain Russian — what changes for the owner, no file names or jargon>`, or `Хозяину: -` for tests, docs and internals (hidden). Without a trailer the planner (`scripts/update-plan.py`) falls back to [`update-notes.json`](update-notes.json) (sha prefix → text) and then to the raw subject.
+
 ### v1.2.0 (2026-07-10) — model-aware HUD, task pin reality mirror, output polish
 
 Shipped 2026-07-10 (PRs #100–#108).
