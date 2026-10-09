@@ -289,6 +289,26 @@ class ApplyTest(unittest.TestCase):
         # kit files are not touched by a failed update
         self.assertEqual(self.fx.installed("hooks/a.sh"), a_before)
 
+    @unittest.skipIf(os.geteuid() == 0, "root can delete a read-only folder")
+    def test_backup_failure_touches_nothing(self) -> None:
+        self.fx.standard_update()
+        head = self.fx.head()
+        # a stale .bak that this user cannot remove (left by an older root run)
+        stuck = self.fx.repo.with_name(self.fx.repo.name + ".bak") / "locked"
+        stuck.mkdir(parents=True)
+        (stuck / "f").write_text("x")
+        stuck.chmod(0o500)
+        try:
+            self.fx.run("plan")
+            out = self.fx.run("apply", "all")
+        finally:
+            stuck.chmod(0o700)
+        self.assertEqual(out["status"], "ROLLBACK")
+        self.assertIn("копию", out["text_html"])
+        self.assertFalse(out["restart"])
+        self.assertEqual(self.fx.head(), head)
+        self.assertFalse(self.fx.bun_log.exists())
+
 
 class StaleTest(unittest.TestCase):
     def setUp(self) -> None:
