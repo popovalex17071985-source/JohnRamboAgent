@@ -8,14 +8,18 @@ What must hold:
 - per (dir, original name) the newest 5 copies AND every copy younger than 14
   days stay where they are;
 - files that are not copies are never touched;
-- the archive is re-opened and checked BEFORE anything is removed, and a bad
+- the archive is re-opened and checked BEFORE anything is removed: every member
+  is re-read and its sha256 must equal the one taken while packing; a bad
   archive means nothing is removed and the run exits non-zero;
+- right before each delete the copy is hashed again; one that changed since it
+  was packed (even to the same size) stays where it is;
 - --dry-run changes nothing;
 - the owner hears one plain line only when something was archived.
 """
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import io
 import os
@@ -45,6 +49,19 @@ def load_tidy():
 
 
 tidy = load_tidy()
+
+
+def sha(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def same_size_rewrite(path: Path) -> None:
+    """Change the content of `path`, keeping its size and mtime."""
+    st = path.stat()
+    data = bytearray(path.read_bytes())
+    data[0] ^= 0xFF
+    path.write_bytes(bytes(data))
+    os.utime(path, (st.st_atime, st.st_mtime))
 
 
 def make(path: Path, age_days: float, size: int = 1024) -> Path:
@@ -210,6 +227,7 @@ class RunTest(Fixture):
         def broken(ws: Path, files: list[Path], dest: Path) -> None:
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(b"\x1f\x8b\x08\x00garbage")
+            return {}
 
         with patch.object(tidy, "build_archive", side_effect=broken):
             code, _, sent = self.run_tidy()
@@ -226,8 +244,8 @@ class RunTest(Fixture):
         expected = self.expected_archived()
         real = tidy.build_archive
 
-        def short(ws: Path, files: list[Path], dest: Path) -> None:
-            real(ws, files[1:], dest)
+        def short(ws: Path, files: list[Path], dest: Path) -> dict[str, str]:
+            return real(ws, files[1:], dest)
 
         with patch.object(tidy, "build_archive", side_effect=short):
             code, _, _ = self.run_tidy()
@@ -235,13 +253,71 @@ class RunTest(Fixture):
         for p in expected:
             self.assertTrue(p.exists(), p)
 
-    def test_size_mismatch_fails_verification(self) -> None:
+    def test_build_archive_returns_sha256_of_what_it_packed(self) -> None:
         files = sorted(self.expected_archived())
         dest = self.ws / "check.tar.gz"
-        tidy.build_archive(self.ws, files, dest)
-        self.assertEqual(tidy.verify_archive(self.ws, files, dest), [])
-        files[0].write_bytes(b"changed after packing")
-        self.assertTrue(tidy.verify_archive(self.ws, files, dest))
+        digests = tidy.build_archive(self.ws, files, dest)
+        self.assertEqual(digests, {f.relative_to(self.ws).as_posix(): sha(f) for f in files})
+        self.assertEqual(tidy.verify_archive(self.ws, files, dest, digests), [])
+
+    def test_same_size_content_mismatch_fails_verification(self) -> None:
+        files = sorted(self.expected_archived())
+        digests = tidy.build_archive(self.ws, files, self.ws / "good.tar.gz")
+        same_size_rewrite(files[0])
+        bad = self.ws / "bad.tar.gz"
+        tidy.build_archive(self.ws, files, bad)
+        problems = tidy.verify_archive(self.ws, files, bad, digests)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn(files[0].relative_to(self.ws).as_posix(), problems[0])
+
+    def test_member_without_recorded_sha_fails_verification(self) -> None:
+        files = sorted(self.expected_archived())
+        dest = self.ws / "check.tar.gz"
+        digests = tidy.build_archive(self.ws, files, dest)
+        digests.pop(files[0].relative_to(self.ws).as_posix())
+        self.assertTrue(tidy.verify_archive(self.ws, files, dest, digests))
+
+    def test_archive_content_differs_from_packed_removes_nothing(self) -> None:
+        """Packed content (same size) is not what was hashed: no delete, exit 1."""
+        expected = self.expected_archived()
+        real = tidy.build_archive
+
+        def drifted(ws: Path, files: list[Path], dest: Path) -> dict[str, str]:
+            before = {f.relative_to(ws).as_posix(): sha(f) for f in files}
+            same_size_rewrite(files[0])
+            real(ws, files, dest)
+            return before
+
+        with patch.object(tidy, "build_archive", side_effect=drifted):
+            code, _, sent = self.run_tidy()
+        self.assertNotEqual(code, 0)
+        for p in expected:
+            self.assertTrue(p.exists(), p)
+        self.assertEqual(sent, [])
+        self.assertEqual(list((self.ws / "archive" / "old-copies").glob("*")), [])
+
+    def test_copy_changed_after_packing_is_kept(self) -> None:
+        """Archive is sound, but one copy changed (same size) before its delete."""
+        expected = sorted(self.expected_archived())
+        changed = expected[0]
+        real = tidy.build_archive
+
+        def then_change(ws: Path, files: list[Path], dest: Path) -> dict[str, str]:
+            digests = real(ws, files, dest)
+            same_size_rewrite(changed)
+            return digests
+
+        with patch.object(tidy, "build_archive", side_effect=then_change):
+            code, _, sent = self.run_tidy()
+        self.assertEqual(code, 0)
+        self.assertTrue(changed.exists(), "a copy changed after packing must stay")
+        for p in expected[1:]:
+            self.assertFalse(p.exists(), p)
+        self.assertEqual(len(sent), 1)
+        self.assertIn("Прибрал 5 ", sent[0])
+        log = (self.ws / "logs" / "backup-tidy.log").read_text(encoding="utf-8")
+        self.assertIn(changed.relative_to(self.ws).as_posix(), log)
+        self.assertIn("оставил", log)
 
     def test_dry_run_changes_nothing(self) -> None:
         before = {p: p.stat().st_mtime for p in self.ws.rglob("*")}
