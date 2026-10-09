@@ -680,9 +680,13 @@ def bun_path() -> str:
 def apply_bridge(ctx: Ctx, fetch_head: str, keep: list[str]) -> tuple[bool, str]:
     """Backup -> reset -> bun install -> install-kit --keep. (ok, kit warning)."""
     bak = ctx.repo.with_name(ctx.repo.name + ".bak")
-    if bak.exists():
-        shutil.rmtree(bak)
-    subprocess.run(["cp", "-a", str(ctx.repo), str(bak)], check=True)
+    try:
+        if bak.exists():
+            shutil.rmtree(bak)
+        subprocess.run(["cp", "-a", str(ctx.repo), str(bak)], check=True, capture_output=True)
+    except (OSError, subprocess.CalledProcessError) as err:
+        # No copy = no way back: refuse before touching the repo.
+        return False, f"не смог сделать резервную копию ({esc(type(err).__name__)})"
     ctx.git.close()
     try:
         ctx.git.run("reset", "-q", "--hard", fetch_head)
@@ -695,7 +699,7 @@ def apply_bridge(ctx: Ctx, fetch_head: str, keep: list[str]) -> tuple[bool, str]
         # Same as dashi-ctl: the copy taken a moment ago becomes the repo again.
         shutil.rmtree(ctx.repo)
         os.rename(bak, ctx.repo)
-        return False, ""
+        return False, "откатил на прежнюю версию"
     return True, run_install_kit(ctx, keep)
 
 
@@ -740,7 +744,7 @@ def cmd_apply(ctx: Ctx, rest: list[str]) -> dict[str, Any]:
         ok, warn = apply_bridge(ctx, saved["fetch_head"], keep)
         if not ok:
             return {"status": "ROLLBACK", "restart": False,
-                    "text_html": "<b>update</b> — обновление упало, откатил на прежнюю версию. "
+                    "text_html": f"<b>update</b> — обновление упало, {warn}. "
                                  "Сервис не трогал, всё работает как раньше."}
         # HEAD is the new baseline for everything install-kit rendered; files it
         # was told to keep stay on the blob they were on.
