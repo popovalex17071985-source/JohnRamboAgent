@@ -8,10 +8,12 @@ state the plugin is in when the owner types /update.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -19,6 +21,18 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "update-plan.py"
 INSTALL_KIT = REPO_ROOT / "agent-kit" / "install-kit.sh"
+
+
+def load_planner():
+    spec = importlib.util.spec_from_file_location("update_plan", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod  # dataclasses look the module up by name
+    spec.loader.exec_module(mod)
+    return mod
+
+
+up = load_planner()
 
 GIT_ENV = {
     **os.environ,
@@ -184,55 +198,30 @@ class PlanTest(unittest.TestCase):
         self.assertIn("my tweak", " ".join(tw["lines"]))
 
         text = out["text_html"]
-        for cmd in ("/update всё", "/update 1 3", "/update пропусти"):
-            self.assertIn(cmd, text)
-        self.assertIn("Отчёт о сервере стал короче", text)
-        self.assertIn("my tweak", text)
+        for raw in ("/update всё", "/update 1", "пропусти", "my tweak", "c.py", "<code>"):
+            self.assertNotIn(raw, text)
+        self.assertIn("отчёт о сервере стал короче", text)  # what the update does to his part
+        self.assertNotIn("Напоминание о времени", text)     # the rest: one summary line
+        self.assertEqual([a for a, _ in out["buttons"]], ["keep", "all", "no"])
 
         saved = json.loads((self.fx.ws / "state" / "update-plan.json").read_text())
         self.assertEqual(saved["fetch_head"], git(self.fx.repo, "rev-parse", "FETCH_HEAD"))
         self.assertEqual(out["fetch_head"], saved["fetch_head"])
         self.assertEqual(sorted(saved["items"]), ["1", "2", "3"])
 
-    def answer_block(self, text: str) -> str:
-        return text[text.index("<b>Как ответить</b>"):]
-
-    def test_answer_hint_with_owner_tweak(self) -> None:
-        self.fx.standard_update()  # item 3 carries the owner's tweak
-        block = self.answer_block(self.fx.run("plan")["text_html"])
-        self.assertEqual(block, "\n".join([
-            "<b>Как ответить</b>",
-            "<code>/update</code> ещё раз — поставить всё, кроме п.3 (там ваша правка)",
-            "<code>/update всё</code> — и п.3 тоже (вашу правку перезапишу, копия останется)",
-            "<code>/update 1 3</code> — только выбранные",
-            "<code>/update пропусти 3</code> — не ставить и больше не предлагать",
-        ]))
-        self.assertNotIn("/update своё", self.fx.run("plan")["text_html"])
-
-    def test_answer_hint_without_tweaks(self) -> None:
-        self.fx.standard_update()
-        (self.fx.ws / "bin" / "c.py").write_text("print('c1', '42')\n")  # tweak undone
-        block = self.answer_block(self.fx.run("plan")["text_html"])
-        self.assertEqual(block, "\n".join([
-            "<b>Как ответить</b>",
-            "<code>/update</code> ещё раз — поставить всё",
-            "<code>/update 1 3</code> — только выбранные",
-            "<code>/update пропусти 3</code> — не ставить и больше не предлагать",
-        ]))
-
-    def test_answer_hint_when_every_item_is_tweaked(self) -> None:
+    def test_every_item_tweaked_offers_no_keep_button(self) -> None:
         self.fx.write_origin("agent-kit/bin/c.py", "print('c2', '__CHAT_ID__')\n")
         self.fx.commit("health: shorter report")
         with (self.fx.ws / "bin" / "c.py").open("a") as f:
             f.write("# my tweak\n")
         self.fx.fetch()
-        block = self.answer_block(self.fx.run("plan")["text_html"])
-        self.assertEqual(block, "\n".join([
-            "<b>Как ответить</b>",
-            "<code>/update всё</code> — поставить (вашу правку перезапишу, копия останется)",
-            "<code>/update 1</code> — только выбранные",
-            "<code>/update пропусти 1</code> — не ставить и больше не предлагать",
-        ]))
+        out = self.fx.run("plan")
+        self.assertEqual([a for a, _ in out["buttons"]], ["all", "no"])
+
+    def test_plan_without_tweaks_has_no_buttons(self) -> None:
+        self.fx.standard_update()
+        (self.fx.ws / "bin" / "c.py").write_text("print('c1', '42')\n")  # tweak undone
+        self.assertEqual(self.fx.run("plan")["buttons"], [])
 
     def test_repo_file_identical_to_fetch_head_is_not_a_tweak(self) -> None:
         self.fx.standard_update()
@@ -414,23 +403,42 @@ class AutoTest(unittest.TestCase):
         self.assertFalse(self.fx.bun_log.exists())
         self.assertIn("a1", self.fx.installed("hooks/a.sh"))
 
-    def test_repeated_update_installs_all_but_owner_tweaks(self) -> None:
+    def test_repeated_update_with_tweaks_asks_again_installs_nothing(self) -> None:
+        self.fx.standard_update()
+        head = self.fx.head()
+        self.fx.run("auto")
+        again = self.fx.run("auto")
+        self.assertEqual(again["status"], "PLAN")
+        self.assertEqual([a for a, _ in again["buttons"]], ["keep", "all", "no"])
+        self.assertEqual(self.fx.head(), head)
+        self.assertFalse(self.fx.bun_log.exists())
+
+    def test_keep_button_installs_all_but_owner_tweaks(self) -> None:
         self.fx.standard_update()
         fetch_head = git(self.fx.repo, "rev-parse", "FETCH_HEAD")
-        self.fx.run("auto")
-        out = self.fx.run("auto")
+        plan = self.fx.run("auto")
+        out = self.fx.run("--expect", plan["fetch_head"][:12], "apply", "keep")
         self.assertEqual(out["status"], "UPDATED")
         self.assertTrue(out["restart"])
         self.assertEqual(self.fx.head(), fetch_head)
         self.assertIn("a2", self.fx.installed("hooks/a.sh"))
         self.assertIn("# my tweak", self.fx.installed("bin/c.py"))  # tweak kept
 
-    def test_repeated_update_without_tweaks_installs_everything(self) -> None:
+    def test_update_without_tweaks_installs_everything_at_once(self) -> None:
         self.fx.standard_update()
         (self.fx.ws / "bin" / "c.py").write_text("print('c1', '42')\n")
-        self.fx.run("auto")
-        self.assertEqual(self.fx.run("auto")["status"], "UPDATED")
+        out = self.fx.run("auto")
+        self.assertEqual(out["status"], "UPDATED")
+        self.assertTrue(out["restart"])
+        self.assertEqual(out.get("buttons", []), [])
         self.assertEqual(self.fx.installed("bin/c.py"), "print('c2', '42')\n")
+        self.assertEqual(self.fx.head(), git(self.fx.repo, "rev-parse", "FETCH_HEAD"))
+        text = out["text_html"]
+        self.assertTrue(text.startswith("Обновил. Что нового:"), text)
+        self.assertIn("Карточка «работаю» закрывается сама", text)
+        self.assertIn("связь моргнёт", text)
+        for raw in ("<code>", "c.py", "a.sh", "п."):
+            self.assertNotIn(raw, text)
 
     def test_stale_plan_is_shown_again_not_applied(self) -> None:
         self.fx.standard_update()
@@ -442,17 +450,6 @@ class AutoTest(unittest.TestCase):
         self.assertEqual(self.fx.run("auto")["status"], "PLAN")
         self.assertEqual(self.fx.head(), head)
         self.assertFalse(self.fx.bun_log.exists())
-
-    def test_plan_older_than_a_day_is_shown_again_not_applied(self) -> None:
-        self.fx.standard_update()
-        head = self.fx.head()
-        self.fx.run("auto")
-        path = self.fx.ws / "state" / "update-plan.json"
-        saved = json.loads(path.read_text())
-        saved["created"] -= 25 * 3600
-        path.write_text(json.dumps(saved))
-        self.assertEqual(self.fx.run("auto")["status"], "PLAN")
-        self.assertEqual(self.fx.head(), head)
 
     def test_applied_plan_is_not_applied_twice(self) -> None:
         self.fx.standard_update()
@@ -489,16 +486,13 @@ class LocalCommitsTest(unittest.TestCase):
         self.assertEqual(bridge["kind"], "bridge")
         self.assertTrue(bridge["tweak"])
         self.assertEqual([t["n"] for t in out["tweaks"] if t.get("kind") == "local"], [1])
-        self.assertIn("у вас стоит своя доработка, которой нет в общей версии: "
-                      f"«{self.SUBJECT}»", out["text_html"])
-        self.assertIn("<code>/update</code> ещё раз — поставить всё, кроме п.1 и 3 (там ваши правки)",
-                      out["text_html"])
-        self.assertIn("<code>/update всё</code> — и их тоже (ваши правки перезапишу, копии останутся)",
-                      out["text_html"])
+        self.assertIn(f"«{self.SUBJECT}»", out["text_html"])
+        self.assertNotIn("/update", out["text_html"])
+        self.assertEqual([a for a, _ in out["buttons"]], ["keep", "all", "no"])
 
-    def test_repeated_update_keeps_local_work(self) -> None:
+    def test_keep_button_keeps_local_work(self) -> None:
         self.fx.run("auto")
-        out = self.fx.run("auto")
+        out = self.fx.run("apply", "keep")
         self.assertEqual(out["status"], "UPDATED")
         self.assertFalse(out["restart"])
         self.assertEqual(self.fx.head(), self.local)          # bridge not applied
@@ -517,8 +511,11 @@ class LocalCommitsTest(unittest.TestCase):
         self.assertEqual(len(patches), 1)
         self.assertIn("+export const listenAll = true", patches[0].read_text())  # the diff itself
         text = out["text_html"]
-        self.assertIn("local-commits.patch", text)
-        self.assertIn(refs[0].split()[0], text)
+        self.assertIn("доработку сохранил", text)
+        self.assertNotIn("local-commits.patch", text)  # the owner gets words...
+        log = (self.fx.ws / "logs" / "update.log").read_text()
+        self.assertIn("local-commits.patch", log)      # ...whoever repairs gets the paths
+        self.assertIn(refs[0].split()[0], log)
 
 
 class StaleTest(unittest.TestCase):
@@ -539,17 +536,31 @@ class StaleTest(unittest.TestCase):
         for args in (("apply", "all"), ("skip", "2")):
             out = self.fx.run(*args)
             self.assertEqual(out["status"], "STALE", args)
-            self.assertIn("вышло ещё обновление", out["text_html"])
+            self.assertIn("Обновление уже поменялось", out["text_html"])
             self.assertIn("/update", out["text_html"])
         self.assertEqual(self.fx.head(), head)
         self.assertFalse(self.fx.bun_log.exists())
         self.assertFalse((self.fx.ws / "state" / "update-skipped.json").exists())
 
+    def test_button_press_on_another_plan_is_refused(self) -> None:
+        self.fx.standard_update()
+        head = self.fx.head()
+        plan = self.fx.run("plan")
+        for args in (("--expect", "0" * 12, "apply", "all"), ("--expect", "0" * 12, "apply", "keep")):
+            out = self.fx.run(*args)
+            self.assertEqual(out["status"], "STALE")
+            self.assertEqual(out["text_html"], "Обновление уже поменялось, нажмите /update ещё раз.")
+        self.assertEqual(self.fx.head(), head)
+        (self.fx.ws / "state" / "update-plan.json").unlink()   # plan missing
+        out = self.fx.run("--expect", plan["fetch_head"][:12], "apply", "all")
+        self.assertEqual(out["text_html"], "Обновление уже поменялось, нажмите /update ещё раз.")
+        self.assertFalse(self.fx.bun_log.exists())
+
     def test_apply_without_a_plan_asks_for_update_first(self) -> None:
         self.fx.standard_update()
         out = self.fx.run("apply", "all")
         self.assertEqual(out["status"], "STALE")
-        self.assertIn("сначала", out["text_html"])
+        self.assertIn("Сначала", out["text_html"])
 
 
 class SkipTest(unittest.TestCase):
@@ -568,12 +579,14 @@ class SkipTest(unittest.TestCase):
         self.fx.run("plan")
         out = self.fx.run("skip", "2")
         self.assertEqual(out["status"], "SKIPPED")
-        self.assertIn("a.sh", out["text_html"])
+        self.assertIn("правила поведения агента", out["text_html"])
+        self.assertNotIn("a.sh", out["text_html"])
         plan = self.fx.run("plan")
         self.assertEqual(self.targets(plan), ["bridge", "c.py"])
-        self.assertIn("/update пропущенные", plan["text_html"])
+        self.assertNotIn("/update пропущенные", plan["text_html"])  # power users only
         listed = self.fx.run("skipped")
-        self.assertIn("a.sh", listed["text_html"])
+        self.assertIn("правила поведения агента", listed["text_html"])
+        self.assertNotIn("a.sh", listed["text_html"])
         # a bridge apply must not lay the skipped file out either
         self.fx.run("apply", "1")
         self.assertIn("a1", self.fx.installed("hooks/a.sh"))
@@ -645,6 +658,130 @@ class NotifyTest(unittest.TestCase):
         self.fx.commit("tests: fixture\n\nХозяину: -\n")
         self.fx.fetch()
         self.assertEqual(self.fx.run_raw("notify"), "")
+
+LOCAL_SUBJECT = "Группа с listen_all: агент берёт каждое сообщение без @-тега"
+BRIDGE_NOTES = [
+    "Резервная копия может забирать и дополнительные папки вне рабочей папки агента — в тот же архив",
+    "Шкала заполнения разговора в закреплённом сообщении считается до точки автосжатия, а не до полного предела",
+    "В закреплённом сообщении видно, сколько осталось лимита подписки на 5 часов и на неделю",
+    "Долгая память на ключе OpenAI: перед сжатием разговора всё нужное теперь сохраняется",
+    "Агент больше не замазывает звёздочками обычные имена файлов и настроек в сообщениях",
+    "Карточка «работаю…» появляется только в том чате, откуда пришло сообщение",
+    "Перед долгой паузой агент сам сжимает разговор — следующий ответ будет быстрее и дешевле",
+]
+API_NOTE = "Сторож внешних сервисов не тревожит из-за резервной копии, которая дошла со второй попытки"
+AUTH_NOTE = "Сторож входа больше не пугает «слетел вход», когда просто кончился лимит подписки"
+HEALTH_NOTE = ("Утренняя самопроверка смотрит размер текущего разговора, а не самого большого "
+               "старого — меньше ложных тревог")
+NOTIFY_NOTES = [
+    "Если проверка обновлений не может достучаться до хранилища кода, агент сам напишет вам "
+    "об этом, а не будет молчать",
+    "Если ключ к закрытому хранилищу кода протух, еженедельный советник напишет вам, "
+    "а не остановит обновления молча",
+]
+
+
+def kit_item(n: int, name: str, notes: list[str], tweak: bool = False) -> dict:
+    path = f"agent-kit/bin/{name}"
+    return {"n": n, "kind": "kit", "path": path, "target": f"/home/a/ws/bin/{name}",
+            "blob": "b" * 40, "title": up.kit_title(path), "notes": notes,
+            "new_file": False, "tweak": tweak}
+
+
+def real_plan(tweaks: bool = True) -> "up.Plan":
+    """The plan the test agent got on 09.10.2026 (5 items)."""
+    items = [
+        {"n": 1, "kind": "bridge", "title": "Основное обновление агента",
+         "notes": list(BRIDGE_NOTES), "hidden": 4, "earlier_skipped": 0,
+         "commits": ["c" * 40], "local": 1 if tweaks else 0, "tweak": tweaks},
+        kit_item(2, "api-fail-watch.py", [API_NOTE]),
+        kit_item(3, "auth-alive-watch.sh", [AUTH_NOTE]),
+        kit_item(4, "health-check.sh", [HEALTH_NOTE], tweak=tweaks),
+        kit_item(5, "update-notify.sh", list(NOTIFY_NOTES)),
+    ]
+    tw = []
+    if tweaks:
+        tw = [{"n": 1, "kind": "local", "target": "abc1234", "subject": LOCAL_SUBJECT,
+               "added": 0, "removed": 0, "deleted": False, "lines": []},
+              {"n": 4, "target": "bin/health-check.sh", "added": 3, "removed": 1,
+               "deleted": False, "lines": ["+ MAX=900", "- MAX=300"]}]
+    return up.Plan("f" * 40, "h" * 40, items, tw, [], {}, 0, 0)
+
+
+RAW_MARKERS = ("<code>", ".py", ".sh", ".md", "/update всё", "/update 1", "пропусти",
+               "строк", "п.", "bin/", "hooks/")
+
+
+class PlainTextTest(unittest.TestCase):
+    """What a shop owner reads: no file names, no diffs, no typed commands."""
+
+    def assert_plain(self, text: str) -> None:
+        for marker in RAW_MARKERS:
+            self.assertNotIn(marker, text, f"{marker!r} leaked into:\n{text}")
+
+    def test_plain_names_for_kit_files(self) -> None:
+        self.assertEqual(up.plain_name("agent-kit/bin/health-check.sh"), "утренняя самопроверка")
+        self.assertEqual(up.plain_name("agent-kit/bin/update-notify.sh"),
+                         "сообщения об обновлениях")
+        self.assertEqual(up.plain_name("agent-kit/bin/auth-alive-watch.sh"), "сторож входа")
+        self.assertEqual(up.plain_name("agent-kit/bin/api-fail-watch.py"),
+                         "сторож внешних сервисов")
+        self.assertEqual(up.plain_name("agent-kit/hooks/tz-guard.sh"), "правила поведения агента")
+        self.assertEqual(up.plain_name("agent-kit/core/constitution.md"), "основные правила агента")
+        self.assertEqual(up.plain_name("agent-kit/bin/never-heard-of.sh"), "служебная часть")
+
+    def test_tweak_plan_explains_only_the_owners_own_parts(self) -> None:
+        text = up.plan_text(real_plan())
+        self.assert_plain(text)
+        self.assertIn("утренняя самопроверка", text.lower())
+        self.assertIn(HEALTH_NOTE.split(" — ")[0].lower()[len("утренняя самопроверка "):], text)
+        self.assertIn(f"«{LOCAL_SUBJECT}»", text)
+        self.assertIn("копию сохраню", text)
+        # the other notes are NOT listed -- one summary line instead
+        for note in [*BRIDGE_NOTES, API_NOTE, AUTH_NOTE, *NOTIFY_NOTES]:
+            self.assertNotIn(note, text)
+        self.assertIn("Остальное", text)
+
+    def test_buttons_depend_on_tweaks(self) -> None:
+        self.assertEqual([a for a, _ in up.plan_buttons(real_plan())], ["keep", "all", "no"])
+        labels = dict(up.plan_buttons(real_plan()))
+        self.assertEqual(labels["keep"], "Обновить, своё не трогать")
+        self.assertEqual(labels["all"], "Обновить всё, даже своё (копию сохраню)")
+        self.assertEqual(labels["no"], "Не сейчас")
+        self.assertEqual(up.plan_buttons(real_plan(tweaks=False)), [])
+        # every item is the owner's: «своё не трогать» would install nothing
+        only_tweaked = real_plan()
+        only_tweaked.items = [i for i in only_tweaked.items if i["tweak"]]
+        self.assertEqual([a for a, _ in up.plan_buttons(only_tweaked)], ["all", "no"])
+
+    def test_result_after_installing_everything(self) -> None:
+        plan = real_plan(tweaks=False)
+        text = up.result_text(plan.items, [], restart=True)
+        self.assert_plain(text)
+        self.assertTrue(text.startswith("Обновил. Что нового:"))
+        self.assertEqual(text.count("• "), 4)
+        self.assertIn("и ещё 8 мелочей", text)
+        self.assertIn("связь моргнёт", text)
+
+    def test_result_after_keep_names_what_was_left(self) -> None:
+        plan = real_plan()
+        chosen = [i for i in plan.items if not i["tweak"]]
+        left = [i for i in plan.items if i["tweak"]]
+        text = up.result_text(chosen, left, restart=False, local=[LOCAL_SUBJECT])
+        self.assert_plain(text)
+        self.assertIn("утренняя самопроверка", text)
+        self.assertIn(f"«{LOCAL_SUBJECT}»", text)
+        self.assertNotIn("связь моргнёт", text)
+
+    def test_notify_is_a_short_heads_up(self) -> None:
+        text = up.notify_text(real_plan(tweaks=False))
+        self.assert_plain(text)
+        self.assertTrue(text.startswith("Вышло обновление"))
+        self.assertEqual(text.count("• "), 3)
+        self.assertIn("Нажмите /update", text)
+        self.assertNotIn("у вас своё", text)
+        self.assertIn("Есть место, где у вас своё — при /update объясню",
+                      up.notify_text(real_plan()))
 
 
 if __name__ == "__main__":

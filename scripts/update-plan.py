@@ -52,7 +52,6 @@ TRAILER = "Хозяину:"
 HIDE = "-"
 GENERIC_NOTE = "Мелкие исправления в работе агента"
 HISTORY_DEPTH = 300
-MAX_NOTES_PER_ITEM = 4
 MAX_TWEAK_LINES = 3
 MAX_TWEAK_LINE_CHARS = 80
 TEXT_BUDGET = 3800
@@ -150,6 +149,7 @@ class Ctx:
     ref: str
     git: Git
     branch: str = ""
+    expect: str = ""   # a button press: the fetch_head prefix of the plan it was shown with
 
     @property
     def state_dir(self) -> Path:
@@ -444,7 +444,8 @@ def build_plan(ctx: Ctx) -> Plan:
                 "notes": shown, "hidden": hidden,
                 "earlier_skipped": len(bridge_all) - len(bridge_new),
                 "commits": [c.sha for c in bridge_all],
-                "local": len(local), "tweak": bool(repo_tweaks or local)}
+                "local": len(local), "local_subjects": [s for _, s in local[:MAX_LOCAL_SHOWN]],
+                "tweak": bool(repo_tweaks or local)}
         items.append(item)
         for sha, subject in local[:MAX_LOCAL_SHOWN]:
             tweaks.append({"n": 1, "kind": "local", "target": sha[:7], "subject": subject,
@@ -560,9 +561,21 @@ def save_local_commits(ctx: Ctx, fetch_head: str) -> tuple[bool, str]:
         patch.parent.mkdir(parents=True, exist_ok=True)
         patch.write_text(ctx.git.run("format-patch", "--stdout", f"{fetch_head}..HEAD"))
     except (GitError, OSError) as err:
-        return False, f"не смог сохранить вашу доработку ({esc(type(err).__name__)})"
-    return True, (f"Вашу доработку сохранил: <code>{esc(ctx.shown(patch))}</code> "
-                  f"и в репозитории <code>{ref}</code>.")
+        log_update(ctx, f"could not save local commits: {err}")
+        return False, ""
+    # Paths go to the log (for whoever repairs), not to the owner.
+    log_update(ctx, f"local commits saved: {patch} and {ref}")
+    return True, "saved"
+
+
+def log_update(ctx: Ctx, line: str) -> None:
+    log = ctx.workspace / "logs" / "update.log"
+    try:
+        log.parent.mkdir(parents=True, exist_ok=True)
+        with log.open("a") as fh:
+            fh.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {line}\n")
+    except OSError:
+        pass
 
 
 def repo_tweak_list(ctx: Ctx) -> list[tuple[str, dict[str, Any]]]:
@@ -597,107 +610,190 @@ def plural(n: int, one: str, few: str, many: str) -> str:
     return many
 
 
-def item_block(item: dict[str, Any], max_notes: int) -> str:
-    n = item["n"]
+# What a shop owner reads. No file names, no diffs, no typed commands: the
+# owner answers with buttons; power users can still type /update всё etc.
+
+KIT_NAMES = {
+    "health-check.sh": "утренняя самопроверка",
+    "health-daily.sh": "ежедневная сводка о работе агента",
+    "self-audit-morning.sh": "утренняя самопроверка",
+    "self-audit.py": "утренняя самопроверка",
+    "update-notify.sh": "сообщения об обновлениях",
+    "stack-updates-check.py": "сообщения об обновлениях",
+    "auth-alive-watch.sh": "сторож входа",
+    "api-fail-watch.py": "сторож внешних сервисов",
+    "job-fail-watch.py": "сторож фоновых задач",
+    "job-watch.py": "сторож фоновых задач",
+    "job-report.py": "отчёты о фоновых задачах",
+    "run-and-report.sh": "отчёты о фоновых задачах",
+    "bg.sh": "отчёты о фоновых задачах",
+    "dead-letter-digest.py": "сводка недоставленных сообщений",
+    "fallback-reply-sweeper.sh": "досылка потерянных ответов",
+    "promise-sweeper.py": "напоминания об обещаниях",
+    "remind-at.sh": "напоминания",
+    "open-threads-digest.py": "сводка открытых дел",
+    "memory-index-trim.py": "память агента",
+    "memory-key-ask.py": "память агента",
+    "multichat-nudge.sh": "работа в группах",
+    "tg-send.py": "отправка сообщений в Телеграм",
+    "claude-link-guard.sh": "сторож входа",
+    "timing.py": "замер времени задач",
+}
+KIT_FOLDER_NAMES = {"hooks": "правила поведения агента", "agents": "помощники агента"}
+FALLBACK_NAME = "служебная часть"
+BRIDGE_NAME = "основная часть обновления"
+MAX_RESULT_NOTES = 4
+MAX_NOTIFY_NOTES = 3
+MAX_PLAN_NOTES = 8
+STALE_BUTTON_TEXT = "Обновление уже поменялось, нажмите /update ещё раз."
+RESTART_LINE = "Перезапускаюсь — связь моргнёт секунд на 10."
+
+BUTTON_KEEP = ("keep", "Обновить, своё не трогать")
+BUTTON_ALL = ("all", "Обновить всё, даже своё (копию сохраню)")
+BUTTON_NO = ("no", "Не сейчас")
+
+
+def plain_name(path: str) -> str:
+    """Human name of a kit file. Never the path itself."""
+    if path == CONSTITUTION:
+        return "основные правила агента"
+    folder, _, name = path.rpartition("/")
+    if name in KIT_NAMES:
+        return KIT_NAMES[name]
+    return KIT_FOLDER_NAMES.get(folder.rpartition("/")[2], FALLBACK_NAME)
+
+
+def item_name(item: dict[str, Any]) -> str:
+    return BRIDGE_NAME if item["kind"] == "bridge" else plain_name(item["path"])
+
+
+def cap(text: str) -> str:
+    return text[:1].upper() + text[1:]
+
+
+def lower_first(text: str) -> str:
+    """«Утренняя самопроверка смотрит» -> «утренняя …» after a colon; keeps «OpenAI»."""
+    return text[:1].lower() + text[1:] if text[1:2].islower() else text
+
+
+def joined(names: list[str]) -> str:
+    uniq = list(dict.fromkeys(names))
+    return uniq[0] if len(uniq) == 1 else ", ".join(uniq[:-1]) + " и " + uniq[-1]
+
+
+def plain_notes(items: list[dict[str, Any]]) -> list[str]:
+    """Every note of these items, deduplicated, in order."""
+    out: list[str] = []
+    for item in items:
+        notes = item.get("notes") or [f"Обновлено: {item_name(item)}"]
+        for note in notes:
+            if note not in out:
+                out.append(note)
+    return out
+
+
+def bullet_lines(notes: list[str], limit: int) -> list[str]:
+    lines = [f"• {esc(n)}" for n in notes[:limit]]
+    extra = len(notes) - limit
+    if extra > 0:
+        lines.append(f"и ещё {extra} {plural(extra, 'мелочь', 'мелочи', 'мелочей')}")
+    return lines
+
+
+def changes(n: int) -> str:
+    return f"{n} {plural(n, 'изменение', 'изменения', 'изменений')}"
+
+
+def local_subjects(plan: Plan, n: int) -> list[str]:
+    return [t["subject"] for t in plan.tweaks if t.get("kind") == "local" and t["n"] == n]
+
+
+def tweak_explanation(plan: Plan, item: dict[str, Any]) -> str:
+    """One owner-facing paragraph: what is his, what the update does to it."""
+    notes = item.get("notes", [])
     if item["kind"] == "bridge":
-        head = (f"<b>{n}. {esc(item['title'])}</b> — ставится целиком, "
-                "после него перезапуск (связь моргнёт на ~10 сек)")
-    else:
-        folder, _, name = item["path"].rpartition("/")
-        label = esc(item["title"].rsplit(" ", 1)[0]) if item["path"] != CONSTITUTION \
-            else esc(item["title"])
-        head = f"<b>{n}. {label}</b>" + ("" if item["path"] == CONSTITUTION
-                                         else f" <code>{esc(name)}</code>")
-        if item.get("new_file"):
-            head += " — новый"
-    if item.get("tweak"):
-        head += " — <i>у вас тут своя правка</i>"
-    lines = [head]
-    notes: list[str] = item.get("notes", [])
-    for note in notes[:max_notes]:
-        lines.append(f"• {esc(note)}")
-    extra = len(notes) - max_notes if len(notes) > max_notes else 0
-    hidden = item.get("hidden", 0) + extra
-    if hidden:
-        lines.append(f"• и ещё {hidden} {plural(hidden, 'мелкая правка', 'мелкие правки', 'мелких правок')}")
-    if not notes and not hidden:
-        lines.append("• обновлённая версия" if not item.get("new_file") else "• новый файл")
-    if item.get("earlier_skipped"):
-        k = item["earlier_skipped"]
-        lines.append(f"• плюс {k} {plural(k, 'правка', 'правки', 'правок')}, "
-                     "которые вы раньше пропускали — они встанут вместе с этим пунктом")
-    return "\n".join(lines)
+        subjects = local_subjects(plan, item["n"])
+        brings = f"Основная часть обновления ({changes(len(notes))})" if notes \
+            else "Основная часть обновления"
+        if subjects:
+            what = ", ".join(f"«{esc(s)}»" for s in subjects)
+            word = "своя доработка" if len(subjects) == 1 else "свои доработки"
+            return (f"• У вас стоит {word} {what} — в общей версии её нет. "
+                    f"{brings} ставится только вместо неё: доработка уберётся "
+                    "(копию сохраню). Если своё не трогать — основную часть пока не ставлю.")
+        return ("• В самом агенте у вас что-то поправлено руками (вами или самим агентом). "
+                f"{brings} вернёт это к общей версии (копию сохраню). "
+                "Если своё не трогать — основную часть пока не ставлю.")
+    name = plain_name(item["path"])
+    deleted = any(t["n"] == item["n"] and t.get("deleted") for t in plan.tweaks)
+    mine = (f"• {cap(name)}: у вас она убрана." if deleted else
+            f"• {cap(name)}: у вас она изменена по-своему (вами или самим агентом).")
+    news = "; ".join(esc(lower_first(n.rstrip("."))) for n in notes[:2])
+    gets = f" Что в новой версии: {news}." if news else " Вышла новая версия."
+    return (mine + gets + " Если обновить всё — ваш вариант заменится новым (копию сохраню); "
+            "если своё не трогать — останется ваш.")
 
 
-def tweak_block(plan: Plan) -> str:
-    if not plan.tweaks:
-        return ""
-    lines = ["<b>У вас своё</b> — эти пункты перезапишут ваши правки:"]
-    for tw in plan.tweaks:
-        if tw.get("kind") == "local":
-            lines.append(f"• п.{tw['n']}: у вас стоит своя доработка, которой нет в общей версии: "
-                         f"«{esc(tw['subject'])}»")
-            continue
-        if tw.get("deleted"):
-            what = "у вас файл удалён"
-        else:
-            what = f"у вас +{tw['added']} / −{tw['removed']} строк"
-        lines.append(f"• п.{tw['n']}, <code>{esc(tw['target'])}</code>: {what}")
-        for line in tw.get("lines", []):
-            lines.append(f"   <code>{esc(line)}</code>")
-    lines.append("Если перезапишу — копии останутся рядом, ничего не пропадёт.")
-    return "\n".join(lines)
-
-
-def commands_block(plan: Plan) -> str:
-    """How to answer. A repeated bare /update installs the plan it just showed,
-    minus the items with the owner's own tweaks; /update всё includes them."""
-    nums = [i["n"] for i in plan.items]
-    example = f"{nums[0]} {nums[-1]}" if len(nums) > 1 else str(nums[0])
-    tweaked = [i["n"] for i in plan.items if i.get("tweak")]
-    one = len(tweaked) == 1
-    which = "п." + (str(tweaked[0]) if one else
-                    ", ".join(map(str, tweaked[:-1])) + f" и {tweaked[-1]}") if tweaked else ""
-    overwrite = ("вашу правку перезапишу, копия останется" if one
-                 else "ваши правки перезапишу, копии останутся")
-    lines = ["<b>Как ответить</b>"]
-    if not tweaked:
-        lines.append("<code>/update</code> ещё раз — поставить всё")
-    elif len(tweaked) < len(nums):
-        there = "там ваша правка" if one else "там ваши правки"
-        lines.append(f"<code>/update</code> ещё раз — поставить всё, кроме {which} ({there})")
-        also = f"и {which} тоже" if one else "и их тоже"
-        lines.append(f"<code>/update всё</code> — {also} ({overwrite})")
-    else:
-        lines.append(f"<code>/update всё</code> — поставить ({overwrite})")
-    lines.append(f"<code>/update {example}</code> — только выбранные")
-    lines.append(f"<code>/update пропусти {nums[-1]}</code> — не ставить и больше не предлагать")
-    return "\n".join(lines)
+def plan_buttons(plan: Plan) -> list[tuple[str, str]]:
+    """Inline buttons under the plan. None when nothing of the owner's is touched:
+    then /update just installs everything."""
+    if not any(i.get("tweak") for i in plan.items):
+        return []
+    has_rest = any(not i.get("tweak") for i in plan.items)
+    return ([BUTTON_KEEP] if has_rest else []) + [BUTTON_ALL, BUTTON_NO]
 
 
 def plan_text(plan: Plan) -> str:
-    for max_notes in (MAX_NOTES_PER_ITEM, 1, 0):
-        parts = [f"<b>Вышло обновление</b> — {len(plan.items)} "
-                 f"{plural(len(plan.items), 'пункт', 'пункта', 'пунктов')}"]
-        parts += [item_block(i, max_notes) for i in plan.items]
-        tb = tweak_block(plan)
-        if tb:
-            parts.append(tb)
-        footer: list[str] = []
-        if plan.own_only:
-            footer.append(f"Ваши правки ещё в {plan.own_only} "
-                          f"{plural(plan.own_only, 'файле', 'файлах', 'файлах')} "
-                          "обновление не трогает — они останутся как есть.")
-        if plan.skipped_count:
-            footer.append(f"Пропущено раньше: {plan.skipped_count} — "
-                          "<code>/update пропущенные</code>")
-        if footer:
-            parts.append("\n".join(footer))
-        parts.append(commands_block(plan))
-        text = "\n\n".join(parts)
-        if len(text) <= TEXT_BUDGET:
-            return text
-    return text[:TEXT_BUDGET - 1] + "…"
+    tweaked = [i for i in plan.items if i.get("tweak")]
+    rest = [i for i in plan.items if not i.get("tweak")]
+    if not tweaked:
+        lines = ["Вышло обновление. Что изменится:"]
+        lines += bullet_lines(plain_notes(rest), MAX_PLAN_NOTES)
+        lines += ["", "Нажмите /update — поставлю."]
+        return "\n".join(lines)
+    head = "Вышло обновление. Оно заденет то, что у вас настроено по-своему:"
+    parts = [head, "\n\n".join(tweak_explanation(plan, i) for i in tweaked)]
+    if rest:
+        n = len(plain_notes(rest))
+        parts.append(f"Остальное (ещё {changes(n)}) встанет при любой кнопке «Обновить».")
+    parts.append("Как поступить?")
+    text = "\n\n".join(parts)
+    return text if len(text) <= TEXT_BUDGET else text[:TEXT_BUDGET - 1] + "…"
+
+
+def left_lines(left: list[dict[str, Any]], local: list[str]) -> list[str]:
+    lines: list[str] = []
+    for item in left:
+        if item["kind"] == "bridge" and item.get("tweak"):
+            if local:
+                what = ", ".join(f"«{esc(s)}»" for s in local)
+                lines.append(f"Основную часть пока не ставил: у вас стоит своя доработка {what}, "
+                             "её сначала надо перенести в общую версию.")
+            else:
+                lines.append("Основную часть пока не ставил: в ней у вас свои правки.")
+    kept = [plain_name(i["path"]) for i in left if i["kind"] == "kit" and i.get("tweak")]
+    if kept:
+        lines.append(f"Не тронул ваше: {joined(kept)}.")
+    other = [item_name(i) for i in left if not i.get("tweak")]
+    if other:
+        lines.append(f"Пока не ставил: {joined(other)}.")
+    return lines
+
+
+def result_text(chosen: list[dict[str, Any]], left: list[dict[str, Any]], *, restart: bool,
+                local: list[str] | None = None, overwrote: bool = False,
+                local_saved: bool = False, warn: str = "") -> str:
+    """After an install: what came in, what was left alone, plain words only."""
+    lines = ["Обновил. Что нового:"] + bullet_lines(plain_notes(chosen), MAX_RESULT_NOTES)
+    tail = left_lines(left, local or [])
+    if overwrote:
+        tail.append("Ваш прежний вариант сохранил копией — если что, вернём.")
+    if local_saved:
+        tail.append("Вашу доработку сохранил копией — её можно будет вернуть.")
+    if warn:
+        tail.append(warn)
+    tail.append(RESTART_LINE if restart else "Заработает со следующего сообщения.")
+    return "\n".join(lines + [""] + tail)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -718,32 +814,31 @@ def cmd_plan(ctx: Ctx) -> dict[str, Any]:
         "keep_always": plan.keep_always, "baselines": plan.baselines,
     })
     if not plan.items:
-        text = "<b>update</b> — уже стоит последняя версия, ставить нечего."
-        if plan.skipped_count:
-            text += (f"\nПропущено раньше: {plan.skipped_count} — "
-                     "<code>/update пропущенные</code>")
-        return {"status": "UPTODATE", "text_html": text, "items": [], "tweaks": [],
-                "fetch_head": plan.fetch_head}
+        return {"status": "UPTODATE", "text_html": "Уже стоит последняя версия, обновлять нечего.",
+                "items": [], "tweaks": [], "buttons": [], "fetch_head": plan.fetch_head}
     return {"status": "PLAN", "text_html": plan_text(plan), "items": public_items(plan),
-            "tweaks": plan.tweaks, "fetch_head": plan.fetch_head}
+            "tweaks": plan.tweaks, "buttons": [list(b) for b in plan_buttons(plan)],
+            "fetch_head": plan.fetch_head}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # apply
 # ─────────────────────────────────────────────────────────────────────────────
 
-STALE_TEXT = "<b>update</b> — вышло ещё обновление, набери <code>/update</code> заново."
-NOPLAN_TEXT = ("<b>update</b> — сначала набери <code>/update</code>: покажу, что вышло, "
-               "потом выбирай.")
+STALE_TEXT = STALE_BUTTON_TEXT
+NOPLAN_TEXT = "Сначала нажмите /update — покажу, что вышло."
 
 
 def saved_plan(ctx: Ctx) -> tuple[dict[str, Any] | None, str | None]:
     """(plan, refusal text). Refuse when the update moved since the owner saw it."""
     saved = ctx.load("update-plan.json", None)
     if not isinstance(saved, dict) or "items" not in saved:
-        return None, NOPLAN_TEXT
+        # A button under an old message: the plan it showed is gone.
+        return None, STALE_BUTTON_TEXT if ctx.expect else NOPLAN_TEXT
     if saved.get("fetch_head") != ctx.git.rev(ctx.ref) or saved.get("head") != ctx.git.rev("HEAD"):
         return None, STALE_TEXT
+    if ctx.expect and not str(saved.get("fetch_head", "")).startswith(ctx.expect):
+        return None, STALE_BUTTON_TEXT
     return saved, None
 
 
@@ -763,12 +858,6 @@ def pick(items: dict[str, dict[str, Any]], rest: list[str]) -> tuple[list[int], 
     return sorted(nums), None
 
 
-def label(item: dict[str, Any]) -> str:
-    if item["kind"] == "bridge":
-        return f"п.{item['n']} (основное)"
-    return f"п.{item['n']} ({esc(item['path'].rpartition('/')[2])})"
-
-
 def bun_path() -> str:
     return os.environ.get("DASHI_BUN") or str(Path.home() / ".bun" / "bin" / "bun")
 
@@ -782,7 +871,8 @@ def apply_bridge(ctx: Ctx, fetch_head: str, keep: list[str]) -> tuple[bool, str]
         subprocess.run(["cp", "-a", str(ctx.repo), str(bak)], check=True, capture_output=True)
     except (OSError, subprocess.CalledProcessError) as err:
         # No copy = no way back: refuse before touching the repo.
-        return False, f"не смог сделать резервную копию ({esc(type(err).__name__)})"
+        log_update(ctx, f"backup copy failed: {err}")
+        return False, "не смог сделать резервную копию, поэтому ничего не трогал"
     ctx.git.close()
     try:
         ctx.git.run("reset", "-q", "--hard", fetch_head)
@@ -801,7 +891,7 @@ def apply_bridge(ctx: Ctx, fetch_head: str, keep: list[str]) -> tuple[bool, str]
         shutil.rmtree(aside, ignore_errors=True)
         if aside.exists():
             print(f"update-plan: broken copy left at {aside}", file=sys.stderr)
-        return False, "откатил на прежнюю версию"
+        return False, "откатил всё как было"
     return True, run_install_kit(ctx, keep)
 
 
@@ -822,8 +912,8 @@ def run_install_kit(ctx: Ctx, keep: list[str]) -> str:
         fh.flush()
         res = subprocess.run(cmd, stdout=fh, stderr=subprocess.STDOUT)
     if res.returncode != 0:
-        return ("Файлы комплекта разложились с ошибкой — подробности в "
-                "<code>logs/update-kit.log</code>.")
+        return ("Часть служебных файлов встала с ошибкой — перешлите это сообщение "
+                "тому, кто ставил агента.")
     return ""
 
 
@@ -837,38 +927,35 @@ def cmd_apply(ctx: Ctx, rest: list[str]) -> dict[str, Any]:
         return {"status": "NOTHING", "restart": False, "text_html": error}
     if not nums:
         return {"status": "NOTHING", "restart": False,
-                "text_html": "<b>update</b> — без ваших правок ставить нечего: в каждом пункте "
-                             "ваша правка. Поставить всё равно — <code>/update всё</code>."}
+                "text_html": "Без вашего ставить нечего: всё, что вышло, задевает то, "
+                             "что у вас настроено по-своему."}
     chosen = [items[str(n)] for n in nums]
     left = [i for n, i in sorted(items.items(), key=lambda kv: int(kv[0])) if int(n) not in nums]
-    lines: list[str] = []
+    local = [s for i in left if i["kind"] == "bridge" for s in i.get("local_subjects", [])]
+    overwrote = any(i.get("tweak") for i in chosen
+                    if i["kind"] == "kit" or not i.get("local_subjects"))
     if any(i["kind"] == "bridge" for i in chosen):
         keep = list(saved.get("keep_always", [])) + [i["target"] for i in left if i["kind"] == "kit"]
         saved_ok, saved_note = save_local_commits(ctx, saved["fetch_head"])
         if not saved_ok:
             return {"status": "ROLLBACK", "restart": False,
-                    "text_html": f"<b>update</b> — {saved_note}, поэтому ничего не трогал."}
+                    "text_html": "Не смог сохранить копию вашей доработки, поэтому ничего "
+                                 "не трогал. Перешлите это сообщение тому, кто ставил агента."}
         ok, warn = apply_bridge(ctx, saved["fetch_head"], keep)
         drop_saved_plan(ctx)
         if not ok:
             return {"status": "ROLLBACK", "restart": False,
-                    "text_html": f"<b>update</b> — обновление упало, {warn}. "
-                                 "Сервис не трогал, всё работает как раньше."}
+                    "text_html": f"Обновление не встало: {warn}. Агент работает по-старому."}
         # HEAD is the new baseline for everything install-kit rendered; files it
         # was told to keep stay on the blob they were on.
         baselines: dict[str, str] = saved.get("baselines", {})
         ctx.save("update-applied.json", {
             path: blob for path, blob in baselines.items()
             if str(ctx.kit_target(path)) in keep})
-        lines.append("<b>update</b> — поставил: " + ", ".join(label(i) for i in chosen) + ".")
-        if left:
-            lines.append("Оставил как было: " + ", ".join(label(i) for i in left) + ".")
-        if warn:
-            lines.append(warn)
-        if saved_note:
-            lines.append(saved_note)
-        lines.append("Перезапускаю — связь моргнёт на ~10 сек.")
-        return {"status": "UPDATED", "restart": True, "text_html": "\n".join(lines)}
+        return {"status": "UPDATED", "restart": True,
+                "text_html": result_text(chosen, left, restart=True, local=local,
+                                         overwrote=overwrote, local_saved=bool(saved_note),
+                                         warn=warn)}
     # Kit files only: HEAD stays, each chosen file is rendered from its new blob.
     applied: dict[str, str] = ctx.load("update-applied.json", {})
     stamp = time.strftime("%Y%m%d-%H%M")
@@ -877,11 +964,11 @@ def cmd_apply(ctx: Ctx, rest: list[str]) -> dict[str, Any]:
         applied[item["path"]] = item["blob"]
     ctx.save("update-applied.json", applied)
     drop_saved_plan(ctx)
-    lines.append("<b>update</b> — поставил: " + ", ".join(label(i) for i in chosen) + ".")
-    if any(i.get("tweak") for i in chosen):
-        lines.append(f"Ваши прежние файлы сохранил в <code>.kit-backup/{stamp}</code>.")
-    lines.append("Перезапуск не нужен — работает со следующего хода.")
-    return {"status": "UPDATED", "restart": False, "text_html": "\n".join(lines)}
+    if overwrote:
+        log_update(ctx, f"owner files backed up to {ctx.workspace / '.kit-backup' / stamp}")
+    return {"status": "UPDATED", "restart": False,
+            "text_html": result_text(chosen, left, restart=False, local=local,
+                                     overwrote=overwrote)}
 
 
 def drop_saved_plan(ctx: Ctx) -> None:
@@ -892,17 +979,14 @@ def drop_saved_plan(ctx: Ctx) -> None:
         pass
 
 
-PLAN_TTL_S = 24 * 3600
-
-
 def cmd_auto(ctx: Ctx, rest: list[str]) -> dict[str, Any]:
-    """Bare /update. A plan shown less than a day ago for the same versions is
-    installed (minus the items with the owner's tweaks); otherwise -- show it."""
-    saved, _refusal = saved_plan(ctx)
-    if saved is not None and saved["items"] and \
-            time.time() - float(saved.get("created", 0)) < PLAN_TTL_S:
-        return cmd_apply(ctx, ["keep"])
-    return cmd_plan(ctx)
+    """Bare /update. Nothing of the owner's is touched -> install everything right
+    away, no questions. Otherwise explain just that part and ask with buttons
+    (the answer comes back as `--expect <fetch_head> apply keep|all`)."""
+    out = cmd_plan(ctx)
+    if out["status"] == "PLAN" and not out["buttons"]:
+        return cmd_apply(ctx, ["all"])
+    return out
 
 
 def render_to(ctx: Ctx, target: Path, data: bytes, stamp: str) -> None:
@@ -936,7 +1020,7 @@ def cmd_skip(ctx: Ctx, rest: list[str]) -> dict[str, Any]:
     nums, error = pick(items, rest)
     if error or not nums or rest in (["all"], ["keep"]):
         return {"status": "NOTHING", "text_html": error or
-                "<b>update</b> — какой пункт пропустить? Например: <code>/update пропусти 2</code>"}
+                "Какой пункт пропустить? Например: /update пропусти 2"}
     skipped = ctx.load("update-skipped.json", {})
     kit: dict[str, str] = skipped.setdefault("kit", {})
     bridge: list[str] = skipped.setdefault("bridge", [])
@@ -951,9 +1035,8 @@ def cmd_skip(ctx: Ctx, rest: list[str]) -> dict[str, Any]:
     # The owner keeps his numbering: skipped items just leave the saved plan.
     ctx.save("update-plan.json", saved)
     return {"status": "SKIPPED", "text_html":
-            "<b>update</b> — пропустил: " + ", ".join(label(i) for i in chosen) + ". "
-            "Больше не предложу, пока там не выйдет что-то новое. "
-            "Вернуть: <code>/update верни</code>"}
+            f"Пропустил: {joined([item_name(i) for i in chosen])}. "
+            "Больше не предложу, пока там не выйдет что-то новое. Вернуть: /update верни"}
 
 
 def cmd_skipped(ctx: Ctx, rest: list[str]) -> dict[str, Any]:
@@ -961,15 +1044,13 @@ def cmd_skipped(ctx: Ctx, rest: list[str]) -> dict[str, Any]:
     kit: dict[str, str] = skipped.get("kit", {})
     bridge: list[str] = skipped.get("bridge", [])
     if not kit and not bridge:
-        return {"status": "NONE", "text_html": "<b>update</b> — пропущенного нет."}
-    lines = ["<b>Пропущено</b>"]
+        return {"status": "NONE", "text_html": "Пропущенного нет."}
+    lines = ["Пропущено:"]
     if bridge:
-        lines.append(f"• основное обновление: {len(bridge)} "
-                     f"{plural(len(bridge), 'правка', 'правки', 'правок')}")
-    for path in sorted(kit, key=kit_sort_key):
-        lines.append(f"• {esc(kit_title(path).rsplit(' ', 1)[0])} "
-                     f"<code>{esc(path.rpartition('/')[2])}</code>")
-    lines.append("Вернуть всё в план: <code>/update верни</code>")
+        lines.append(f"• {BRIDGE_NAME}")
+    for name in dict.fromkeys(plain_name(p) for p in sorted(kit, key=kit_sort_key)):
+        lines.append(f"• {name}")
+    lines.append("Вернуть: /update верни")
     return {"status": "LIST", "text_html": "\n".join(lines)}
 
 
@@ -982,8 +1063,7 @@ def cmd_unskip(ctx: Ctx, rest: list[str]) -> dict[str, Any]:
         except FileNotFoundError:
             pass
     return {"status": "UNSKIPPED", "text_html":
-            f"<b>update</b> — вернул пропущенное ({count}). "
-            "Набери <code>/update</code> — покажу план заново."}
+            f"Вернул пропущенное ({count}). Нажмите /update — покажу заново."}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -991,16 +1071,14 @@ def cmd_unskip(ctx: Ctx, rest: list[str]) -> dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 NOTIFY_HASH = "update-notify.hash"
-NOTIFY_MAX_NOTES = 2
-
-
 def notify_text(plan: Plan) -> str:
-    parts = [f"<b>Вышло обновление</b> — {len(plan.items)} "
-             f"{plural(len(plan.items), 'пункт', 'пункта', 'пунктов')}"]
-    parts += [item_block(i, NOTIFY_MAX_NOTES) for i in plan.items]
-    parts.append("Посмотреть подробно и выбрать, что ставить: <code>/update</code>")
-    text = "\n\n".join(parts)
-    return text if len(text) <= TEXT_BUDGET else text[:TEXT_BUDGET - 1] + "…"
+    """Morning heads-up: short, plain, one call to action."""
+    lines = ["Вышло обновление:"] + bullet_lines(plain_notes(plan.items), MAX_NOTIFY_NOTES)
+    lines.append("")
+    if any(i.get("tweak") for i in plan.items):
+        lines.append("Есть место, где у вас своё — при /update объясню.")
+    lines.append("Нажмите /update, чтобы обновить.")
+    return "\n".join(lines)
 
 
 def cmd_notify(ctx: Ctx, rest: list[str], sent: bool) -> str:
@@ -1041,6 +1119,8 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     ap.add_argument("--settings", type=Path)
     ap.add_argument("--ref", default=DEFAULT_REF)
     ap.add_argument("--branch", default="", help="branch to deepen (default: from FETCH_HEAD)")
+    ap.add_argument("--expect", default="",
+                    help="apply/skip from a button: refuse unless the saved plan has this fetch_head")
     ap.add_argument("--sent", action="store_true", help="notify: mark the current plan as sent")
     ap.add_argument("command")
     ap.add_argument("rest", nargs="*")
@@ -1060,7 +1140,7 @@ def make_ctx(ns: argparse.Namespace) -> Ctx:
     settings = ns.settings or Path.home() / ".claude" / "settings.json"
     repo = ns.repo.resolve()
     return Ctx(repo, claude_dir, workspace, ns.agent, ns.chat_id, tz, settings, ns.ref, Git(repo),
-               ns.branch)
+               ns.branch, ns.expect.lower())
 
 
 COMMANDS = {
