@@ -97,7 +97,10 @@ ok "пароль верный, архив читается"
 say "Восстанавливаю данные агента"
 gpg --batch --quiet --passphrase-file "$PASSFILE" -d "$LOCAL_ARCH" 2>/dev/null \
   | tar xzf - -C "$WORKSPACE"
-chown -R "$SERVICE_USER:$SERVICE_USER" "$WORKSPACE"
+# extra/ (доп. пути вне workspace, см. agent-backup.sh) не чоуним: там системные
+# файлы со своими владельцами (root у юнитов) — tar под root их сохранил.
+find "$WORKSPACE" -mindepth 1 -maxdepth 1 ! -name extra -exec chown -R "$SERVICE_USER:$SERVICE_USER" {} +
+chown "$SERVICE_USER:$SERVICE_USER" "$WORKSPACE"
 ok "данные восстановлены в $WORKSPACE"
 
 # 4b. Долгая память приезжает в архиве как .openviking/ -- её место в домашке
@@ -131,6 +134,34 @@ if [[ -d "$WORKSPACE/deploy" ]]; then
   done
   [[ -f "$WORKSPACE/deploy/crontab.txt" ]] && as_agent "crontab '$WORKSPACE/deploy/crontab.txt'" 2>/dev/null \
     && ok "crontab агента восстановлен"
+fi
+
+# 5b. Доп. пути вне workspace (deploy/backup-extra-paths) приезжают в extra/<путь>.
+#     Системные пути САМИ НЕ перезаписываем: на новом сервере там может быть уже
+#     своё — раскладывает человек, глядя на содержимое.
+if [[ -d "$WORKSPACE/extra" ]]; then
+  say "В архиве были доп. пути вне workspace"
+  warn "лежат в $WORKSPACE/extra/<путь> — на место НЕ ставлю, это вручную"
+  # Что было в конфиге (он приехал в deploy/), иначе — верхушка extra/.
+  if [[ -f "$WORKSPACE/deploy/backup-extra-paths" ]]; then
+    sed 's/#.*//; /^[[:space:]]*$/d; s/^[[:space:]]*/      /' "$WORKSPACE/deploy/backup-extra-paths"
+  else
+    (cd "$WORKSPACE/extra" && find . -mindepth 1 -maxdepth 3 | sed 's|^\.|      |' | head -20)
+  fi
+  # Пример — на первом конкретном пути из архива (папка: слить внутрь, файл: копией).
+  ex=""
+  while IFS= read -r l; do
+    l="${l%%#*}"; l="${l#"${l%%[![:space:]]*}"}"; l="${l%"${l##*[![:space:]]}"}"
+    [[ "$l" == /* && -e "$WORKSPACE/extra$l" ]] && { ex="$l"; break; }
+  done < <(cat "$WORKSPACE/deploy/backup-extra-paths" 2>/dev/null)
+  echo "    Вернуть, например (сначала сравни: diff -r <из extra> <на месте>):"
+  if [[ -d "$WORKSPACE/extra$ex" && -n "$ex" ]]; then
+    echo "      sudo cp -a --backup=numbered \"$WORKSPACE/extra$ex/.\" \"$ex/\""
+  elif [[ -n "$ex" ]]; then
+    echo "      sudo cp -a --backup=numbered \"$WORKSPACE/extra$ex\" \"$ex\""
+  else
+    echo "      sudo cp -a --backup=numbered \"$WORKSPACE/extra/<путь>\" \"/<путь>\""
+  fi
 fi
 
 # 6. Системная часть — переиспользуем установщик (идемпотентен: данные уже на

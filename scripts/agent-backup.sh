@@ -65,13 +65,61 @@ for it in "${ITEMS[@]}"; do [[ -e "$it" ]] && present+=("$it"); done
 # их не прочесть -- это не повод терять весь архив.
 OV_ARGS=()
 [[ -d "$HOME/.openviking" ]] && OV_ARGS=(-C "$HOME" .openviking)
+
+# Доп. пути ВНЕ workspace — для серверов, где агент жил до нашего кита: бизнес-
+# скрипты в ~/bin, свои юниты в /etc/systemd/system, старая папка памяти.
+# Конфиг: deploy/backup-extra-paths, по одному абсолютному пути или глобу на
+# строку, # — комментарий. Нет файла — вызов tar ровно прежний.
+# В архиве они лежат под extra/<путь без ведущего />: -C / и --transform,
+# привязанный якорем к каждому пути, — имена workspace и .openviking не трогает.
+# Флаг S: цели жёстких ссылок тоже переименовываются -- иначе ссылка в архиве указала бы на имя без extra/; цели симлинков вне пути под регэксп не попадают. Исключения стоят ПЕРЕД -C / — у GNU tar
+# --exclude позиционный и действует только на extras.
+EXTRA_CONF="$WORKSPACE/deploy/backup-extra-paths"
+EXTRA_ARGS=()
+if [[ -f "$EXTRA_CONF" ]]; then
+  extra_paths=(); extra_xform=()
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%%#*}"
+    line="${line#"${line%%[![:space:]]*}"}"; line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "$line" ]] && continue
+    if [[ "$line" != /* ]]; then log "extra: пропуск, путь не абсолютный: $line"; continue; fi
+    matched=0
+    # Глоб раскрываем сами (nullglob, IFS= — пробелы в путях не режут): пустой
+    # глоб — строка в лог, а не ошибка tar.
+    while IFS= read -r -d '' p; do
+      matched=1
+      p="${p%/}"; rel="${p#/}"
+      [[ -n "$rel" ]] || { log "extra: пропуск корня /"; continue; }
+      [[ "$rel" == *,* ]] && { log "extra: пропуск, запятая в пути ломает --transform: $p"; continue; }
+      top="${rel%%/*}"
+      case "$top" in
+        .claude|secrets|state|deploy|.openviking)
+          log "extra: пропуск, совпадает с именем workspace в архиве: $p"; continue ;;
+      esac
+      dup=0; for q in "${extra_paths[@]:-}"; do [[ "$q" == "$rel" ]] && dup=1; done
+      [[ $dup -eq 1 ]] && continue
+      extra_paths+=("$rel")
+      re="$(printf '%s' "$rel" | sed 's/[][\.*^$]/\\&/g')"
+      extra_xform+=("--transform=s,^${re}\\(/.*\\)\\?\$,extra/&,S")
+    done < <(shopt -s nullglob; IFS=; for g in $line; do
+               [[ -e "$g" || -L "$g" ]] && printf '%s\0' "$g"; done)
+    [[ $matched -eq 1 ]] || log "extra: пропуск, нет такого пути/пустой глоб: $line"
+  done <"$EXTRA_CONF"
+  if [[ ${#extra_paths[@]} -gt 0 ]]; then
+    EXTRA_ARGS=("${extra_xform[@]}"
+      --exclude='__pycache__' --exclude='*.pyc' --exclude='node_modules'
+      -C / "${extra_paths[@]}")
+    log "extra: в архив под extra/ идут ${#extra_paths[@]} путь(ей)"
+  fi
+fi
+
 tar czf - --ignore-failed-read \
   --exclude='.claude/dashi-plugin-claude-code' \
   --exclude='*/node_modules' \
   --exclude='state/telegram/inbox' \
   --exclude='.openviking/appdata/temp' \
   --exclude='.openviking/data/.openviking.lock' \
-  "${present[@]}" "${OV_ARGS[@]}" 2>>"$LOG" \
+  "${present[@]}" "${OV_ARGS[@]}" "${EXTRA_ARGS[@]}" 2>>"$LOG" \
   | gpg --batch --yes --symmetric --cipher-algo AES256 \
         --passphrase-file "$PASS_FILE" -o "$ARCHIVE" 2>>"$LOG"
 rc=("${PIPESTATUS[@]}"); tar_rc=${rc[0]}; gpg_rc=${rc[1]}
