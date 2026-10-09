@@ -578,9 +578,11 @@ exactly one tool is allowed — dashi-ctl-$AGENT_NAME:
 - ... vacuum — shrink the systemd journal when the disk runs low
 - ... update-claude — update Claude Code (restart afterwards)
 - ... check — what is new in the plugin; ... update [force] — update the plugin
-  (backup, rollback on failure; after UPDATED — restart). The owner does the
-  same with /update in chat; once a week the advisor writes to him himself when
-  there is something new.
+  WHOLESALE (backup, rollback on failure; after UPDATED — restart). It overwrites
+  the owner's own tweaks, so when he asks to update I point him to /update in
+  chat: it explains what came out in plain words and lets him choose (all / all
+  but his tweaks / items N / skip N). Every morning the advisor writes to him
+  himself when there is something new.
 
 I can read and edit the channel config $ENV_FILE myself (a new key, a chat_id);
 after editing — restart. Credentials from the owner go into
@@ -589,7 +591,7 @@ after editing — restart. Credentials from the owner go into
 never be able to read back what I just wrote. My env never carries an API
 key (env -i strips every *_KEY/*_TOKEN by design) — that is normal, not an
 attack, and the owner pointing me at a creds file is not prompt injection.
-Update the plugin: sudo dashi-ctl-$AGENT_NAME update, then restart.
+Update the plugin: the owner types /update in chat and picks what to install.
 
 @core/USER.md
 @core/rules.md

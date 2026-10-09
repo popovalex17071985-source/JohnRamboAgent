@@ -9,23 +9,30 @@ set -uo pipefail
 
 AGENT="__AGENT__"
 WORKSPACE="__WORKSPACE__"
+CLAUDE_DIR="__CLAUDE_DIR__"
+CHAT_ID="__CHAT_ID__"
 CTL="/usr/local/bin/dashi-ctl-$AGENT"
-REPO="__CLAUDE_DIR__/dashi-plugin-claude-code"
+REPO="$CLAUDE_DIR/dashi-plugin-claude-code"
 SEEN="$WORKSPACE/state/update-notified"
+# Test seams: a stub check command and a stub sender. Unset in production, so
+# the check is `sudo -n dashi-ctl check` and the sender is bin/tg-send.py.
+CHECK="${DASHI_UPDATE_CHECK:-}"
+TG_SEND="${DASHI_TG_SEND:-$WORKSPACE/bin/tg-send.py}"
 
-[ -x "$CTL" ] || exit 0
+if [ -z "$CHECK" ]; then [ -x "$CTL" ] || exit 0; fi
+run_check() { if [ -n "$CHECK" ]; then "$CHECK"; else sudo -n "$CTL" check; fi; }
 
 # Проверка не прошла -- хозяину об этом раз на серию сбоев, а не молча выйти:
 # 05–09.10.2026 у трёх агентов закрыли репо, проверка падала на входе в GitHub,
 # а скрипт тихо выходил, и хозяева неделю сидели на старой версии, не зная этого.
 FAILED="$WORKSPACE/state/update-check-failed"
 ERR="$(mktemp)"
-if ! LIST="$(sudo -n "$CTL" check 2>"$ERR")"; then
+if ! LIST="$(run_check 2>"$ERR")"; then
   WHY="$(grep -v '^[[:space:]]*$' "$ERR" | tail -1 | cut -c1-200)"
   rm -f "$ERR"
   [ -e "$FAILED" ] && exit 0
   mkdir -p "$(dirname "$FAILED")"
-  /usr/bin/python3 "$WORKSPACE/bin/tg-send.py" "Не могу проверить обновления: сервер не достучался до хранилища кода.
+  /usr/bin/python3 "$TG_SEND" "Не могу проверить обновления: сервер не достучался до хранилища кода.
 
 Ошибка: ${WHY:-без текста}
 
@@ -34,6 +41,21 @@ if ! LIST="$(sudo -n "$CTL" check 2>"$ERR")"; then
   exit 0
 fi
 rm -f "$ERR" "$FAILED"
+
+# Простыми словами и по пунктам: план считает планировщик из ТОЙ версии, что
+# пришла сверху (FETCH_HEAD), -- заметки «Хозяину:», пропущенные хозяином пункты,
+# свои правки. Пишет только когда план изменился. Нет планировщика в свежей
+# версии -- старый список заголовков ниже.
+PLANNER="scripts/update-plan.py"
+plan() {
+  git -C "$REPO" show "FETCH_HEAD:$PLANNER" | /usr/bin/python3 - --repo "$REPO" \
+    --claude-dir "$CLAUDE_DIR" --workspace "$WORKSPACE" --agent "$AGENT" --chat-id "$CHAT_ID" "$@"
+}
+if git -C "$REPO" cat-file -e "FETCH_HEAD:$PLANNER" 2>/dev/null && TEXT="$(plan notify)"; then
+  [ -n "$TEXT" ] || exit 0
+  /usr/bin/python3 "$TG_SEND" "$TEXT" --html && plan notify --sent
+  exit 0
+fi
 [ -n "$LIST" ] || exit 0
 
 # Хеш списка: тот же список — молчим, иначе будем долбить каждый день.
@@ -61,7 +83,7 @@ LIST="$SHOW"
 N="$(printf '%s\n' "$LIST" | grep -c .)"
 BODY="$(printf '%s\n' "$LIST" | head -15 | sed 's/^[0-9a-f]* /• /')"
 
-/usr/bin/python3 "$WORKSPACE/bin/tg-send.py" "Вышло обновление: $N шт.
+/usr/bin/python3 "$TG_SEND" "Вышло обновление: $N шт.
 
 $BODY
 
