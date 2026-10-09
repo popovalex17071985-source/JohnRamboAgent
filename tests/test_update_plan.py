@@ -242,6 +242,34 @@ class ApplyTest(unittest.TestCase):
         self.assertTrue(again["items"][0]["target"].endswith("/bin/c.py"))
         self.assertTrue(again["items"][0]["tweak"])
 
+    def test_apply_one_kit_item_without_bridge_keeps_head(self) -> None:
+        shas = self.fx.standard_update()
+        head = self.fx.head()
+        self.fx.run("plan")
+        out = self.fx.run("apply", "2")
+        self.assertEqual(out["status"], "UPDATED")
+        self.assertFalse(out["restart"])
+        self.assertEqual(self.fx.head(), head)
+        self.assertFalse(self.fx.bun_log.exists())
+        self.assertEqual(self.fx.installed("hooks/a.sh"), "#!/bin/sh\necho a2 smoke\n")
+        self.assertIn("# my tweak", self.fx.installed("bin/c.py"))
+        applied = json.loads((self.fx.ws / "state" / "update-applied.json").read_text())
+        blob = git(self.fx.repo, "rev-parse", f"{shas['a']}:agent-kit/hooks/a.sh")
+        self.assertEqual(applied["agent-kit/hooks/a.sh"], blob)
+        # next plan: a.sh is done, the rest is still offered
+        again = self.fx.run("plan")
+        self.assertEqual([i["kind"] for i in again["items"]], ["bridge", "kit"])
+        self.assertTrue(again["items"][1]["target"].endswith("/bin/c.py"))
+
+    def test_apply_tweaked_kit_item_backs_up_owner_file(self) -> None:
+        self.fx.standard_update()
+        self.fx.run("plan")
+        self.fx.run("apply", "3")
+        self.assertEqual(self.fx.installed("bin/c.py"), "print('c2', '42')\n")
+        backups = list((self.fx.ws / ".kit-backup").glob("*/bin/c.py"))
+        self.assertEqual(len(backups), 1)
+        self.assertIn("# my tweak", backups[0].read_text())
+
 
 if __name__ == "__main__":
     unittest.main()
