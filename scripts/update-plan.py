@@ -638,6 +638,7 @@ KIT_NAMES = {
     "tg-send.py": "отправка сообщений в Телеграм",
     "claude-link-guard.sh": "сторож входа",
     "timing.py": "замер времени задач",
+    "backup-tidy.py": "уборка старых копий файлов",
 }
 KIT_FOLDER_NAMES = {"hooks": "правила поведения агента", "agents": "помощники агента"}
 FALLBACK_NAME = "служебная часть"
