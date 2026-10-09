@@ -917,19 +917,49 @@ def save_uncommitted(ctx: Ctx, target: str) -> tuple[bool, dict[str, Any] | None
                   "redo_patch": redo_patch, "replaced": sorted(replaced)}
 
 
+APPLY_3WAY = ("apply", "--3way", "--binary", "--whitespace=nowarn", "-")
+
+
+def apply_3way(repo: Path, patch: bytes) -> tuple[bool, list[str], str]:
+    """git apply --3way of a saved patch in `repo`: (ok, conflicted files, stderr)."""
+    res = subprocess.run(["git", "-C", str(repo), *APPLY_3WAY], input=patch, capture_output=True)
+    err = res.stderr.decode(errors="replace")
+    return res.returncode == 0, [ln[2:].strip() for ln in err.splitlines() if ln.startswith("U ")], err
+
+
+def trial_reapply(ctx: Ctx, target: str, saved: dict[str, Any]) -> list[str] | None:
+    """Would the saved changes go on top of `target`? Tried in a throwaway
+    worktree, so a clash never resets (and swaps back) the live repo the plugin
+    runs from. The files that clash; None when the trial itself failed."""
+    clash = [p for p in saved["untracked"] if ctx.git.entry(target, p) and not same_as(ctx, target, p)]
+    if not saved["redo_patch"]:
+        return clash
+    tmp = Path(tempfile.mkdtemp(prefix="dashi-uncommitted-"))
+    try:
+        ctx.git.run("-c", "core.hooksPath=/dev/null", "worktree", "add", "-q", "--detach",
+                    str(tmp / "wt"), target)
+        ok, files, err = apply_3way(tmp / "wt", saved["redo_patch"])
+        if not ok:
+            log_update(ctx, f"uncommitted changes do not go onto {target[:12]}: {err.strip()[:500]}")
+            clash += files or saved["redo"]
+    except GitError as err:
+        log_update(ctx, f"uncommitted trial worktree failed: {err}")
+        return None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+        ctx.git.ok("worktree", "prune")
+    return sorted(set(clash))
+
+
 def reapply_uncommitted(ctx: Ctx, saved: dict[str, Any]) -> list[str]:
     """After the reset: put the saved changes back on top, uncommitted as before.
     Returns the files that do not go on (the caller then restores the repo)."""
     clash: list[str] = []
     if saved["redo_patch"]:
-        res = subprocess.run(["git", "-C", str(ctx.repo), "apply", "--3way", "--binary",
-                              "--whitespace=nowarn", "-"],
-                             input=saved["redo_patch"], capture_output=True)
-        if res.returncode != 0:
-            err = res.stderr.decode(errors="replace")
+        ok, files, err = apply_3way(ctx.repo, saved["redo_patch"])
+        if not ok:
             log_update(ctx, f"uncommitted changes do not go on top: {err.strip()[:500]}")
-            clash += [ln[2:].strip() for ln in err.splitlines() if ln.startswith("U ")] \
-                or saved["redo"]
+            clash += files or saved["redo"]
         else:
             ctx.git.run("reset", "-q")                # staged by --3way: back to unstaged
     for rel in saved["untracked"]:
@@ -1272,12 +1302,19 @@ class BridgeOutcome:
 
 
 def apply_bridge(ctx: Ctx, target: str, keep: list[str], carry: bool = True) -> BridgeOutcome:
-    """Save uncommitted changes -> backup -> reset to target (the update, local
-    commits on top if carried) -> uncommitted changes back on top (`carry`) ->
-    bun install -> install-kit --keep. Anything failing -> the repo as it was."""
+    """Save uncommitted changes -> (carry: try them on target aside; a clash
+    stops here) -> backup -> reset to target (the update, local commits on top if
+    carried) -> uncommitted changes back on top (`carry`) -> bun install ->
+    install-kit --keep. Anything failing after the reset -> the repo as it was."""
     saved_ok, unc = save_uncommitted(ctx, target)
     if not saved_ok:
         return BridgeOutcome(False, "не смог сохранить копию ваших правок, поэтому ничего не трогал")
+    if carry and unc:
+        clash = trial_reapply(ctx, target, unc)
+        if clash:
+            log_update(ctx, f"uncommitted changes clash with {target[:12]}: {', '.join(clash)}; "
+                            "repo not touched")
+            return BridgeOutcome(False, blocked=clash)
     bak = ctx.repo.with_name(ctx.repo.name + ".bak")
     try:
         if bak.exists():
