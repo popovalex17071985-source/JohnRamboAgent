@@ -48,6 +48,7 @@ IGNORED_REPO_PATHS = frozenset({"plugin/bun.lock"})
 NOTES_FILE = "update-notes.json"
 TRAILER = "Хозяину:"
 HIDE = "-"
+GENERIC_NOTE = "Мелкие исправления в работе агента"
 HISTORY_DEPTH = 300
 MAX_NOTES_PER_ITEM = 4
 MAX_TWEAK_LINES = 3
@@ -267,8 +268,9 @@ def note_for(commit: Commit, notes: dict[str, str]) -> str | None:
         if commit.sha.startswith(key):
             text = text.strip()
             return None if text == HIDE else text
-    subject = commit.body.splitlines()[0].strip() if commit.body else commit.sha[:7]
-    return subject or commit.sha[:7]
+    # Not annotated: the subject, never silence. Only an explicit "-" hides.
+    subject = commit.body.splitlines()[0].strip() if commit.body else ""
+    return subject or GENERIC_NOTE
 
 
 def is_kit_path(path: str) -> bool:
