@@ -1103,9 +1103,16 @@ case "\${1:-}" in
                  # Бэкап рядом (.bak), падение reset/bun = откат на бэкап. Рестарт НЕ
                  # делает — его зовёт плагин отдельно, чтобы ответ успел уйти в чат.
                  g() { runuser -u $SERVICE_USER -- git -C $REPO_DIR "\$@"; }
-                 dirty="\$(g status --porcelain -- . ':!plugin/bun.lock' | awk '{print \$2}' | head -5 | tr '\n' ' ')"
-                 if [[ -n "\$dirty" && "\${2:-}" != force ]]; then echo "DIRTY \$dirty"; exit 3; fi
                  g fetch -q --depth 30 origin $BRANCH || { echo NOFETCH; exit 5; }
+                 # Правка руками, которая уже совпадает со свежей версией, -- не правка:
+                 # 09.10.2026 у Жорика /update встал на двух скриптах, поставленных
+                 # заранее ровно такими, какими они вышли в main.
+                 dirty=""
+                 for f in \$(g status --porcelain -- . ':!plugin/bun.lock' | awk '{print \$2}'); do
+                   g show "FETCH_HEAD:\$f" 2>/dev/null | cmp -s - "$REPO_DIR/\$f" || dirty="\$dirty\$f "
+                 done
+                 dirty="\$(printf '%s' "\$dirty" | tr ' ' '\n' | head -5 | tr '\n' ' ')"
+                 if [[ -n "\$dirty" && "\${2:-}" != force ]]; then echo "DIRTY \$dirty"; exit 3; fi
                  n="\$(g rev-list --count HEAD..FETCH_HEAD)"
                  [[ "\$n" == 0 ]] && { echo UPTODATE; exit 0; }
                  rm -rf $REPO_DIR.bak; cp -a $REPO_DIR $REPO_DIR.bak
