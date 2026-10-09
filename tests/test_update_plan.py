@@ -460,25 +460,56 @@ class AutoTest(unittest.TestCase):
         self.assertEqual([i["n"] for i in out["items"]], [1, 2])
 
 
+BLOCKED_TEXT = ("Основную часть обновления поставить не смог: ваша доработка «{}» и обновление "
+                "меняют одно и то же место. Ничего не сломал, работаю на прежней версии. "
+                "Разработчику уже ушёл сигнал — он перенесёт доработку в общую версию.")
+
+
+def local_commit(fx: Fixture, subject: str, files: dict[str, str],
+                 branch: str | None = "feat/group-listen-all") -> str:
+    """The owner's own commit in the agent repo, on top of what is installed."""
+    if branch:
+        git(fx.repo, "checkout", "-q", "-B", branch)
+    for rel, body in files.items():
+        path = fx.repo / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body)
+    git(fx.repo, "add", "-A")
+    git(fx.repo, "commit", "-q", "-m", subject)
+    return fx.head()
+
+
+def repo_state(fx: Fixture) -> tuple[str, str, str, list[str]]:
+    """HEAD, branch, porcelain status and git's in-progress markers."""
+    gd = Path(git(fx.repo, "rev-parse", "--absolute-git-dir"))
+    markers = sorted(n for n in ("CHERRY_PICK_HEAD", "REBASE_HEAD", "MERGE_HEAD",
+                                 "rebase-merge", "rebase-apply", "sequencer")
+                     if (gd / n).exists())
+    return (fx.head(), git(fx.repo, "rev-parse", "--abbrev-ref", "HEAD"),
+            git(fx.repo, "status", "--porcelain"), markers)
+
+
 class LocalCommitsTest(unittest.TestCase):
-    """HEAD carries a local commit that the shared version does not have
-    (Albert, 09.10.2026: feat/group-listen-all on a shallow clone)."""
+    """HEAD carries a local commit that the shared version does not have and that
+    changes the SAME place as the update (Albert, 09.10.2026: feat/group-listen-all
+    on a shallow clone). It cannot be carried over: the owner is asked."""
 
     SUBJECT = "Группа с listen_all: слушать все сообщения"
 
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.fx = Fixture(Path(self._tmp.name))
-        git(self.fx.repo, "checkout", "-q", "-b", "feat/group-listen-all")
-        (self.fx.repo / "plugin" / "local.ts").write_text("export const listenAll = true\n")
-        git(self.fx.repo, "add", "-A")
-        git(self.fx.repo, "commit", "-q", "-m", self.SUBJECT)
-        self.local = self.fx.head()
+        # upstream changes plugin/src.ts line 1 too -> a real conflict
+        self.local = local_commit(self.fx, self.SUBJECT,
+                                  {"plugin/src.ts": "export const listenAll = true\n"})
         self.fx.standard_update()
         git(self.fx.repo, "fetch", "-q", "--depth", "2", "origin", "main")  # shallow, as live
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
+
+    def blocked_file(self) -> Path:
+        return self.fx.ws / "state" / "update-blocked.json"
 
     def test_plan_warns_that_the_bridge_would_remove_local_work(self) -> None:
         out = self.fx.run("plan")
@@ -490,13 +521,47 @@ class LocalCommitsTest(unittest.TestCase):
         self.assertNotIn("/update", out["text_html"])
         self.assertEqual([a for a, _ in out["buttons"]], ["keep", "all", "no"])
 
-    def test_keep_button_keeps_local_work(self) -> None:
-        self.fx.run("auto")
-        out = self.fx.run("apply", "keep")
-        self.assertEqual(out["status"], "UPDATED")
+    def test_keep_button_tries_to_carry_local_work_and_blocks_cleanly(self) -> None:
+        before = repo_state(self.fx)
+        src_before = (self.fx.repo / "plugin" / "src.ts").read_text()
+        plan = self.fx.run("auto")
+        out = self.fx.run("--expect", plan["fetch_head"][:12], "apply", "keep")
+        self.assertEqual(out["status"], "UPDATED")            # the kit item still went
         self.assertFalse(out["restart"])
-        self.assertEqual(self.fx.head(), self.local)          # bridge not applied
-        self.assertIn("a2", self.fx.installed("hooks/a.sh"))  # kit item still went
+        self.assertIn("a2", self.fx.installed("hooks/a.sh"))
+        self.assertIn("# my tweak", self.fx.installed("bin/c.py"))
+        # the repo is exactly as before: same HEAD, branch, clean tree, no half-rebase
+        self.assertEqual(repo_state(self.fx), before)
+        self.assertEqual(self.fx.head(), self.local)
+        self.assertEqual((self.fx.repo / "plugin" / "src.ts").read_text(), src_before)
+        self.assertFalse(self.fx.bun_log.exists())
+        # backed up first, exactly as for an overwrite
+        refs = git(self.fx.repo, "for-each-ref", "--format=%(objectname)",
+                   "refs/dashi-backup/").splitlines()
+        self.assertEqual(refs, [self.local])
+        self.assertEqual(len(list((self.fx.ws / ".kit-backup").glob("*/local-commits.patch"))), 1)
+        # the signal for the developer
+        blocked = json.loads(self.blocked_file().read_text())
+        self.assertEqual(blocked["fetch_head"], plan["fetch_head"])
+        self.assertEqual(blocked["local_commits"],
+                         [{"sha": self.local, "subject": self.SUBJECT, "files": ["plugin/src.ts"]}])
+        self.assertIsInstance(blocked["ts"], int)
+        # the owner's words
+        text = out["text_html"]
+        self.assertIn(BLOCKED_TEXT.format(self.SUBJECT), text)
+        self.assertNotIn("связь моргнёт", text)
+
+    def test_keep_with_only_the_bridge_left_says_just_the_block(self) -> None:
+        (self.fx.ws / "bin" / "c.py").write_text("print('c1', '42')\n")  # no kit tweak
+        self.fx.run("plan")
+        self.fx.run("apply", "2", "3")                                     # kit items done
+        self.fx.run("plan")
+        out = self.fx.run("apply", "keep")
+        self.assertEqual(out["status"], "BLOCKED")
+        self.assertFalse(out["restart"])
+        self.assertEqual(out["text_html"], BLOCKED_TEXT.format(self.SUBJECT))
+        self.assertEqual(self.fx.head(), self.local)
+        self.assertTrue(self.blocked_file().exists())
 
     def test_update_all_saves_local_work_before_reset(self) -> None:
         self.fx.run("plan")
@@ -516,6 +581,223 @@ class LocalCommitsTest(unittest.TestCase):
         log = (self.fx.ws / "logs" / "update.log").read_text()
         self.assertIn("local-commits.patch", log)      # ...whoever repairs gets the paths
         self.assertIn(refs[0].split()[0], log)
+
+    def test_blocked_signal_is_removed_once_the_bridge_goes_in(self) -> None:
+        self.fx.run("plan")
+        self.fx.run("apply", "keep")
+        self.assertTrue(self.blocked_file().exists())
+        self.fx.run("plan")
+        self.assertEqual(self.fx.run("apply", "all")["status"], "UPDATED")
+        self.assertFalse(self.blocked_file().exists())
+
+
+class LocalReplayTest(unittest.TestCase):
+    """A local commit that replays cleanly on the update is NOT the owner's thing
+    that gets overwritten: never asked about, carried over on top of the update."""
+
+    SUBJECT = "Группа с listen_all: слушать все сообщения"
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.fx = Fixture(Path(self._tmp.name))
+        self.local = local_commit(self.fx, self.SUBJECT,
+                                  {"plugin/local.ts": "export const listenAll = true\n"})
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def fetch_head(self) -> str:
+        return git(self.fx.repo, "rev-parse", "FETCH_HEAD")
+
+    def assert_carried(self, *subjects: str) -> None:
+        log = git(self.fx.repo, "log", "--format=%s", f"{self.fetch_head()}..HEAD").splitlines()
+        self.assertEqual(log, list(reversed(subjects)))
+        self.assertEqual(git(self.fx.repo, "merge-base", "--is-ancestor", self.fetch_head(), "HEAD"), "")
+        self.assertEqual((self.fx.repo / "plugin" / "src.ts").read_text(), "export const v = 2\n")
+        self.assertEqual(git(self.fx.repo, "rev-parse", "--abbrev-ref", "HEAD"), "feat/group-listen-all")
+        self.assertEqual(git(self.fx.repo, "status", "--porcelain"), "")
+
+    def test_plan_does_not_ask_about_a_replayable_local_commit(self) -> None:
+        self.fx.standard_update()
+        out = self.fx.run("plan")
+        bridge = out["items"][0]
+        self.assertEqual(bridge["kind"], "bridge")
+        self.assertFalse(bridge["tweak"])
+        self.assertEqual([t for t in out["tweaks"] if t.get("kind") == "local"], [])
+        self.assertNotIn(self.SUBJECT, out["text_html"])
+        self.assertNotIn("доработк", out["text_html"])
+        # only bin/c.py is the owner's
+        self.assertEqual([t["n"] for t in out["tweaks"]], [3])
+
+    def test_keep_installs_the_bridge_with_local_commit_on_top(self) -> None:
+        self.fx.standard_update()
+        plan = self.fx.run("auto")
+        out = self.fx.run("--expect", plan["fetch_head"][:12], "apply", "keep")
+        self.assertEqual(out["status"], "UPDATED")
+        self.assertTrue(out["restart"])
+        self.assert_carried(self.SUBJECT)
+        self.assertTrue((self.fx.repo / "plugin" / "local.ts").exists())
+        self.assertIn("install --silent", self.fx.bun_log.read_text())
+        self.assertIn("a2", self.fx.installed("hooks/a.sh"))
+        self.assertIn("# my tweak", self.fx.installed("bin/c.py"))
+        # backed up first, exactly as today
+        refs = git(self.fx.repo, "for-each-ref", "--format=%(objectname)",
+                   "refs/dashi-backup/").splitlines()
+        self.assertEqual(refs, [self.local])
+        self.assertEqual(len(list((self.fx.ws / ".kit-backup").glob("*/local-commits.patch"))), 1)
+        self.assertFalse((self.fx.ws / "state" / "update-blocked.json").exists())
+        self.assertNotIn("доработку сохранил", out["text_html"])   # nothing was removed
+        # the next plan is up to date: the carried commit is not "pending"
+        self.assertEqual(self.fx.run("plan")["items"][0]["kind"], "kit")
+
+    def test_auto_without_tweaks_installs_at_once_and_keeps_local_commits(self) -> None:
+        second = "Ещё своя правка поверх"
+        local_commit(self.fx, second, {"plugin/local.ts": "export const listenAll = false\n"},
+                     branch=None)
+        self.fx.standard_update()
+        (self.fx.ws / "bin" / "c.py").write_text("print('c1', '42')\n")  # no kit tweak
+        out = self.fx.run("auto")
+        self.assertEqual(out["status"], "UPDATED")
+        self.assertTrue(out["restart"])
+        self.assert_carried(self.SUBJECT, second)
+        self.assertEqual((self.fx.repo / "plugin" / "local.ts").read_text(),
+                         "export const listenAll = false\n")
+        self.assertEqual(self.fx.installed("bin/c.py"), "print('c2', '42')\n")
+
+    def test_local_commit_already_in_the_update_is_dropped_quietly(self) -> None:
+        # The developer moved the owner's change into the shared version as is.
+        self.fx.write_origin("plugin/local.ts", "export const listenAll = true\n")
+        self.fx.commit("Группа с listen_all в общей версии")
+        self.fx.fetch()
+        out = self.fx.run("auto")
+        self.assertEqual(out["status"], "UPDATED")
+        self.assertEqual(self.fx.head(), self.fetch_head())
+
+    def test_blocked_signal_is_removed_after_a_successful_apply(self) -> None:
+        self.fx.standard_update()
+        blocked = self.fx.ws / "state" / "update-blocked.json"
+        blocked.parent.mkdir(parents=True, exist_ok=True)
+        blocked.write_text('{"fetch_head": "old", "local_commits": [], "ts": 1}\n')
+        self.fx.run("plan")
+        self.assertEqual(self.fx.run("apply", "keep")["status"], "UPDATED")
+        self.assertFalse(blocked.exists())
+
+
+def snapshot(root: Path) -> dict[str, bytes | None]:
+    """Every path under root with its bytes (None for a folder)."""
+    out: dict[str, bytes | None] = {}
+    for path in sorted(root.rglob("*")):
+        rel = str(path.relative_to(root))
+        out[rel] = None if path.is_dir() and not path.is_symlink() else (
+            os.readlink(path).encode() if path.is_symlink() else path.read_bytes())
+    return out
+
+
+class ScanTest(unittest.TestCase):
+    """`scan`: one JSON object about what the agent carries of its own, read-only,
+    run from a NEWER copy of the script piped over ssh stdin."""
+
+    SUBJECT = "Группа с listen_all: слушать все сообщения"
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.fx = Fixture(self.tmp)
+        self.newer = self.tmp / "central" / "update-plan.py"
+        self.newer.parent.mkdir()
+        shutil.copy(SCRIPT, self.newer)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def scan(self, *extra: str, agent: bool = True) -> dict:
+        args = ["--repo", str(self.fx.repo), "--claude-dir", str(self.fx.cd),
+                "--workspace", str(self.fx.ws)]
+        if agent:
+            args += ["--agent", "smoke"]
+        with self.newer.open("rb") as stdin:
+            res = subprocess.run(["python3", "-", *args, *extra, "scan"], stdin=stdin,
+                                 capture_output=True, cwd=self.tmp, env=self.fx.env())
+        self.assertEqual(res.returncode, 0, res.stderr)
+        lines = res.stdout.decode().strip().splitlines()
+        self.assertEqual(len(lines), 1, res.stdout)
+        return json.loads(lines[0])
+
+    def owner_setup(self) -> str:
+        sha = local_commit(self.fx, self.SUBJECT,
+                           {"plugin/local.ts": "export const listenAll = true\n"})
+        self.fx.standard_update()                                   # tweaks bin/c.py
+        (self.fx.repo / "README.md").write_text("readme with my notes\n")
+        (self.fx.repo / "notes.txt").write_text("mine\n")
+        (self.fx.ws / "bin" / "my-own.sh").write_text("#!/bin/sh\n")
+        (self.fx.cd / "hooks" / "mine.sh").write_text("#!/bin/sh\n")
+        (self.fx.cd / "hooks" / "a.sh").unlink()                    # owner removed a hook
+        state = self.fx.ws / "state"
+        state.mkdir(parents=True, exist_ok=True)
+        (state / "update-blocked.json").write_text(json.dumps(
+            {"fetch_head": "f" * 40, "local_commits": [], "ts": 5}))
+        return sha
+
+    def test_scan_reports_everything_of_the_owners_and_changes_nothing(self) -> None:
+        sha = self.owner_setup()
+        before = snapshot(self.tmp / "ws")
+        out = self.scan()
+        self.assertEqual(snapshot(self.tmp / "ws"), before)
+        self.assertEqual(out["agent"], "smoke")
+        self.assertEqual(out["head"], sha)
+        self.assertEqual(out["base"], git(self.fx.repo, "rev-parse", "FETCH_HEAD"))
+        [lc] = out["local_commits"]
+        self.assertEqual(lc["sha"], sha)
+        self.assertEqual(lc["subject"], self.SUBJECT)
+        self.assertEqual(lc["files"], ["plugin/local.ts"])
+        self.assertIn("plugin/local.ts", lc["diffstat"])
+        self.assertIs(lc["replays_clean"], True)
+        self.assertEqual(sorted(out["uncommitted"]), ["README.md", "notes.txt"])
+        tweaks = {t["path"]: t for t in out["kit_tweaks"]}
+        self.assertEqual(sorted(tweaks), ["agent-kit/bin/c.py", "agent-kit/hooks/a.sh"])
+        c = tweaks["agent-kit/bin/c.py"]
+        self.assertEqual(c["target"], "bin/c.py")
+        self.assertEqual((c["added"], c["removed"], c["new_file"], c["deleted"]), (1, 0, False, False))
+        self.assertIn("+# my tweak", c["diff"])
+        a = tweaks["agent-kit/hooks/a.sh"]
+        self.assertTrue(a["deleted"])
+        self.assertEqual(a["target"], ".claude/hooks/a.sh")
+        self.assertEqual(sorted(out["extra_files"]), [".claude/hooks/mine.sh", "bin/my-own.sh"])
+        self.assertEqual(out["blocked"], {"fetch_head": "f" * 40, "local_commits": [], "ts": 5})
+
+    def test_scan_marks_a_conflicting_local_commit(self) -> None:
+        sha = local_commit(self.fx, self.SUBJECT,
+                           {"plugin/src.ts": "export const listenAll = true\n"})
+        self.fx.standard_update()
+        out = self.scan(agent=False)
+        self.assertIsNone(out["agent"])
+        self.assertEqual([(c["sha"], c["replays_clean"]) for c in out["local_commits"]],
+                         [(sha, False)])
+        self.assertIsNone(out["blocked"])
+        self.assertEqual(out["extra_files"], [])
+
+    def test_scan_without_fetch_head_uses_origin_main(self) -> None:
+        self.fx.standard_update()
+        gd = Path(git(self.fx.repo, "rev-parse", "--absolute-git-dir"))
+        (gd / "FETCH_HEAD").unlink()
+        out = self.scan()
+        self.assertEqual(out["base"], git(self.fx.repo, "rev-parse", "origin/main"))
+        self.assertEqual(out["local_commits"], [])
+        self.assertEqual([t["path"] for t in out["kit_tweaks"]], ["agent-kit/bin/c.py"])
+
+    def test_scan_long_diff_is_cut(self) -> None:
+        with (self.fx.ws / "bin" / "c.py").open("a") as f:
+            f.write("".join(f"# line {i} of a long owner change\n" for i in range(500)))
+        self.fx.fetch()
+        [tweak] = self.scan()["kit_tweaks"]
+        self.assertEqual(tweak["added"], 500)
+        self.assertLessEqual(len(tweak["diff"]), 4000)
+
+    def test_help_documents_scan(self) -> None:
+        res = subprocess.run(["python3", str(SCRIPT), "--help"], capture_output=True, text=True)
+        self.assertEqual(res.returncode, 0)
+        for word in ("scan", "--repo", "--claude-dir", "--workspace", "python3 -"):
+            self.assertIn(word, res.stdout)
 
 
 class StaleTest(unittest.TestCase):
