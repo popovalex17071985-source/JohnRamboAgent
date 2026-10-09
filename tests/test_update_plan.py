@@ -395,6 +395,74 @@ class ApplyTest(unittest.TestCase):
         self.assertFalse(self.fx.bun_log.exists())
 
 
+class AutoTest(unittest.TestCase):
+    """Bare /update = `auto`: show the plan; repeated while fresh = install it."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.fx = Fixture(Path(self._tmp.name))
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_first_update_only_shows_the_plan(self) -> None:
+        self.fx.standard_update()
+        head = self.fx.head()
+        out = self.fx.run("auto")
+        self.assertEqual(out["status"], "PLAN")
+        self.assertEqual(self.fx.head(), head)
+        self.assertFalse(self.fx.bun_log.exists())
+        self.assertIn("a1", self.fx.installed("hooks/a.sh"))
+
+    def test_repeated_update_installs_all_but_owner_tweaks(self) -> None:
+        self.fx.standard_update()
+        fetch_head = git(self.fx.repo, "rev-parse", "FETCH_HEAD")
+        self.fx.run("auto")
+        out = self.fx.run("auto")
+        self.assertEqual(out["status"], "UPDATED")
+        self.assertTrue(out["restart"])
+        self.assertEqual(self.fx.head(), fetch_head)
+        self.assertIn("a2", self.fx.installed("hooks/a.sh"))
+        self.assertIn("# my tweak", self.fx.installed("bin/c.py"))  # tweak kept
+
+    def test_repeated_update_without_tweaks_installs_everything(self) -> None:
+        self.fx.standard_update()
+        (self.fx.ws / "bin" / "c.py").write_text("print('c1', '42')\n")
+        self.fx.run("auto")
+        self.assertEqual(self.fx.run("auto")["status"], "UPDATED")
+        self.assertEqual(self.fx.installed("bin/c.py"), "print('c2', '42')\n")
+
+    def test_stale_plan_is_shown_again_not_applied(self) -> None:
+        self.fx.standard_update()
+        head = self.fx.head()
+        self.fx.run("auto")
+        self.fx.write_origin("plugin/src.ts", "export const v = 3\n")
+        self.fx.commit("ещё правка")
+        self.fx.fetch()
+        self.assertEqual(self.fx.run("auto")["status"], "PLAN")
+        self.assertEqual(self.fx.head(), head)
+        self.assertFalse(self.fx.bun_log.exists())
+
+    def test_plan_older_than_a_day_is_shown_again_not_applied(self) -> None:
+        self.fx.standard_update()
+        head = self.fx.head()
+        self.fx.run("auto")
+        path = self.fx.ws / "state" / "update-plan.json"
+        saved = json.loads(path.read_text())
+        saved["created"] -= 25 * 3600
+        path.write_text(json.dumps(saved))
+        self.assertEqual(self.fx.run("auto")["status"], "PLAN")
+        self.assertEqual(self.fx.head(), head)
+
+    def test_applied_plan_is_not_applied_twice(self) -> None:
+        self.fx.standard_update()
+        self.fx.run("plan")
+        self.fx.run("apply", "2")            # kit only: HEAD and FETCH_HEAD stay
+        out = self.fx.run("auto")
+        self.assertEqual(out["status"], "PLAN")
+        self.assertEqual([i["n"] for i in out["items"]], [1, 2])
+
+
 class StaleTest(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()

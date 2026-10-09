@@ -65,7 +65,8 @@ describe('parseUpdateArgs', () => {
 
 describe('plannerArgs', () => {
   test('maps each request onto update-plan.py subcommands', () => {
-    expect(plannerArgs({ kind: 'plan' })).toEqual(['plan'])
+    // bare /update: show the plan, or install it when repeated while fresh
+    expect(plannerArgs({ kind: 'plan' })).toEqual(['auto'])
     expect(plannerArgs({ kind: 'apply', mode: 'all', items: [] })).toEqual(['apply', 'all'])
     expect(plannerArgs({ kind: 'apply', mode: 'keep', items: [] })).toEqual(['apply', 'keep'])
     expect(plannerArgs({ kind: 'apply', mode: 'items', items: [1, 3] })).toEqual(['apply', '1', '3'])
@@ -103,7 +104,7 @@ describe('makePlanner (FETCH_HEAD copy of scripts/update-plan.py)', () => {
       show: { code: 0, stdout: 'print("script")\n' },
       python3: { code: 0, stdout: '{"status":"PLAN","text_html":"план"}\n' },
     })
-    const out = await makePlanner({ ...opts, exec })(['plan'])
+    const out = await makePlanner({ ...opts, exec })(['auto'])
     expect(out).toEqual({ kind: 'ok', result: { status: 'PLAN', text_html: 'план' } })
     expect(calls[0]!.args).toEqual(['-C', opts.repoDir, 'fetch', '-q', '--depth', '50', 'origin', 'main'])
     expect(calls[1]!.args).toEqual(['-C', opts.repoDir, 'show', 'FETCH_HEAD:scripts/update-plan.py'])
@@ -112,7 +113,7 @@ describe('makePlanner (FETCH_HEAD copy of scripts/update-plan.py)', () => {
     expect(py.input).toBe('print("script")\n')
     expect(py.args).toEqual([
       '-', '--repo', opts.repoDir, '--claude-dir', opts.claudeDir, '--workspace', opts.workspace,
-      '--agent', 'canary', '--chat-id', '42', 'plan',
+      '--agent', 'canary', '--chat-id', '42', 'auto',
     ])
   })
 
@@ -173,7 +174,7 @@ describe('/update through the planner', () => {
     const s = setup({ kind: 'ok', result: { status: 'PLAN', text_html: '<b>Вышло обновление</b>' } })
     const res = await handleOobCommand(parseOobCommand('/update')!, s.ctx)
     expect(res.replyToTelegram).toEqual({ text: '<b>Вышло обновление</b>', parseMode: 'HTML' })
-    expect(s.plannerCalls).toEqual([['plan']])
+    expect(s.plannerCalls).toEqual([['auto']])
     expect(s.ctlCalls).toHaveLength(0)
     expect(s.spawned).toHaveLength(0)
   })
@@ -205,7 +206,15 @@ describe('/update through the planner', () => {
     const s = setup({ kind: 'ok', result: { status: 'PLAN', text_html: 'x' } })
     const res = await handleOobCommand(parseOobCommand('/update давай')!, s.ctx)
     expect(s.plannerCalls).toHaveLength(0)
-    expect(res.replyToTelegram!.text).toContain('/update своё')
+    expect(res.replyToTelegram!.text).toContain('/update всё')
+    expect(res.replyToTelegram!.text).not.toContain('своё')
+  })
+
+  test('repeated /update that installs → restart like any apply', async () => {
+    const s = setup({ kind: 'ok', result: { status: 'UPDATED', restart: true, text_html: 'поставил' } })
+    await handleOobCommand(parseOobCommand('/update')!, s.ctx)
+    expect(s.plannerCalls).toEqual([['auto']])
+    expect(s.spawned).toHaveLength(1)
   })
 
   test('planner error → the full stderr goes to the plugin log', async () => {
@@ -241,9 +250,12 @@ describe('/update through the planner', () => {
     expect(res.replyToTelegram!.text).toContain('/update всё')
   })
 
-  test('/help mentions the choice commands', async () => {
+  test('/help mentions the choice commands, not the своё alias', async () => {
     const res = await handleOobCommand(parseOobCommand('/help')!, makeCtx({}))
-    expect(res.replyToTelegram!.text).toContain('/update своё')
-    expect(res.replyToTelegram!.text).toContain('/update пропусти')
+    const text = res.replyToTelegram!.text
+    expect(text).toContain('/update всё')
+    expect(text).toContain('/update пропусти')
+    expect(text).toContain('ещё раз')
+    expect(text).not.toContain('своё')
   })
 })
