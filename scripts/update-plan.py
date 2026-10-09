@@ -292,6 +292,9 @@ def load_notes(ctx: Ctx) -> dict[str, str]:
             if isinstance(k, str) and SHA_KEY.fullmatch(k.lower())}
 
 
+TEST_SUBJECT_RX = re.compile(r"(Тест|Test|Tests)\s*:", re.I)
+
+
 def note_for(commit: Commit, notes: dict[str, str]) -> str | None:
     """Plain note for the owner; None = hidden."""
     for line in commit.body.splitlines():
@@ -303,8 +306,11 @@ def note_for(commit: Commit, notes: dict[str, str]) -> str | None:
         if commit.sha.startswith(key):
             text = text.strip()
             return None if text == HIDE else text
-    # Not annotated: the subject, never silence. Only an explicit "-" hides.
+    # Not annotated: the subject, never silence. Only an explicit "-" hides --
+    # and a test-only commit («Тест: …»), which means nothing to the owner.
     subject = commit.body.splitlines()[0].strip() if commit.body else ""
+    if TEST_SUBJECT_RX.match(subject):
+        return None
     return subject or GENERIC_NOTE
 
 
