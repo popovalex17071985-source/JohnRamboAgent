@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
+  defaultPlannerExec,
   makePlanner,
   parseUpdateArgs,
   plannerArgs,
@@ -84,7 +85,7 @@ describe('makePlanner (FETCH_HEAD copy of scripts/update-plan.py)', () => {
     branch: 'main',
   }
 
-  function fakeExec(answers: Record<string, { code: number; stdout: string }>): {
+  function fakeExec(answers: Record<string, { code: number; stdout: string; stderr?: string }>): {
     exec: PlannerExec
     calls: Array<{ cmd: string; args: readonly string[]; input?: string }>
   } {
@@ -125,6 +126,25 @@ describe('makePlanner (FETCH_HEAD copy of scripts/update-plan.py)', () => {
   test('no script in FETCH_HEAD → unavailable', async () => {
     const { exec } = fakeExec({ show: { code: 128, stdout: '' } })
     expect((await makePlanner({ ...opts, exec })(['plan'])).kind).toBe('unavailable')
+  })
+
+  test('python traceback (stderr) reaches the error detail, last line first-class', async () => {
+    const tb = 'Traceback (most recent call last):\n  File "<stdin>", line 9, in <module>\nValueError: boom\n'
+    const { exec } = fakeExec({
+      show: { code: 0, stdout: 'x' },
+      python3: { code: 1, stdout: '', stderr: tb },
+    })
+    const out = await makePlanner({ ...opts, exec })(['plan'])
+    expect(out.kind).toBe('error')
+    if (out.kind !== 'error') return
+    expect(out.detail).toContain('ValueError: boom')
+    expect(out.detail).not.toContain('пусто')
+    expect(out.stderr).toBe(tb)
+  })
+
+  test('default exec captures stdout, stderr and the exit code', async () => {
+    const r = await defaultPlannerExec('sh', ['-c', 'cat; echo err >&2; exit 3'], { input: 'in\n' })
+    expect(r).toEqual({ code: 3, stdout: 'in\n', stderr: 'err\n' })
   })
 
   test('script answered garbage → error, not a fallback', async () => {
@@ -186,6 +206,17 @@ describe('/update through the planner', () => {
     const res = await handleOobCommand(parseOobCommand('/update давай')!, s.ctx)
     expect(s.plannerCalls).toHaveLength(0)
     expect(res.replyToTelegram!.text).toContain('/update своё')
+  })
+
+  test('planner error → the full stderr goes to the plugin log', async () => {
+    const warned: Array<Record<string, unknown> | undefined> = []
+    const ctx = makeCtx({
+      runPlanner: async () => ({ kind: 'error', detail: 'код 1: ValueError: boom', stderr: 'Traceback\nValueError: boom' }),
+    })
+    ctx.log = { ...ctx.log, warn: (_m, c) => { warned.push(c) } }
+    const res = await handleOobCommand(parseOobCommand('/update')!, ctx)
+    expect(res.replyToTelegram!.text).toContain('ValueError: boom')
+    expect(warned.some((c) => c?.stderr === 'Traceback\nValueError: boom')).toBe(true)
   })
 
   test('planner error → reported, no ctl fallback, no restart', async () => {
