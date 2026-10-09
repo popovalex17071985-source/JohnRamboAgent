@@ -146,6 +146,7 @@ class Ctx:
     settings: Path
     ref: str
     git: Git
+    branch: str = ""
 
     @property
     def state_dir(self) -> Path:
@@ -367,7 +368,41 @@ def kit_title(path: str) -> str:
     return f"{KIT_TITLES.get(folder.rpartition('/')[2], 'Файл')} {name}"
 
 
+FETCH_HEAD_BRANCH = re.compile(r"\tbranch '([^']+)' of ")
+
+
+def fetch_head_branch(ctx: Ctx) -> str:
+    """Branch named in .git/FETCH_HEAD by the last `git fetch origin <branch>`."""
+    try:
+        rel = ctx.git.run("rev-parse", "--git-path", "FETCH_HEAD").strip()
+        first = (ctx.repo / rel).read_text().splitlines()[0]
+    except (GitError, OSError, IndexError):
+        return ""
+    m = FETCH_HEAD_BRANCH.search(first)
+    return m.group(1) if m else ""
+
+
+def ensure_history(ctx: Ctx) -> None:
+    """Deepen a shallow fetch that does not reach HEAD.
+
+    The plugin and dashi-ctl fetch with --depth. An agent further behind than
+    that has HEAD outside the fetched history: HEAD..FETCH_HEAD is cut at the
+    shallow boundary and the plan would be short and wrong.
+    """
+    if ctx.ref != DEFAULT_REF or ctx.git.ok("merge-base", "--is-ancestor", "HEAD", ctx.ref):
+        return
+    if ctx.git.run("rev-parse", "--is-shallow-repository").strip() != "true":
+        return  # full history and still not an ancestor: local commits, nothing to fetch
+    branch = ctx.branch or fetch_head_branch(ctx) or "main"
+    ctx.git.close()
+    try:
+        ctx.git.run("fetch", "-q", "--unshallow", "origin", branch)
+    except GitError as err:
+        print(f"update-plan: could not deepen history: {err}", file=sys.stderr)
+
+
 def build_plan(ctx: Ctx) -> Plan:
+    ensure_history(ctx)
     fetch_head = ctx.git.rev(ctx.ref)
     head = ctx.git.rev("HEAD")
     if fetch_head is None or head is None:
@@ -908,6 +943,7 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     ap.add_argument("--tz", default="")
     ap.add_argument("--settings", type=Path)
     ap.add_argument("--ref", default=DEFAULT_REF)
+    ap.add_argument("--branch", default="", help="branch to deepen (default: from FETCH_HEAD)")
     ap.add_argument("--sent", action="store_true", help="notify: mark the current plan as sent")
     ap.add_argument("command")
     ap.add_argument("rest", nargs="*")
@@ -926,7 +962,8 @@ def make_ctx(ns: argparse.Namespace) -> Ctx:
             tz = ""
     settings = ns.settings or Path.home() / ".claude" / "settings.json"
     repo = ns.repo.resolve()
-    return Ctx(repo, claude_dir, workspace, ns.agent, ns.chat_id, tz, settings, ns.ref, Git(repo))
+    return Ctx(repo, claude_dir, workspace, ns.agent, ns.chat_id, tz, settings, ns.ref, Git(repo),
+               ns.branch)
 
 
 COMMANDS = {
