@@ -61,7 +61,8 @@ export function parseUpdateArgs(args: string): UpdateRequest {
 export function plannerArgs(req: Exclude<UpdateRequest, { kind: 'invalid' }>): string[] {
   switch (req.kind) {
     case 'plan':
-      return ['plan']
+      // bare /update: shows the plan; repeated while it is fresh, installs it
+      return ['auto']
     case 'apply':
       return req.mode === 'items' ? ['apply', ...req.items.map(String)] : ['apply', req.mode]
     case 'skip':
@@ -73,11 +74,12 @@ export function plannerArgs(req: Exclude<UpdateRequest, { kind: 'invalid' }>): s
   }
 }
 
+// своё/keep still parse (an alias of a repeated /update) but are not advertised:
+// «всё, кроме своего» read as a contradiction to the owner.
 export const UPDATE_USAGE =
   '<b>update</b> — не понял. Можно так:\n'
-  + '<code>/update</code> — показать, что вышло\n'
-  + '<code>/update всё</code> — поставить всё\n'
-  + '<code>/update своё</code> — всё, кроме пунктов с вашими правками\n'
+  + '<code>/update</code> — показать, что вышло; ещё раз — поставить (кроме пунктов с вашими правками)\n'
+  + '<code>/update всё</code> — поставить всё, и ваши правки тоже\n'
   + '<code>/update 1 3</code> — только пункты 1 и 3\n'
   + '<code>/update пропусти 2</code> — не ставить пункт 2 и больше не предлагать\n'
   + '<code>/update пропущенные</code> — что пропущено; <code>/update верни</code> — вернуть'

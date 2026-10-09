@@ -13,6 +13,8 @@ Units:
 
 Subcommands (JSON on stdout unless noted):
   plan                      numbered plan, saved to $WORKSPACE/state/update-plan.json
+  auto                      bare /update: install a fresh saved plan (apply keep),
+                            else show the plan
   apply all|keep|N [M ...]  install (keep = all except items with the owner's tweaks)
   skip N [M ...]            do not install and never offer again (until it changes)
   skipped                   what was skipped
@@ -790,13 +792,15 @@ def cmd_apply(ctx: Ctx, rest: list[str]) -> dict[str, Any]:
         return {"status": "NOTHING", "restart": False, "text_html": error}
     if not nums:
         return {"status": "NOTHING", "restart": False,
-                "text_html": "<b>update</b> — ставить нечего: все пункты с вашими правками."}
+                "text_html": "<b>update</b> — без ваших правок ставить нечего: в каждом пункте "
+                             "ваша правка. Поставить всё равно — <code>/update всё</code>."}
     chosen = [items[str(n)] for n in nums]
     left = [i for n, i in sorted(items.items(), key=lambda kv: int(kv[0])) if int(n) not in nums]
     lines: list[str] = []
     if any(i["kind"] == "bridge" for i in chosen):
         keep = list(saved.get("keep_always", [])) + [i["target"] for i in left if i["kind"] == "kit"]
         ok, warn = apply_bridge(ctx, saved["fetch_head"], keep)
+        drop_saved_plan(ctx)
         if not ok:
             return {"status": "ROLLBACK", "restart": False,
                     "text_html": f"<b>update</b> — обновление упало, {warn}. "
@@ -821,11 +825,33 @@ def cmd_apply(ctx: Ctx, rest: list[str]) -> dict[str, Any]:
         render_to(ctx, Path(item["target"]), ctx.render(ctx.git.blob(item["blob"])), stamp)
         applied[item["path"]] = item["blob"]
     ctx.save("update-applied.json", applied)
+    drop_saved_plan(ctx)
     lines.append("<b>update</b> — поставил: " + ", ".join(label(i) for i in chosen) + ".")
     if any(i.get("tweak") for i in chosen):
         lines.append(f"Ваши прежние файлы сохранил в <code>.kit-backup/{stamp}</code>.")
     lines.append("Перезапуск не нужен — работает со следующего хода.")
     return {"status": "UPDATED", "restart": False, "text_html": "\n".join(lines)}
+
+
+def drop_saved_plan(ctx: Ctx) -> None:
+    """A plan is installed once: the next bare /update shows a fresh one."""
+    try:
+        ctx.state_file("update-plan.json").unlink()
+    except FileNotFoundError:
+        pass
+
+
+PLAN_TTL_S = 24 * 3600
+
+
+def cmd_auto(ctx: Ctx, rest: list[str]) -> dict[str, Any]:
+    """Bare /update. A plan shown less than a day ago for the same versions is
+    installed (minus the items with the owner's tweaks); otherwise -- show it."""
+    saved, _refusal = saved_plan(ctx)
+    if saved is not None and saved["items"] and \
+            time.time() - float(saved.get("created", 0)) < PLAN_TTL_S:
+        return cmd_apply(ctx, ["keep"])
+    return cmd_plan(ctx)
 
 
 def render_to(ctx: Ctx, target: Path, data: bytes, stamp: str) -> None:
@@ -988,6 +1014,7 @@ def make_ctx(ns: argparse.Namespace) -> Ctx:
 
 COMMANDS = {
     "plan": lambda ctx, rest: cmd_plan(ctx),
+    "auto": cmd_auto,
     "apply": cmd_apply,
     "skip": cmd_skip,
     "skipped": cmd_skipped,
