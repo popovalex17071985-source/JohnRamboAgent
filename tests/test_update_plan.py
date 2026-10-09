@@ -184,7 +184,7 @@ class PlanTest(unittest.TestCase):
         self.assertIn("my tweak", " ".join(tw["lines"]))
 
         text = out["text_html"]
-        for cmd in ("/update всё", "/update своё", "/update 1 3", "/update пропусти"):
+        for cmd in ("/update всё", "/update 1 3", "/update пропусти"):
             self.assertIn(cmd, text)
         self.assertIn("Отчёт о сервере стал короче", text)
         self.assertIn("my tweak", text)
@@ -193,6 +193,46 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(saved["fetch_head"], git(self.fx.repo, "rev-parse", "FETCH_HEAD"))
         self.assertEqual(out["fetch_head"], saved["fetch_head"])
         self.assertEqual(sorted(saved["items"]), ["1", "2", "3"])
+
+    def answer_block(self, text: str) -> str:
+        return text[text.index("<b>Как ответить</b>"):]
+
+    def test_answer_hint_with_owner_tweak(self) -> None:
+        self.fx.standard_update()  # item 3 carries the owner's tweak
+        block = self.answer_block(self.fx.run("plan")["text_html"])
+        self.assertEqual(block, "\n".join([
+            "<b>Как ответить</b>",
+            "<code>/update</code> ещё раз — поставить всё, кроме п.3 (там ваша правка)",
+            "<code>/update всё</code> — и п.3 тоже (вашу правку перезапишу, копия останется)",
+            "<code>/update 1 3</code> — только выбранные",
+            "<code>/update пропусти 3</code> — не ставить и больше не предлагать",
+        ]))
+        self.assertNotIn("своё", self.fx.run("plan")["text_html"])
+
+    def test_answer_hint_without_tweaks(self) -> None:
+        self.fx.standard_update()
+        (self.fx.ws / "bin" / "c.py").write_text("print('c1', '42')\n")  # tweak undone
+        block = self.answer_block(self.fx.run("plan")["text_html"])
+        self.assertEqual(block, "\n".join([
+            "<b>Как ответить</b>",
+            "<code>/update</code> ещё раз — поставить всё",
+            "<code>/update 1 3</code> — только выбранные",
+            "<code>/update пропусти 3</code> — не ставить и больше не предлагать",
+        ]))
+
+    def test_answer_hint_when_every_item_is_tweaked(self) -> None:
+        self.fx.write_origin("agent-kit/bin/c.py", "print('c2', '__CHAT_ID__')\n")
+        self.fx.commit("health: shorter report")
+        with (self.fx.ws / "bin" / "c.py").open("a") as f:
+            f.write("# my tweak\n")
+        self.fx.fetch()
+        block = self.answer_block(self.fx.run("plan")["text_html"])
+        self.assertEqual(block, "\n".join([
+            "<b>Как ответить</b>",
+            "<code>/update всё</code> — поставить (вашу правку перезапишу, копия останется)",
+            "<code>/update 1</code> — только выбранные",
+            "<code>/update пропусти 1</code> — не ставить и больше не предлагать",
+        ]))
 
     def test_repo_file_identical_to_fetch_head_is_not_a_tweak(self) -> None:
         self.fx.standard_update()
