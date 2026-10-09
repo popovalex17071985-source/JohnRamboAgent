@@ -742,7 +742,36 @@ def cmd_apply(ctx: Ctx, rest: list[str]) -> dict[str, Any]:
             lines.append(warn)
         lines.append("Перезапускаю — связь моргнёт на ~10 сек.")
         return {"status": "UPDATED", "restart": True, "text_html": "\n".join(lines)}
-    return {"status": "NOTHING", "restart": False, "text_html": "<b>update</b> — пока не умею."}
+    # Kit files only: HEAD stays, each chosen file is rendered from its new blob.
+    applied: dict[str, str] = ctx.load("update-applied.json", {})
+    stamp = time.strftime("%Y%m%d-%H%M")
+    for item in chosen:
+        render_to(ctx, Path(item["target"]), ctx.render(ctx.git.blob(item["blob"])), stamp)
+        applied[item["path"]] = item["blob"]
+    ctx.save("update-applied.json", applied)
+    lines.append("<b>update</b> — поставил: " + ", ".join(label(i) for i in chosen) + ".")
+    if any(i.get("tweak") for i in chosen):
+        lines.append(f"Ваши прежние файлы сохранил в <code>.kit-backup/{stamp}</code>.")
+    lines.append("Перезапуск не нужен — работает со следующего хода.")
+    return {"status": "UPDATED", "restart": False, "text_html": "\n".join(lines)}
+
+
+def render_to(ctx: Ctx, target: Path, data: bytes, stamp: str) -> None:
+    """install-kit.sh render(): back up a differing target, then overwrite it."""
+    current = read_bytes(target)
+    if current is not None and current != data:
+        try:
+            rel = target.relative_to(ctx.workspace)
+        except ValueError:
+            rel = Path(target.name)
+        backup = ctx.workspace / ".kit-backup" / stamp / rel
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(target, backup)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("wb") as fh:
+        fh.write(data)
+    if target.parent.name in ("hooks", "bin"):
+        target.chmod(target.stat().st_mode | 0o111)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
