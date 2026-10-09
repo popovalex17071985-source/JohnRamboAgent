@@ -270,6 +270,22 @@ class ApplyTest(unittest.TestCase):
         self.assertEqual(len(backups), 1)
         self.assertIn("# my tweak", backups[0].read_text())
 
+    def test_rollback_when_bun_install_fails(self) -> None:
+        self.fx.standard_update()
+        head = self.fx.head()
+        a_before = self.fx.installed("hooks/a.sh")
+        self.fx.set_bun(1)
+        self.fx.run("plan")
+        out = self.fx.run("apply", "all")
+        self.assertEqual(out["status"], "ROLLBACK")
+        self.assertFalse(out["restart"])
+        self.assertIn("откатил", out["text_html"])
+        self.assertEqual(self.fx.head(), head)
+        self.assertEqual((self.fx.repo / "plugin" / "src.ts").read_text(), "export const v = 1\n")
+        self.assertFalse(self.fx.repo.with_name(self.fx.repo.name + ".bak").exists())
+        # kit files are not touched by a failed update
+        self.assertEqual(self.fx.installed("hooks/a.sh"), a_before)
+
 
 if __name__ == "__main__":
     unittest.main()
