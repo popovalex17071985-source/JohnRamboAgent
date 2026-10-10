@@ -695,3 +695,131 @@ describe('hybrid routing — DM to master, groups to per-chat (router wired)', (
     rmSync(statePaths.root, { recursive: true, force: true })
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────
+// listen_all (06.10.2026) — a group where the agent takes EVERY message,
+// not only @-mentions / replies to the bot. Requested by the client's
+// owner for their group. Per-chat switch, off by default; who may write
+// at all is still decided by allowlist.users / open_to_members.
+// ─────────────────────────────────────────────────────────────────────
+
+describe('listen_all — group takes every message without @-mention', () => {
+  const OTHER_GROUP_CHAT_ID = -1009999999999
+  const STRANGER_ID = 555000111
+
+  function groupPolicy(extra: Partial<ChatPolicy> = {}): ChatPolicy {
+    return {
+      mode: 'public',
+      streaming: 'off',
+      tmux_mirror: false,
+      edit_message_progress: false,
+      delivery: 'final_only',
+      persona_file: 'thrall.md',
+      handoff_file: 'handoff.md',
+      system_reminder: '',
+      idle_ttl_ms: 1_800_000,
+      max_queue_depth: 1,
+      ...extra,
+    }
+  }
+
+  function twoGroupPolicy(a: Partial<ChatPolicy>, b: Partial<ChatPolicy> = {}): MultichatPolicy {
+    return makePolicy({
+      chats: {
+        [String(ALLOWED_GROUP_CHAT_ID)]: groupPolicy(a),
+        [String(OTHER_GROUP_CHAT_ID)]: groupPolicy(b),
+      },
+    })
+  }
+
+  async function dispatchedFrom(
+    policy: MultichatPolicy,
+    msgs: Array<{ chatId: number; fromId: number }>,
+  ): Promise<InboundMessage[]> {
+    const calls: InboundMessage[] = []
+    const router = {
+      dispatch: async (msg: InboundMessage) => {
+        calls.push(msg)
+      },
+      ensureGroupJoined: () => null,
+    } as unknown as MultichatRouter
+    const { deps, statePaths } = makeDeps({ policy })
+    const withRouter: HandlerDeps = { ...deps, router }
+    for (const m of msgs) {
+      await handleInboundText(
+        makeGroupCtx({ text: 'просто пишу в группу', chatId: m.chatId, fromId: m.fromId }),
+        withRouter,
+      )
+    }
+    rmSync(statePaths.root, { recursive: true, force: true })
+    return calls
+  }
+
+  test('default (no listen_all): unaddressed group message is ignored as before', async () => {
+    const calls = await dispatchedFrom(twoGroupPolicy({}), [
+      { chatId: ALLOWED_GROUP_CHAT_ID, fromId: WARCHIEF_USER_ID },
+    ])
+    expect(calls.length).toBe(0)
+  })
+
+  test('listen_all=true: unaddressed group message is dispatched to the router', async () => {
+    const calls = await dispatchedFrom(twoGroupPolicy({ listen_all: true }), [
+      { chatId: ALLOWED_GROUP_CHAT_ID, fromId: WARCHIEF_USER_ID },
+    ])
+    expect(calls.length).toBe(1)
+    expect(calls[0]?.chat_id).toBe(String(ALLOWED_GROUP_CHAT_ID))
+  })
+
+  test('listen_all on chat A does not open chat B', async () => {
+    const calls = await dispatchedFrom(twoGroupPolicy({ listen_all: true }, {}), [
+      { chatId: ALLOWED_GROUP_CHAT_ID, fromId: WARCHIEF_USER_ID },
+      { chatId: OTHER_GROUP_CHAT_ID, fromId: WARCHIEF_USER_ID },
+    ])
+    expect(calls.map((c) => c.chat_id)).toEqual([String(ALLOWED_GROUP_CHAT_ID)])
+  })
+
+  test('listen_all does not bypass the sender allowlist (closed group)', async () => {
+    const calls = await dispatchedFrom(twoGroupPolicy({ listen_all: true }), [
+      { chatId: ALLOWED_GROUP_CHAT_ID, fromId: STRANGER_ID },
+    ])
+    expect(calls.length).toBe(0)
+  })
+
+  test('listen_all + open_to_members: any member is taken without @-mention', async () => {
+    const calls = await dispatchedFrom(
+      twoGroupPolicy({ listen_all: true, open_to_members: true }),
+      [{ chatId: ALLOWED_GROUP_CHAT_ID, fromId: STRANGER_ID }],
+    )
+    expect(calls.length).toBe(1)
+  })
+
+  test('listen_all: watcher side effects follow the same addressing decision', async () => {
+    const sendCalls: string[] = []
+    const tg = makeTelegramApi()
+    const api: TelegramApi = {
+      ...tg.api,
+      sendMessage: async (_chatId, text) => {
+        sendCalls.push(text)
+        return { message_id: 1 }
+      },
+    }
+    const watcher = new InboundWatcher({
+      telegramApi: api,
+      config: makeConfig(),
+      log: silentLog,
+      progressReporter: makeFakeProgress(true, 'Bash'),
+    })
+    const { deps, statePaths } = makeDeps({
+      policy: twoGroupPolicy({ listen_all: true }),
+      watcher,
+      telegramApi: api,
+    })
+    await handleInboundText(
+      makeGroupCtx({ text: 'без тега', chatId: ALLOWED_GROUP_CHAT_ID, fromId: WARCHIEF_USER_ID }),
+      deps,
+    )
+    await new Promise((r) => setTimeout(r, 0))
+    expect(sendCalls.length).toBe(1)
+    rmSync(statePaths.root, { recursive: true, force: true })
+  })
+})

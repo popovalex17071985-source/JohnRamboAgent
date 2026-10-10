@@ -771,7 +771,10 @@ export function getStatePaths(_config: AppConfig, env: RuntimeEnv): StatePaths {
     deadLetterWebhook: join(root, 'dead-letter', 'webhook'),
     deadLetterOutbound: join(root, 'dead-letter', 'outbound'),
     logs: {
-      server: join(root, 'logs', 'server.log'),
+      // The bridge's own log: every createLogger('dashi-channel') line as JSONL,
+      // size-rotated (bridge.jsonl.1, .2). The MCP host drops the bridge's
+      // stderr shortly after start, so this file is the only durable copy.
+      server: join(root, 'logs', 'bridge.jsonl'),
       telegram: join(root, 'logs', 'telegram.log'),
       // L3 (PLAN.md alignment): the audit log is JSONL, not plain log lines.
       // Renamed so log shippers configured for *.jsonl pick it up correctly.

@@ -28,7 +28,7 @@ import type { GuestQueryRegistry } from './guest-queries.js'
 import type { Logger } from '../log.js'
 import type { TelegramApi } from '../channel/tools.js'
 import type { StatusManager } from '../status/status-manager.js'
-import { mentionAllowlistFor, type MultichatPolicy } from '../chats/policy-loader.js'
+import { listensToAll, mentionAllowlistFor, type MultichatPolicy } from '../chats/policy-loader.js'
 import type { MultichatRouter } from '../router/multichat-router.js'
 import type { InboundMessage } from '../router/inbox-bridge.js'
 import {
@@ -321,7 +321,9 @@ function isSideEffectAllowed(
 ): boolean {
   if (!watcherAllowed(ctx, config, policy)) return false
   // Addressing gate. mention_allowlist defends groups; DM passes through.
-  return isAddressedToBot(ctx, mentionAllowlistFor(policy, ctx.chat?.id !== undefined ? String(ctx.chat.id) : undefined))
+  const chatKey = ctx.chat?.id !== undefined ? String(ctx.chat.id) : undefined
+  if (listensToAll(policy, chatKey)) return true
+  return isAddressedToBot(ctx, mentionAllowlistFor(policy, chatKey))
 }
 
 // Fire-and-forget watcher trigger. Encapsulates the allowlist gate +
@@ -556,7 +558,8 @@ async function gateAndNotify(
   // DM passes through unchanged because isAddressedToBot returns true for
   // private chats regardless of the allowlist parameter.
   if (deps.policy && input.chatType !== 'private') {
-    const addressed = isAddressedToBot(ctx, mentionAllowlistFor(deps.policy, decision.chatId))
+    const addressed = listensToAll(deps.policy, decision.chatId)
+      || isAddressedToBot(ctx, mentionAllowlistFor(deps.policy, decision.chatId))
     if (!addressed) {
       deps.log.debug('handlers.not_addressed', {
         chat_id: decision.chatId,
@@ -1003,10 +1006,10 @@ async function tryRouteToAlbumBuffer(
   // DMs always evaluate to `true` (isAddressedToBot returns true for
   // private chat regardless of mention_allowlist), so private albums
   // behave exactly as before.
-  const addressedAtPush = isAddressedToBot(
-    ctx,
-    mentionAllowlistFor(deps.policy, ctx.chat?.id !== undefined ? String(ctx.chat.id) : undefined),
-  )
+  // listen_all group: every fragment counts as addressed, like a plain message.
+  const albumChatKey = ctx.chat?.id !== undefined ? String(ctx.chat.id) : undefined
+  const addressedAtPush = listensToAll(deps.policy, albumChatKey)
+    || isAddressedToBot(ctx, mentionAllowlistFor(deps.policy, albumChatKey))
 
   const descriptors = await buildDescriptors()
   const rendered = descriptors.map(renderMediaDescriptor)

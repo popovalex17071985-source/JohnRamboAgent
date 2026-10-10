@@ -184,6 +184,8 @@ export function makePlanner(o: PlannerOptions): (args: readonly string[]) => Pro
       '--workspace', o.workspace,
       '--agent', o.agent,
       '--chat-id', o.chatId,
+      // the branch fetched above; without it the planner guesses it from FETCH_HEAD
+      '--branch', o.branch,
       ...(o.tz ? ['--tz', o.tz] : []),
       ...args,
     ], { input: show.stdout, timeoutMs: PLANNER_TIMEOUT_MS })

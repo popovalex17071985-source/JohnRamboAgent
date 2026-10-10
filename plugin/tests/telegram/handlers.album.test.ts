@@ -1207,6 +1207,52 @@ describe('FIX-D B1 — group album aggregate addressing', () => {
 // FIX-D M1 — policy without router in group chat → drop with error log
 // ─────────────────────────────────────────────────────────────────────
 
+// listen_all (06.10.2026): in a group with listen_all every message is taken
+// without @-mention — albums included. A bare album must dispatch there.
+describe('listen_all — bare group album dispatches', () => {
+  test('3 bare fragments in a listen_all group → album dispatches once', async () => {
+    const clock = makeClock()
+    const buffer = makeBuffer(50, clock)
+    const serverSpy = makeServerSpy()
+    const policy = makeAlbumPolicy()
+    const groupEntry = policy.chats[String(ADDR_GROUP_CHAT)]!
+    policy.chats[String(ADDR_GROUP_CHAT)] = { ...groupEntry, listen_all: true }
+    const routerCalls: InboundMessage[] = []
+    const router: MultichatRouter = {
+      dispatch: async (msg: InboundMessage) => {
+        routerCalls.push(msg)
+      },
+      ensureGroupJoined: () => null,
+    } as unknown as MultichatRouter
+    const { deps, statePaths } = makeDeps({
+      albumBuffer: buffer,
+      server: serverSpy.server,
+      policy,
+      router,
+    })
+
+    const fragments = [1, 2, 3].map((i) =>
+      makeGroupAlbumCtx({
+        chatId: ADDR_GROUP_CHAT,
+        fromId: ADDR_WARCHIEF,
+        messageId: i,
+        mediaGroupId: 'listen-all-mgid',
+        fileId: `doc-${i}`,
+        mentionBot: false,
+      }),
+    )
+    for (const ctx of fragments) await handleInboundDocument(ctx, deps)
+
+    await clock.tick(60)
+    for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 5))
+
+    expect(routerCalls.length).toBe(1)
+    expect(routerCalls[0]!.chat_id).toBe(String(ADDR_GROUP_CHAT))
+
+    rmSync(statePaths.root, { recursive: true, force: true })
+  })
+})
+
 describe('FIX-D M1 — policy/router XOR defence-in-depth', () => {
   test('album: policy present, router missing, group chat → drop, no notify', async () => {
     const clock = makeClock()

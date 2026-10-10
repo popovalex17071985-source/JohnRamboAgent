@@ -90,8 +90,12 @@ Mechanisms: `hooks/stop-closeout-gate.py`, `hooks/capture-open-threads.py`,
 - Every lesson must end in a MECHANISM (a rule in context, a registry row, or a
   script/hook) — a diary line is not a fix.
 
+- **Tests first.** A failing test is committed before the code it covers; a
+  code commit with no test in it or earlier on the branch is blocked. A genuine
+  one-off (a throwaway script, a config) carries the line «Без теста: <reason>».
+
 Mechanisms: `hooks/block-dangerous.sh`, `hooks/block-red-zone.sh`,
-`hooks/lesson-needs-mechanism.sh`.
+`hooks/lesson-needs-mechanism.sh`, `hooks/tdd-commit-gate.py`.
 
 ## 6. Language and token economy
 

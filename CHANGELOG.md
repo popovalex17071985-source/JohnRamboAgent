@@ -16,6 +16,12 @@ retroactively marks the state of `main` on 2026-06-14.
 ## [Unreleased]
 
 ### Added
+- **Bridge on-disk log.** Every line of the bridge's logger (including crash
+  handlers) is also appended as JSON to `<state_dir>/logs/bridge.jsonl`,
+  redacted like stderr, rotated at 5 MB with two old copies kept
+  (`bridge.jsonl.1`, `.2`). The MCP host keeps the bridge's stderr only for
+  the first moments after start, so lines such as «idle compact attempt /
+  sent ok / failed» used to be lost. A write failure is swallowed.
 - **Idle auto-compact.** When the owner session's transcript has been untouched
   for `idle_minutes` (default 55) — i.e. the 1-hour prompt cache is about to
   expire — and the context is at least `min_context_tokens` (default 150 000),

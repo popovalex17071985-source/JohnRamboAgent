@@ -37,7 +37,7 @@ import {
   type AppConfig,
   type StatePaths,
 } from './config.js'
-import { createLogger } from './log.js'
+import { createJsonlFileSink, createLogger, type JsonlFileSink } from './log.js'
 import { ensureStateDirs, migrateLegacyAllowlist, writeDeadLetter } from './state/store.js'
 import {
   callTool,
@@ -256,12 +256,22 @@ const crashSecrets: string[] = []
 if (process.env.TELEGRAM_BOT_TOKEN !== undefined) {
   crashSecrets.push(process.env.TELEGRAM_BOT_TOKEN)
 }
+// Set once the state dir is known (below); crash lines then also land in
+// the bridge's on-disk log, which outlives the host's stderr capture.
+let crashFileSink: JsonlFileSink | undefined
+function crashStack(err: unknown): Record<string, unknown> | undefined {
+  return err instanceof Error && err.stack ? { stack: err.stack } : undefined
+}
 process.on('unhandledRejection', err => {
+  // File first: a dead host pipe can make the stderr write throw.
+  crashFileSink?.('error', 'dashi-channel', `unhandled rejection: ${String(err)}`, crashStack(err))
   process.stderr.write(
     redactToken(`telegram channel: unhandled rejection: ${String(err)}\n`, crashSecrets),
   )
 })
 process.on('uncaughtException', err => {
+  // File first: a dead host pipe can make the stderr write throw.
+  crashFileSink?.('error', 'dashi-channel', `uncaught exception: ${String(err)}`, crashStack(err))
   process.stderr.write(
     redactToken(`telegram channel: uncaught exception: ${String(err)}\n`, crashSecrets),
   )
@@ -316,7 +326,11 @@ if (env.GROQ_API_KEY) {
   logSecrets.push(env.GROQ_API_KEY)
   crashSecrets.push(env.GROQ_API_KEY)
 }
-const log = createLogger('dashi-channel', { secrets: logSecrets })
+const log = createLogger('dashi-channel', {
+  secrets: logSecrets,
+  filePath: statePaths.logs.server,
+})
+crashFileSink = createJsonlFileSink(statePaths.logs.server, { secrets: crashSecrets })
 
 // Lock down the env file to owner-only after we've read it.
 try {
