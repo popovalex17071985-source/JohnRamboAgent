@@ -34,7 +34,10 @@ FRESH_SEC = 3 * 3600      # лог не менялся 3 часа -- прого�
 
 # Набор логов у каждого агента свой -- смотрим все, кроме собственного и тех,
 # где «ошибка» это нормальный отчёт сторожей.
-SKIP = {"job-fail-watch.log", "self-audit.log", "health-daily.log"}
+# ov-memory / tmux-pane logs quote conversation text: a quoted «[СБОЙ ЗАДАНИЯ]»
+# is not a failure (10.10.2026, false alarm on gorbot).
+SKIP = {"job-fail-watch.log", "self-audit.log", "health-daily.log",
+        "ov-memory.log", "tmux-pane.log", "tmux-pane.prev.log"}
 
 
 def log_files() -> list[str]:
