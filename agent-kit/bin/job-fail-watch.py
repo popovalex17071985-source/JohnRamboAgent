@@ -62,6 +62,13 @@ def hits(text: str) -> list[str]:
     return out
 
 
+def line_shape(line: str) -> str:
+    """The line with every number replaced by N: the same failure with a new
+    timestamp or count is one signature (was r'\\\\d+' -- matched a backslash).
+    Kept outside the f-string: Python 3.10 on agents forbids a backslash there."""
+    return re.sub(r'\d+', 'N', line)
+
+
 def load_state() -> dict:
     try:
         return json.loads(STATE.read_text())
@@ -97,7 +104,8 @@ def main() -> int:
             # первый прогон по этому логу: не разгребаем всю историю
             fresh = "\n".join(fresh.splitlines()[-TAIL_LINES:])
         for line in hits(fresh):
-            sig = hashlib.sha1(f"{rel}|{re.sub(r'\\d+', 'N', line)}".encode()).hexdigest()[:12]
+            shape = line_shape(line)
+            sig = hashlib.sha1(f"{rel}|{shape}".encode()).hexdigest()[:12]
             if state.get(sig) == today:
                 continue
             state[sig] = today
