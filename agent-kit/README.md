@@ -24,6 +24,7 @@ Laid down by `install-kit.sh` (called automatically from `install-agent.sh`, ste
 | `bin/open-threads-digest.py` | cron, morning | the owner not seeing what is open — one message per section, numbered, chunked under the Telegram limit |
 | `bin/tg-send.py` | helper | cron and hooks having no way to reach the owner without the plugin runtime |
 | `bin/api-fail-watch.py` | cron, every 30 min | an external API answering 401/403 or empty 3+ times in a row with nobody told — one alert per source per day |
+| `bin/backup-tidy.py` | cron, Sunday 04:00 owner time | `*.bak*` / `*.orig` copies piling up forever (Гор: 714 copies, 964 MB) — keeps the newest 5 and anything under 14 days per file, packs the rest into one verified archive, then removes them |
 | `bin/stack-updates-check.py` | cron, Monday morning | not knowing Claude Code, bun, the bridge or memory fell behind — report-only, never updates |
 | `bin/whatruns.py` | on demand | calling a subsystem alive or dead from a proxy instead of its cron lines, units (system and `--user`) and log freshness |
 | `core/SOURCES.md` | registry | not knowing a primary source exists, so a cache becomes the verdict |
