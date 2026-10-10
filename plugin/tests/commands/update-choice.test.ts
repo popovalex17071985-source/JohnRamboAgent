@@ -113,8 +113,21 @@ describe('makePlanner (FETCH_HEAD copy of scripts/update-plan.py)', () => {
     expect(py.input).toBe('print("script")\n')
     expect(py.args).toEqual([
       '-', '--repo', opts.repoDir, '--claude-dir', opts.claudeDir, '--workspace', opts.workspace,
-      '--agent', 'canary', '--chat-id', '42', 'auto',
+      '--agent', 'canary', '--chat-id', '42', '--branch', 'main', 'auto',
     ])
+  })
+
+  test('the fetched branch reaches the planner, not a FETCH_HEAD guess', async () => {
+    const { exec, calls } = fakeExec({
+      show: { code: 0, stdout: 'x' },
+      python3: { code: 0, stdout: '{"status":"PLAN","text_html":"план"}\n' },
+    })
+    await makePlanner({ ...opts, branch: 'feature/canary', tz: 'Asia/Yekaterinburg', exec })(['plan'])
+    expect(calls[0]!.args.at(-1)).toBe('feature/canary')
+    const py = calls[2]!.args
+    expect(py.slice(py.indexOf('--branch'), py.indexOf('--branch') + 2))
+      .toEqual(['--branch', 'feature/canary'])
+    expect(py.at(-1)).toBe('plan')
   })
 
   test('buttons and the plan version pass through; junk in them is dropped', async () => {
