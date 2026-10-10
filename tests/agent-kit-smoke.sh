@@ -190,4 +190,4 @@ bash -n "$R" || fail "remind-at.sh не компилируется"
 grep -q "def _session" "$T/bin/promise-sweeper.py" \
   || fail "promise-sweeper всё ещё берёт имя панели из шаблона"
 
-echo "✓ agent-kit smoke ok ($n2 хуков, 6 гейтов сработали, утренние кроны без дублей, идемпотентно)"
+echo "✓ agent-kit smoke ok ($n2 хуков, 7 гейтов сработали, утренние кроны без дублей, идемпотентно)"

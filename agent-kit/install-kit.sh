@@ -105,6 +105,8 @@ WIRING = [
     ("PreToolUse",  "Write|Edit|MultiEdit", "protect-archive.sh",        5),
     ("PreToolUse",  "Bash",                 "nudge-context-economy.sh",  5),
     ("PreToolUse",  "Bash",                 "tz-guard.sh",               5),
+    # Коммит кода без теста блокируется; выход -- строка «Без теста: <причина>».
+    ("PreToolUse",  "Bash",                 "tdd-commit-gate.py",       10),
     ("PreToolUse",  "mcp__dashi-channel__reply", "owner-time-guard.sh",  5),
     ("SessionStart", "",                   "session-start-hint.sh",     5),
     ("PreCompact",  "",                     "precompact-save.sh",       10),
