@@ -22,5 +22,14 @@ class LineShape(unittest.TestCase):
                          jfw.line_shape("09:47 СБОЙ выгрузки 7"))
 
 
+class QuotingLogsSkipped(unittest.TestCase):
+    """10.10.2026: gorbot's memory log quoted «[СБОЙ ЗАДАНИЯ]» from a chat and the
+    watchdog took the quote for a failure. Logs that mirror conversation are skipped."""
+
+    def test_conversation_logs_not_scanned(self) -> None:
+        for name in ("ov-memory.log", "tmux-pane.log", "tmux-pane.prev.log"):
+            self.assertIn(name, jfw.SKIP)
+
+
 if __name__ == "__main__":
     unittest.main()
