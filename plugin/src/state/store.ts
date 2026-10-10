@@ -48,7 +48,7 @@ export function ensureStateDirs(paths: StatePaths): void {
   mkdirSync(paths.deadLetterUpdates, { recursive: true })
   mkdirSync(paths.deadLetterWebhook, { recursive: true })
   mkdirSync(paths.deadLetterOutbound, { recursive: true })
-  // logs/ — server.log etc. live here; create parent so first log write succeeds.
+  // logs/ — bridge.jsonl etc. live here; create parent so first log write succeeds.
   mkdirSync(dirname(paths.logs.server), { recursive: true })
 }
 
