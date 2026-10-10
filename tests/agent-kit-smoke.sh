@@ -107,6 +107,22 @@ PY
 echo "{\"transcript_path\":\"$J\",\"session_id\":\"s\"}" \
   | python3 "$H/stop-blocker-gate.py" | grep -q '"decision": "block"' \
   || fail "отказ без перебора не заблокирован"
+# 7. TDD-гейт: коммит кода без теста блокируется, с «Без теста: <причина>» -- нет
+python3 -c "
+import json,sys;d=json.load(open('$T/.claude/settings.json'))
+sys.exit(0 if any(e.get('matcher')=='Bash' and any(h['command'].endswith('/tdd-commit-gate.py') for h in e['hooks'])
+                  for e in d['hooks'].get('PreToolUse',[])) else 1)" \
+  || fail "TDD-гейт не зарегистрирован на PreToolUse/Bash"
+G="$T/tdd-repo"
+mkdir -p "$G/lib"
+git -C "$G" init -q -b main
+echo "a = 1" > "$G/lib/app.py"
+git -C "$G" add lib/app.py
+tdd_hook() { python3 -c 'import json,sys;print(json.dumps({"tool_name":"Bash","tool_input":{"command":sys.argv[1]},"cwd":sys.argv[2]}))' "$1" "$G" \
+  | python3 "$H/tdd-commit-gate.py" >/dev/null 2>&1; }
+rc=0; tdd_hook 'git commit -m "код"' || rc=$?
+[[ $rc == 2 ]] || fail "коммит кода без теста прошёл TDD-гейт"
+tdd_hook $'git commit -m "код\n\nБез теста: разовый скрипт"' || fail "«Без теста:» не пропустил коммит"
 
 # Самопроверки перенесённых скриптов
 python3 "$T/bin/promise-sweeper.py" --selfcheck >/dev/null || fail "будильник по срокам"
