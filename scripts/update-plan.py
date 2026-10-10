@@ -1755,6 +1755,19 @@ def scan_uncommitted(ctx: Ctx) -> list[str]:
             if len(entry) > 3 and not (entry.startswith("??") and is_leftover(entry[3:]))]
 
 
+def worktree_blob(path: Path) -> str | None:
+    """`git hash-object` of a working file without writing the object (a symlink
+    hashes its target, as git stores it); None when the file is gone."""
+    try:
+        data = os.readlink(path).encode() if path.is_symlink() else (
+            path.read_bytes() if path.is_file() else None)
+    except OSError:
+        return None
+    if data is None:
+        return None
+    return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
+
+
 def cmd_scan(ctx: Ctx, agent: str | None) -> dict[str, Any]:
     """One JSON object; nothing on disk changes (no state, no fetch, no index refresh)."""
     os.environ["GIT_OPTIONAL_LOCKS"] = "0"
@@ -1769,6 +1782,7 @@ def cmd_scan(ctx: Ctx, agent: str | None) -> dict[str, Any]:
     unc_clean = uncommitted_check(
         ctx, base, unc, overlay if all(ok is True for ok in replays) else {}) \
         if base and unc else None
+    uncommitted = scan_uncommitted(ctx)
     commits = []
     for (sha, subject), ok in zip(local, replays):
         try:
@@ -1778,7 +1792,9 @@ def cmd_scan(ctx: Ctx, agent: str | None) -> dict[str, Any]:
         commits.append({"sha": sha, "subject": subject, "files": commit_files(ctx, sha),
                         "diffstat": stat, "replays_clean": ok})
     return {"agent": agent, "head": head, "base": base, "local_commits": commits,
-            "uncommitted": scan_uncommitted(ctx), "uncommitted_replays_clean": unc_clean,
+            "uncommitted": uncommitted,
+            "uncommitted_blobs": {rel: worktree_blob(ctx.repo / rel) for rel in uncommitted},
+            "uncommitted_replays_clean": unc_clean,
             "kit_tweaks": scan_kit_tweaks(ctx, base),
             "extra_files": scan_extra_files(ctx, base),
             "blocked": ctx.load(BLOCKED_FILE, None)}

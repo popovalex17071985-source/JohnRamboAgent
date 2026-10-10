@@ -758,6 +758,8 @@ class ScanTest(unittest.TestCase):
         self.assertIs(lc["replays_clean"], True)
         self.assertEqual(sorted(out["uncommitted"]), ["README.md", "notes.txt"])
         self.assertIs(out["uncommitted_replays_clean"], True)
+        self.assertEqual(out["uncommitted_blobs"], {
+            rel: git(self.fx.repo, "hash-object", rel) for rel in ("README.md", "notes.txt")})
         tweaks = {t["path"]: t for t in out["kit_tweaks"]}
         self.assertEqual(sorted(tweaks), ["agent-kit/bin/c.py", "agent-kit/hooks/a.sh"])
         c = tweaks["agent-kit/bin/c.py"]
@@ -806,6 +808,27 @@ class ScanTest(unittest.TestCase):
         self.assertEqual(snapshot(self.tmp / "ws"), before)
         self.assertEqual(out["uncommitted"], ["plugin/src.ts"])
         self.assertIs(out["uncommitted_replays_clean"], False)
+
+    def test_scan_gives_blob_of_each_uncommitted_file(self) -> None:
+        # Zhorik 10.10.2026: two core files copied by hand from the newer main showed
+        # up as «незакреплённые правки»; the scanner needs the blob to see they match.
+        self.fx.standard_update()
+        newer = git(self.fx.repo, "show", "FETCH_HEAD:plugin/src.ts")
+        (self.fx.repo / "plugin" / "src.ts").write_text(newer + "\n")   # hand-copied
+        (self.fx.repo / "plugin" / "package.json").unlink()              # owner removed
+        (self.fx.repo / "notes.txt").write_text("mine\n")               # untracked
+        before = snapshot(self.tmp / "ws")
+        out = self.scan()
+        self.assertEqual(snapshot(self.tmp / "ws"), before)              # no objects written
+        self.assertEqual(sorted(out["uncommitted"]),
+                         ["notes.txt", "plugin/package.json", "plugin/src.ts"])
+        blobs = out["uncommitted_blobs"]
+        self.assertEqual(sorted(blobs), sorted(out["uncommitted"]))
+        self.assertEqual(blobs["plugin/src.ts"],
+                         git(self.fx.repo, "rev-parse", "FETCH_HEAD:plugin/src.ts"))
+        self.assertIsNone(blobs["plugin/package.json"])
+        self.assertEqual(blobs["notes.txt"],
+                         git(self.fx.repo, "hash-object", "notes.txt"))
 
     def test_scan_without_fetch_head_uses_origin_main(self) -> None:
         self.fx.standard_update()
