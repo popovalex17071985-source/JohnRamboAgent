@@ -12,6 +12,9 @@
 // chain is walked (a few hops, in case a shell/wrapper sits in between). Linux
 // /proc only; every failure path returns undefined and the caller falls back to
 // the model table, so a missing /proc never breaks the HUD.
+//
+// The same walk also recovers the `--effort` flag (readLaunchEffort): the HUD
+// shows it beside the model when the transcript turn carries no effort of its own.
 
 import { readFileSync } from 'node:fs'
 
@@ -82,14 +85,12 @@ export interface ReadLaunchModelOptions {
   maxAncestors?: number | undefined
 }
 
-/**
- * The model id the hosting Claude Code process was launched with, or undefined
- * when no ancestor carries a `--model` flag (or /proc is unavailable).
- *
- * Never throws. Read ONCE at boot — the launch flag cannot change without a
- * restart, and a per-render /proc walk would be pointless work.
- */
-export function readLaunchModelId(opts?: ReadLaunchModelOptions): string | undefined {
+// Walk the ancestor chain and return the first non-undefined `parse(argv)` of a
+// Claude Code process. Never throws; every failure path yields undefined.
+function findInClaudeAncestors(
+  parse: (argv: readonly string[]) => string | undefined,
+  opts?: ReadLaunchModelOptions,
+): string | undefined {
   const readCmd = opts?.readCmdlineFn ?? readCmdline
   const readParent = opts?.readParentPidFn ?? readParentPid
   const limit = opts?.maxAncestors ?? MAX_ANCESTORS
@@ -104,8 +105,8 @@ export function readLaunchModelId(opts?: ReadLaunchModelOptions): string | undef
     try {
       const argv = readCmd(pid)
       if (argv !== undefined && isClaudeProcess(argv)) {
-        const model = parseLaunchModelFlag(argv)
-        if (model !== undefined) return model
+        const value = parse(argv)
+        if (value !== undefined) return value
       }
       parent = readParent(pid)
     } catch {
@@ -115,4 +116,50 @@ export function readLaunchModelId(opts?: ReadLaunchModelOptions): string | undef
     pid = parent
   }
   return undefined
+}
+
+/**
+ * The model id the hosting Claude Code process was launched with, or undefined
+ * when no ancestor carries a `--model` flag (or /proc is unavailable).
+ *
+ * Never throws. Read ONCE at boot — the launch flag cannot change without a
+ * restart, and a per-render /proc walk would be pointless work.
+ */
+export function readLaunchModelId(opts?: ReadLaunchModelOptions): string | undefined {
+  return findInClaudeAncestors(parseLaunchModelFlag, opts)
+}
+
+/**
+ * Parse the `--effort` value out of an argv: `--effort high` or `--effort=high`.
+ * Same semantics as parseLaunchModelFlag — the last occurrence wins, a bare or
+ * flag-followed `--effort` has no value, and `--` ends option parsing. Pure.
+ */
+export function parseLaunchEffortFlag(argv: readonly string[]): string | undefined {
+  let found: string | undefined
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i]
+    if (arg === undefined) continue
+    if (arg === '--') break
+    if (arg === '--effort') {
+      found = undefined
+      const next = argv[i + 1]
+      if (next !== undefined && next.length > 0 && !next.startsWith('-')) found = next
+      continue
+    }
+    if (arg.startsWith('--effort=')) {
+      const value = arg.slice('--effort='.length)
+      found = value.length > 0 ? value : undefined
+    }
+  }
+  return found
+}
+
+/**
+ * The reasoning effort the hosting Claude Code process was launched with
+ * (`--effort`), or undefined when no Claude ancestor carries the flag. The HUD
+ * uses it only as a fallback behind the transcript's per-turn effort. Never
+ * throws; read ONCE at boot like readLaunchModelId.
+ */
+export function readLaunchEffort(opts?: ReadLaunchModelOptions): string | undefined {
+  return findInClaudeAncestors(parseLaunchEffortFlag, opts)
 }

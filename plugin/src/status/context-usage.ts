@@ -45,6 +45,12 @@ export interface ContextUsage {
   // context window (Fable = 1M). Only the SAME line the usage came from is
   // consulted; we never scan other lines for a model.
   model?: string
+  // The reasoning effort of that SAME turn (e.g. "high"), or undefined when the
+  // line carries none. Claude Code writes it at the TOP level of the assistant
+  // record, beside `type`/`uuid` — `"effort":"high","perTurnEffort":"high"` —
+  // not under `message` (verified on live transcripts 2026-10-11).
+  // `perTurnEffort` (what this turn actually ran at) wins over `effort`.
+  effort?: string
 }
 
 // Coerce an unknown usage field to a non-negative finite integer, or null if
@@ -67,6 +73,17 @@ function sanitizeModelId(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined
   const trimmed = value.trim()
   if (trimmed.length === 0 || trimmed.length > MODEL_ID_MAX_LEN) return undefined
+  return trimmed
+}
+
+// Same contract as sanitizeModelId for the effort level. Real values are short
+// words ("low" … "max"); anything longer is a malformed line, dropped whole.
+const EFFORT_MAX_LEN = 32
+
+function sanitizeEffort(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  if (trimmed.length === 0 || trimmed.length > EFFORT_MAX_LEN) return undefined
   return trimmed
 }
 
@@ -116,6 +133,8 @@ export function computeContextUsage(
       message?: unknown
       type?: unknown
       subtype?: unknown
+      effort?: unknown
+      perTurnEffort?: unknown
     }
     // Skip subagent/sidechain turns — their usage is a separate context.
     if (record.isSidechain === true) continue
@@ -165,6 +184,11 @@ export function computeContextUsage(
     const model = sanitizeModelId(msg.model)
     if (model !== undefined) {
       result.model = model
+    }
+    // Effort from the SAME record; never scavenged from other lines.
+    const effort = sanitizeEffort(record.perTurnEffort) ?? sanitizeEffort(record.effort)
+    if (effort !== undefined) {
+      result.effort = effort
     }
     return result
   }

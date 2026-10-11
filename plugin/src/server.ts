@@ -64,7 +64,7 @@ import {
   IdleCompactor,
   resolveOwnerTranscriptPath,
 } from './status/idle-compactor.js'
-import { readLaunchModelId } from './status/launch-model.js'
+import { readLaunchEffort, readLaunchModelId } from './status/launch-model.js'
 import {
   ContextHud,
   handleHudCallback,
@@ -594,6 +594,10 @@ const hudApi: HudTelegramApi = {
 // pinned HUD and /status need it to show a 1M window instead of the table's 200k.
 const launchModelId = readLaunchModelId()
 log.info('launch model detected', { launch_model: launchModelId ?? '(none)' })
+// The `--effort` flag, same walk. The HUD shows it beside the model when the
+// transcript turn carries no effort of its own.
+const launchEffort = readLaunchEffort()
+log.info('launch effort detected', { launch_effort: launchEffort ?? '(none)' })
 const contextHud = new ContextHud({
   api: hudApi,
   log,
@@ -601,6 +605,7 @@ const contextHud = new ContextHud({
   windowTokens: resolveContextWindowTokens(config),
   windowOverride: resolveContextWindowOverride(config),
   ...(launchModelId !== undefined ? { launchModel: launchModelId } : {}),
+  ...(launchEffort !== undefined ? { launchEffort } : {}),
   ownerChatIds: hudOwnerChatIds,
   stateDir: statePaths.root,
   enabled: resolveHudEnabled(config),
