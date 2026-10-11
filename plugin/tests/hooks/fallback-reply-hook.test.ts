@@ -28,6 +28,7 @@ import {
   containsToolCallSyntax,
   stripToolCallSyntax,
   sanitizeForForward,
+  resolveFallbackChat,
   type DedupState,
 } from '../../scripts/fallback-reply-hook.js'
 
@@ -943,5 +944,252 @@ describe('длинный ответ режется, а не рубится (пр
   test('короткий ответ остаётся одной частью', async () => {
     const { splitForTelegram } = await import('../../scripts/fallback-reply-hook.js')
     expect(splitForTelegram('коротко и ясно')).toEqual(['коротко и ясно'])
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────
+// 11.10.2026: internal terminal text leaked to the owner's Telegram (msg 62475).
+// A Stop hook that BLOCKS the turn makes Claude Code write a synthetic user line
+// `Stop hook feedback:\n…`; the walk took it for a genuine prompt, lost the
+// original turn's reply + chat_id, and the last-chat fallback forwarded the
+// continuation's English note to self. The same last-chat path forwarded the
+// final text of envelope-less <task-notification> turns.
+// Fixture lines below mirror the real transcript shapes.
+// ─────────────────────────────────────────────────────────────────────
+
+function rawLine(obj: Record<string, unknown>): string {
+  return JSON.stringify(obj)
+}
+
+const STOP_HOOK_FEEDBACK = (msg: string): string =>
+  rawLine({
+    type: 'user',
+    message: { role: 'user', content: `Stop hook feedback:\n${msg}` },
+    isMeta: true,
+    promptId: 'p-stop',
+  })
+
+const STOP_HOOK_TRAILERS = [
+  rawLine({ type: 'attachment', attachment: { type: 'hook_blocking_error', hookName: 'Stop', hookEvent: 'Stop' } }),
+  rawLine({ type: 'system', subtype: 'stop_hook_summary', hookCount: 3 }),
+]
+
+const TASK_NOTIFICATION = rawLine({
+  type: 'user',
+  message: {
+    role: 'user',
+    content:
+      '<task-notification>\n<task-id>a917d2e78bc5fe846</task-id>\n<status>completed</status>\n<summary>Agent done</summary>\n</task-notification>',
+  },
+  origin: { kind: 'task-notification', producer: 'session-task' },
+  promptSource: 'system',
+  turnOrigin: 'task_notification',
+})
+
+const IMAGE_COMPANION = rawLine({
+  type: 'user',
+  message: {
+    role: 'user',
+    content: '[Image: original 2560x2422, displayed at 2000x1892. Multiply coordinates by 1.28 to map to original image.]',
+  },
+  isMeta: true,
+  turnCompanion: true,
+})
+
+describe('analyzeCurrentTurn: synthetic user lines are not turn boundaries', () => {
+  test('stop-hook continuation after a REPLIED telegram turn → replied=true, chat from the original', () => {
+    const transcript = [
+      line('user', TG_PROMPT('140141496', 62470)),
+      line('assistant', [{ type: 'tool_use', id: 'r1', name: 'mcp__dashi-channel__reply', input: { text: 'ответ' } }], 'a1'),
+      line('user', [{ type: 'tool_result', tool_use_id: 'r1', content: 'sent' }]),
+      line('assistant', [{ type: 'text', text: 'Отправил.' }], 'a2'),
+      STOP_HOOK_FEEDBACK('Ты утверждаешь …'),
+      ...STOP_HOOK_TRAILERS,
+      line('assistant', [{ type: 'text', text: 'The hook misfired; nothing to change.' }], 'a3'),
+    ].join('\n')
+    const r = analyzeCurrentTurn(transcript)
+    expect(r.replied).toBe(true)
+    expect(r.chatId).toBe('140141496')
+    expect(r.promptText).toBe(TG_PROMPT('140141496', 62470))
+  })
+
+  test('stop-hook continuation after a NON-replied telegram turn → forwards to the original chat', () => {
+    const transcript = [
+      line('user', TG_PROMPT('140141496', 62470)),
+      line('assistant', [{ type: 'text', text: 'первый вариант' }], 'a1'),
+      STOP_HOOK_FEEDBACK('Ты отложил работу'),
+      ...STOP_HOOK_TRAILERS,
+      line('assistant', [{ type: 'text', text: 'Доделал, итог такой.' }], 'a2'),
+    ].join('\n')
+    const r = analyzeCurrentTurn(transcript)
+    expect(r.replied).toBe(false)
+    expect(r.chatId).toBe('140141496')
+    expect(r.text).toBe('Доделал, итог такой.')
+    expect(r.uuid).toBe('a2')
+    expect(r.textIsTrailing).toBe(true)
+    expect(r.backgroundNotification).toBe(false)
+    expect(resolveFallbackChat(r, () => '999')).toBe('140141496')
+  })
+
+  test('several stop-hook blocks in a row still resolve to the original prompt', () => {
+    const transcript = [
+      line('user', TG_PROMPT('140141496', 1)),
+      line('assistant', [{ type: 'tool_use', id: 'r1', name: 'mcp__dashi-channel__reply', input: {} }], 'a1'),
+      STOP_HOOK_FEEDBACK('one'),
+      ...STOP_HOOK_TRAILERS,
+      line('assistant', [{ type: 'text', text: 'note 1' }], 'a2'),
+      STOP_HOOK_FEEDBACK('two'),
+      ...STOP_HOOK_TRAILERS,
+      line('assistant', [{ type: 'text', text: 'note 2' }], 'a3'),
+    ].join('\n')
+    const r = analyzeCurrentTurn(transcript)
+    expect(r.replied).toBe(true)
+    expect(r.chatId).toBe('140141496')
+  })
+
+  test('turnCompanion line (image metadata after a Read) stays inside the turn', () => {
+    const transcript = [
+      line('user', TG_PROMPT('140141496', 7)),
+      line('assistant', [{ type: 'tool_use', id: 'r1', name: 'mcp__dashi-channel__reply', input: {} }], 'a1'),
+      line('assistant', [{ type: 'tool_use', id: 'rd', name: 'Read', input: {} }], 'a2'),
+      line('user', [{ type: 'tool_result', tool_use_id: 'rd', content: 'img' }]),
+      IMAGE_COMPANION,
+      line('assistant', [{ type: 'text', text: 'internal note' }], 'a3'),
+    ].join('\n')
+    const r = analyzeCurrentTurn(transcript)
+    expect(r.replied).toBe(true)
+    expect(r.chatId).toBe('140141496')
+  })
+
+  test('a plain user prompt that merely mentions the stop hook is still a boundary', () => {
+    const transcript = [
+      line('user', TG_PROMPT('1', 1)),
+      line('assistant', [{ type: 'tool_use', name: 'mcp__dashi-channel__reply', input: {} }], 'a1'),
+      line('user', 'Проверь, почему Stop hook feedback: прилетел'),
+      line('assistant', [{ type: 'text', text: 'answer' }], 'a2'),
+    ].join('\n')
+    const r = analyzeCurrentTurn(transcript)
+    expect(r.replied).toBe(false)
+    expect(r.chatId).toBeUndefined()
+  })
+})
+
+describe('resolveFallbackChat: background notifications never fall back to last-chat', () => {
+  test('task-notification turn without reply → no destination', () => {
+    const transcript = [
+      line('user', TG_PROMPT('140141496', 5)),
+      line('assistant', [{ type: 'tool_use', name: 'mcp__dashi-channel__reply', input: {} }], 'a1'),
+      TASK_NOTIFICATION,
+      line('assistant', [{ type: 'text', text: "Smith is publishing now. I'll check once it reports." }], 'a2'),
+    ].join('\n')
+    const r = analyzeCurrentTurn(transcript)
+    expect(r.replied).toBe(false)
+    expect(r.chatId).toBeUndefined()
+    expect(r.backgroundNotification).toBe(true)
+    expect(resolveFallbackChat(r, () => '140141496')).toBeUndefined()
+  })
+
+  test('stop-hook continuation of a task-notification turn → no destination either', () => {
+    const transcript = [
+      TASK_NOTIFICATION,
+      line('assistant', [{ type: 'text', text: 'waiting' }], 'a1'),
+      STOP_HOOK_FEEDBACK('Ты отложил работу'),
+      ...STOP_HOOK_TRAILERS,
+      line('assistant', [{ type: 'text', text: 'Still waiting for Smith.' }], 'a2'),
+    ].join('\n')
+    const r = analyzeCurrentTurn(transcript)
+    expect(r.backgroundNotification).toBe(true)
+    expect(resolveFallbackChat(r, () => '140141496')).toBeUndefined()
+  })
+
+  test('scheduled/cron prompt without an envelope keeps the last-chat fallback', () => {
+    const transcript = [
+      line('user', '[ОБЕЩАНИЯ НА СЕГОДНЯ 02.10] Выполни каждый и отчитайся Сане в чат'),
+      line('assistant', [{ type: 'text', text: 'Отчёт: всё сделано.' }], 'a1'),
+    ].join('\n')
+    const r = analyzeCurrentTurn(transcript)
+    expect(r.backgroundNotification).toBe(false)
+    expect(resolveFallbackChat(r, () => '140141496')).toBe('140141496')
+  })
+
+  test('telegram-anchored turn uses its own chat, not last-chat', () => {
+    const r = analyzeCurrentTurn(
+      [line('user', TG_PROMPT('42', 1)), line('assistant', [{ type: 'text', text: 'x' }], 'a1')].join('\n'),
+    )
+    expect(resolveFallbackChat(r, () => '140141496')).toBe('42')
+  })
+})
+
+describe('hook E2E: no leak after a stop hook or a task-notification', () => {
+  let dir: string
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true })
+  })
+
+  function runHookWithStateDir(port: number, stateDir: string, transcriptPath: string): Promise<number> {
+    return new Promise((resolve) => {
+      const child = spawn('bun', [HOOK], {
+        stdio: ['pipe', 'inherit', 'inherit'],
+        env: {
+          ...process.env,
+          TELEGRAM_FALLBACK_REPLY_URL: `http://127.0.0.1:${port}/hooks/fallback-reply`,
+          TELEGRAM_WEBHOOK_TOKEN: 'tok',
+          TELEGRAM_STATE_DIR: stateDir,
+          FALLBACK_REPLY_RETRY_ATTEMPTS: '1',
+          FALLBACK_REPLY_RETRY_DELAY_MS: '0',
+        },
+      })
+      child.on('close', (code) => resolve(code ?? -1))
+      child.on('error', () => resolve(-1))
+      child.stdin.end(JSON.stringify({ transcript_path: transcriptPath, session_id: 'sess-leak' }))
+    })
+  }
+
+  async function forwardedFor(lines: string[]): Promise<Array<Record<string, unknown>>> {
+    dir = mkdtempSync(join(tmpdir(), 'fr-leak-'))
+    const stateDir = join(dir, 'state')
+    persistLastChat(lastChatPath({ TELEGRAM_STATE_DIR: stateDir }), '140141496')
+    const transcriptPath = join(dir, 'transcript.jsonl')
+    writeFileSync(transcriptPath, lines.join('\n') + '\n', 'utf8')
+    const route = await startStubRoute(() => ({ status: 200, json: { status: 'sent' } }))
+    try {
+      expect(await runHookWithStateDir(route.port, stateDir, transcriptPath)).toBe(0)
+      return route.received
+    } finally {
+      await route.close()
+    }
+  }
+
+  test('stop-hook continuation after a replied turn forwards nothing', async () => {
+    const got = await forwardedFor([
+      line('user', TG_PROMPT('140141496', 62470)),
+      line('assistant', [{ type: 'tool_use', id: 'r1', name: 'mcp__dashi-channel__reply', input: {} }], 'a1'),
+      line('user', [{ type: 'tool_result', tool_use_id: 'r1', content: 'sent' }]),
+      STOP_HOOK_FEEDBACK('Ты утверждаешь …'),
+      ...STOP_HOOK_TRAILERS,
+      line('assistant', [{ type: 'text', text: 'Note to self: the hook misfired.' }], 'a2'),
+    ])
+    expect(got).toEqual([])
+  })
+
+  test('task-notification turn without reply forwards nothing', async () => {
+    const got = await forwardedFor([
+      line('user', TG_PROMPT('140141496', 1)),
+      line('assistant', [{ type: 'tool_use', name: 'mcp__dashi-channel__reply', input: {} }], 'a1'),
+      TASK_NOTIFICATION,
+      line('assistant', [{ type: 'text', text: "I'll wait for Smith's report." }], 'a2'),
+    ])
+    expect(got).toEqual([])
+  })
+
+  test('stop-hook continuation of a non-replied telegram turn still reaches the original chat', async () => {
+    const got = await forwardedFor([
+      line('user', TG_PROMPT('555', 3)),
+      line('assistant', [{ type: 'text', text: 'черновик' }], 'a1'),
+      STOP_HOOK_FEEDBACK('Ты отложил работу'),
+      ...STOP_HOOK_TRAILERS,
+      line('assistant', [{ type: 'text', text: 'Итог: сделано.' }], 'a2'),
+    ])
+    expect(got).toEqual([{ chat_id: '555', text: 'Итог: сделано.' }])
   })
 })

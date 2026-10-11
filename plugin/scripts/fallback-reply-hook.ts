@@ -242,6 +242,11 @@ export interface TurnResult {
   // followed by a tool cycle (the model is mid-turn, final not yet flushed) is
   // NOT trailing, and must not be forwarded as if it were the final answer.
   readonly textIsTrailing: boolean
+  // True when the boundary prompt is a background <task-notification> (a
+  // subagent / background job finished). Such a turn is the agent talking to
+  // itself: its unreplied final text is a terminal note, never an answer owed
+  // to the owner, so it must not fall back to the last DM chat.
+  readonly backgroundNotification?: boolean | undefined
 }
 
 /**
@@ -279,6 +284,40 @@ interface TranscriptMessage {
 interface TranscriptLine {
   readonly message?: unknown
   readonly uuid?: unknown
+  readonly turnCompanion?: unknown
+  readonly origin?: unknown
+}
+
+// 11.10.2026 (leak, msg 62475): when a Stop hook BLOCKS the turn, Claude Code
+// records the hook's reason as a plain-string USER line starting with this
+// prefix (followed by a hook_blocking_error attachment and a stop_hook_summary
+// system line). It is a continuation of the SAME turn, not a new prompt: real
+// Telegram prompts always lead with a <channel> envelope, so the prefix cannot
+// collide with one.
+const STOP_HOOK_FEEDBACK_PREFIX = 'Stop hook feedback:'
+
+/**
+ * True for a user line that Claude Code injects INSIDE the current turn and
+ * that therefore is not a turn boundary:
+ *   - the `Stop hook feedback:` continuation of a blocked Stop;
+ *   - a `turnCompanion: true` line (image metadata after a Read, a loaded
+ *     skill's body after a Skill call) that rides along with a tool result.
+ * Treating these as boundaries cut the turn short: the original prompt's
+ * reply and chat_id were never seen, and the continuation's note to self was
+ * forwarded to the last DM chat.
+ */
+function isSyntheticTurnLine(line: TranscriptLine, promptText: string | undefined): boolean {
+  if (line.turnCompanion === true) return true
+  return promptText !== undefined && promptText.startsWith(STOP_HOOK_FEEDBACK_PREFIX)
+}
+
+/** True when the boundary prompt is a background <task-notification>. */
+function isTaskNotification(line: TranscriptLine, promptText: string | undefined): boolean {
+  const origin = line.origin
+  if (origin !== null && typeof origin === 'object') {
+    if ((origin as Record<string, unknown>).kind === 'task-notification') return true
+  }
+  return promptText !== undefined && promptText.trimStart().startsWith('<task-notification>')
 }
 
 /**
@@ -457,9 +496,24 @@ export function analyzeCurrentTurn(transcript: string): TurnResult {
       // `<channel ...>` substrings in tool metadata cannot redirect the send.
       if (isUserPrompt(content)) {
         const promptText = userPromptText(content)
+        if (isSyntheticTurnLine(line, promptText)) {
+          // Same turn continues above this line. A companion rides with a tool
+          // result, so it counts as tool activity after a not-yet-found text;
+          // a stop-hook continuation does not.
+          if (text === undefined && line.turnCompanion === true) sawToolAfter = true
+          continue
+        }
         const chatId =
           promptText !== undefined ? extractLeadingTelegramChatId(promptText) : undefined
-        return { text, uuid, replied, chatId, promptText, textIsTrailing: text !== undefined && !sawToolAfter }
+        return {
+          text,
+          uuid,
+          replied,
+          chatId,
+          promptText,
+          textIsTrailing: text !== undefined && !sawToolAfter,
+          backgroundNotification: isTaskNotification(line, promptText),
+        }
       }
       // tool_result echo (not a genuine prompt) → tool activity. If it sits
       // after the most-recent text, that text is a non-trailing interim.
@@ -634,6 +688,23 @@ export function readLastChat(
   } catch {
     return undefined
   }
+}
+
+/**
+ * Destination for a fallback forward. The turn's own Telegram envelope wins.
+ * An envelope-less turn falls back to the last DM chat — EXCEPT a background
+ * <task-notification> turn: its unreplied final text is the agent's note to
+ * itself (often English), and forwarding it leaked terminal chatter to the
+ * owner. Scheduled / watchdog prompts (also envelope-less) keep the fallback:
+ * they are told to report to the owner and rely on it when reply is skipped.
+ */
+export function resolveFallbackChat(
+  turn: TurnResult,
+  readLast: () => string | undefined,
+): string | undefined {
+  if (turn.chatId !== undefined) return turn.chatId
+  if (turn.backgroundNotification === true) return undefined
+  return readLast()
 }
 
 export function persistLastChat(path: string | undefined, chatId: string): void {
@@ -934,9 +1005,10 @@ async function main(): Promise<void> {
   // survives, stay silent instead of posting the raw syntax to the warchief.
   const text = sanitizeForForward(rawText)
   if (text === undefined || text.trim().length === 0) return
-  // chat_id from the turn boundary, else the last DM chat_id we saw. Only when
-  // both are absent (e.g. a group session with no prior anchor) do we go silent.
-  const chatId = turn.chatId ?? readLastChat(lastPath)
+  // chat_id from the turn boundary, else the last DM chat_id we saw — never
+  // for a background task-notification turn (see resolveFallbackChat). Silent
+  // when no destination remains (e.g. a group session with no prior anchor).
+  const chatId = resolveFallbackChat(turn, () => readLastChat(lastPath))
   if (chatId === undefined) return
 
   const config = resolveFallbackConfig(env)
