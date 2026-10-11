@@ -264,6 +264,72 @@ describe('computeContextUsage', () => {
 // would corrupt the final line and return null.
 // ─────────────────────────────────────────────────────────────────────
 
+// Effort lives at the TOP level of a real assistant record, next to `type` /
+// `uuid` (verified on live transcripts 2026-10-11:
+// `"type":"assistant",...,"effort":"high","perTurnEffort":"high"`), NOT under
+// `message`.
+function effortLine(
+  usage: Record<string, number>,
+  top: Record<string, unknown>,
+  opts: { isSidechain?: boolean } = {},
+): string {
+  return JSON.stringify({
+    type: 'assistant',
+    isSidechain: opts.isSidechain ?? false,
+    message: { role: 'assistant', model: 'claude-opus-5-5', content: [], usage },
+    ...top,
+  })
+}
+
+describe('computeContextUsage — effort', () => {
+  test('picks up the top-level effort of the usage turn', () => {
+    const lines = [effortLine({ input_tokens: 50000 }, { effort: 'high', perTurnEffort: 'high' })]
+    const result = computeContextUsage(lines, 200000)
+    expect(result?.effort).toBe('high')
+    expect(result?.model).toBe('claude-opus-5-5')
+  })
+
+  test('perTurnEffort wins over the session-level effort', () => {
+    const lines = [effortLine({ input_tokens: 50000 }, { effort: 'high', perTurnEffort: 'low' })]
+    expect(computeContextUsage(lines, 200000)?.effort).toBe('low')
+  })
+
+  test('only `effort` present → used', () => {
+    const lines = [effortLine({ input_tokens: 50000 }, { effort: 'max' })]
+    expect(computeContextUsage(lines, 200000)?.effort).toBe('max')
+  })
+
+  test('no effort field → key absent (no undefined leak into equality)', () => {
+    const lines = [assistantLine({ input_tokens: 50000 })]
+    const result = computeContextUsage(lines, 200000)
+    expect(result).toEqual({ usedTokens: 50000, pct: 50000 / 200000 })
+    expect(result !== null && 'effort' in result).toBe(false)
+  })
+
+  test('garbage effort (non-string / empty / over-cap) → undefined', () => {
+    for (const bad of [42, '', '   ', 'x'.repeat(33)]) {
+      const lines = [effortLine({ input_tokens: 50000 }, { effort: bad })]
+      expect(computeContextUsage(lines, 200000)?.effort).toBeUndefined()
+    }
+  })
+
+  test('effort is NOT borrowed from an older turn', () => {
+    const lines = [
+      effortLine({ input_tokens: 5, cache_read_input_tokens: 40000 }, { effort: 'high' }),
+      assistantLine({ input_tokens: 2, cache_read_input_tokens: 20000 }), // latest, no effort
+    ]
+    expect(computeContextUsage(lines, 200000)?.effort).toBeUndefined()
+  })
+
+  test('sidechain effort is ignored', () => {
+    const lines = [
+      effortLine({ input_tokens: 50000 }, { effort: 'high' }),
+      effortLine({ input_tokens: 900 }, { effort: 'low' }, { isSidechain: true }),
+    ]
+    expect(computeContextUsage(lines, 200000)?.effort).toBe('high')
+  })
+})
+
 describe('readContextUsage (file tail)', () => {
   test('reads the last main-thread turn from a real transcript file', async () => {
     const { writeFileSync, mkdtempSync, rmSync } = await import('node:fs')

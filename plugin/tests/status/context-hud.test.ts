@@ -135,9 +135,10 @@ function makeHud(
   opts: {
     dir?: string
     enabled?: boolean
-    usage?: { usedTokens: number; pct: number; model?: string } | null
+    usage?: { usedTokens: number; pct: number; model?: string; effort?: string } | null
     session?: SessionInfoReader
     windowOverride?: number
+    launchEffort?: string
   } = {},
 ): ContextHud {
   return new ContextHud({
@@ -146,6 +147,7 @@ function makeHud(
     sessionInfo: opts.session ?? fakeSession({ transcriptPath: '/t/a.jsonl', model: 'opus' }),
     windowTokens: WINDOW,
     windowOverride: opts.windowOverride,
+    launchEffort: opts.launchEffort,
     ownerChatIds: [OWNER],
     stateDir: opts.dir ?? stateDir(),
     enabled: opts.enabled ?? true,
@@ -1160,6 +1162,74 @@ describe('HUD #2v2 rollback guard + persisted epochs', () => {
 // ─────────────────────────────────────────────────────────────────────
 // Model-aware context window (the pin follows the session model)
 // ─────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────
+// Effort on the model line: `<i>model · effort: high</i>`, omitted when unknown.
+// Precedence: transcript per-turn effort > launch `--effort` flag > none.
+// ─────────────────────────────────────────────────────────────────────
+
+describe('renderHud effort', () => {
+  test('model + effort → one italic line with « · effort: »', () => {
+    const { text } = renderHud({ usedTokens: 114_000 }, WINDOW, 'claude-opus-5-5', undefined,
+      undefined, undefined, 'high')
+    expect(text).toContain('\n<i>claude-opus-5-5 · effort: high</i>')
+  })
+
+  test('no effort → plain model line, no «effort», no «undefined»', () => {
+    const { text } = renderHud({ usedTokens: 114_000 }, WINDOW, 'claude-opus-5-5')
+    expect(text).toContain('\n<i>claude-opus-5-5</i>')
+    expect(text).not.toContain('effort')
+    expect(text).not.toContain('undefined')
+  })
+
+  test('empty-string effort is treated as unknown', () => {
+    const { text } = renderHud({ usedTokens: 114_000 }, WINDOW, 'claude-opus-5-5', undefined,
+      undefined, undefined, '')
+    expect(text).toContain('\n<i>claude-opus-5-5</i>')
+    expect(text).not.toContain('effort')
+  })
+
+  test('effort is HTML-escaped', () => {
+    const { text } = renderHud(null, WINDOW, 'm', undefined, undefined, undefined, '<b>')
+    expect(text).toContain('<i>m · effort: &lt;b&gt;</i>')
+  })
+})
+
+describe('ContextHud effort precedence', () => {
+  test('transcript effort overrides the launch flag', async () => {
+    const api = new FakeApi()
+    const hud = makeHud(api, {
+      usage: { usedTokens: 100_000, pct: 0.5, model: 'claude-opus-5-5', effort: 'low' },
+      launchEffort: 'high',
+    })
+    await hud.onSessionStart(OWNER)
+    const text = api.sent[0]!.text
+    expect(text).toContain('<i>claude-opus-5-5 · effort: low</i>')
+    expect(text).not.toContain('effort: high')
+  })
+
+  test('launch flag used when the transcript carries no effort', async () => {
+    const api = new FakeApi()
+    const hud = makeHud(api, {
+      usage: { usedTokens: 100_000, pct: 0.5, model: 'claude-opus-5-5' },
+      launchEffort: 'high',
+    })
+    await hud.onSessionStart(OWNER)
+    expect(api.sent[0]!.text).toContain('<i>claude-opus-5-5 · effort: high</i>')
+  })
+
+  test('neither source → model line without effort', async () => {
+    const api = new FakeApi()
+    const hud = makeHud(api, {
+      usage: { usedTokens: 100_000, pct: 0.5, model: 'claude-opus-5-5' },
+    })
+    await hud.onSessionStart(OWNER)
+    const text = api.sent[0]!.text
+    expect(text).toContain('<i>claude-opus-5-5</i>')
+    expect(text).not.toContain('effort')
+    expect(text).not.toContain('undefined')
+  })
+})
 
 describe('ContextHud — model-aware window', () => {
   // A session view whose model can change between turns (mid-session switch).

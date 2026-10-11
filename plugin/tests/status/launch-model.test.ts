@@ -4,7 +4,11 @@
 
 import { describe, expect, test } from 'bun:test'
 
-import { readLaunchModelId } from '../../src/status/launch-model.js'
+import {
+  parseLaunchEffortFlag,
+  readLaunchEffort,
+  readLaunchModelId,
+} from '../../src/status/launch-model.js'
 
 // Build fake readers from a {pid: {argv, ppid}} tree.
 function tree(spec: Record<number, { argv?: readonly string[]; ppid?: number }>) {
@@ -120,5 +124,75 @@ describe('readLaunchModelId', () => {
   test('pid <= 1 is not walked', () => {
     const t = tree({ 1: { argv: ['claude', '--model', 'x[1m]'] } })
     expect(readLaunchModelId({ startPid: 1, ...t })).toBeUndefined()
+  })
+})
+
+describe('parseLaunchEffortFlag', () => {
+  test('space-separated `--effort high`', () => {
+    expect(parseLaunchEffortFlag(['claude', '--model', 'claude-opus-5-5', '--effort', 'high'])).toBe(
+      'high',
+    )
+  })
+
+  test('`--effort=high` form', () => {
+    expect(parseLaunchEffortFlag(['claude', '--effort=high', '--model', 'x'])).toBe('high')
+  })
+
+  test('no flag → undefined', () => {
+    expect(parseLaunchEffortFlag(['claude', '--model', 'claude-opus-5-5'])).toBeUndefined()
+  })
+
+  test('bare trailing `--effort` or one followed by a flag has no value', () => {
+    expect(parseLaunchEffortFlag(['claude', '--effort'])).toBeUndefined()
+    expect(parseLaunchEffortFlag(['claude', '--effort', '--model', 'x'])).toBeUndefined()
+    expect(parseLaunchEffortFlag(['claude', '--effort='])).toBeUndefined()
+  })
+
+  test('the last occurrence wins', () => {
+    expect(parseLaunchEffortFlag(['claude', '--effort', 'low', '--effort=max'])).toBe('max')
+  })
+
+  test('`--` ends option parsing', () => {
+    expect(parseLaunchEffortFlag(['claude', '--', '--effort', 'high'])).toBeUndefined()
+  })
+})
+
+describe('readLaunchEffort', () => {
+  test('reads `--effort high` off the hosting Claude process', () => {
+    const t = tree({
+      100: { argv: ['bun', 'src/server.ts'], ppid: 200 },
+      200: { argv: ['claude', '--model', 'claude-opus-5-5', '--effort', 'high'] },
+    })
+    expect(readLaunchEffort({ startPid: 100, ...t })).toBe('high')
+  })
+
+  test('reads `--effort=xhigh`', () => {
+    const t = tree({ 100: { argv: ['claude', '--effort=xhigh'] } })
+    expect(readLaunchEffort({ startPid: 100, ...t })).toBe('xhigh')
+  })
+
+  test('ignores a non-Claude wrapper carrying its own `--effort`', () => {
+    const t = tree({
+      100: { argv: ['some-launcher', '--effort', 'low'], ppid: 200 },
+      200: { argv: ['claude', '--effort', 'high'] },
+    })
+    expect(readLaunchEffort({ startPid: 100, ...t })).toBe('high')
+  })
+
+  test('no flag anywhere → undefined', () => {
+    const t = tree({ 100: { argv: ['claude', '--model', 'x'] } })
+    expect(readLaunchEffort({ startPid: 100, ...t })).toBeUndefined()
+  })
+
+  test('a throwing reader → undefined (never throws)', () => {
+    expect(
+      readLaunchEffort({
+        startPid: 100,
+        readCmdlineFn: () => {
+          throw new Error('EACCES')
+        },
+        readParentPidFn: () => undefined,
+      }),
+    ).toBeUndefined()
   })
 })

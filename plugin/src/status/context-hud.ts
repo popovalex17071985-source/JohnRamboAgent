@@ -194,7 +194,9 @@ function modeLabel(permissionMode: string): string {
  *
  * text (HTML): `🧠 <b>Контекст</b>: <bar> <pct>% (<used>k / <window>k)` where
  * `<bar>` is a 10-segment meter (`▰` filled / `▱` empty) proportional to the
- * clamped percentage. An optional second line shows the model when known.
+ * clamped percentage. An optional second line shows the model when known, with
+ * the reasoning effort appended (`<i>claude-opus-5-5 · effort: high</i>`) when
+ * that is known too — an unknown effort omits the « · effort: …» part entirely.
  * A null usage (no transcript / no usable turn yet) renders `🧠 <b>Контекст</b>: —`.
  *
  * With a `work` view the card grows a mode line («режим: план» /
@@ -211,12 +213,17 @@ export function renderHud(
   work?: HudWorkView,
   autonomyLine?: string,
   limitsBlock?: string,
+  effort?: string,
 ): { text: string; keyboard: InlineKeyboardLike } {
   const keyboard = buildHudKeyboard()
   // Subscription rate limits (statusline snapshot), right under the context
   // line: both answer «how much room is left». HTML-safe by construction.
   const limits = limitsBlock !== undefined && limitsBlock.length > 0 ? `\n${limitsBlock}` : ''
-  const modelLine = model !== undefined && model.length > 0 ? `\n<i>${escapeHtml(model)}</i>` : ''
+  const effortPart =
+    effort !== undefined && effort.length > 0 ? ` · effort: ${escapeHtml(effort)}` : ''
+  const modelLine = model !== undefined && model.length > 0
+    ? `\n<i>${escapeHtml(model)}${effortPart}</i>`
+    : ''
   const modeLine =
     work?.permissionMode !== undefined && work.permissionMode.length > 0
       ? `\n<i>режим: ${modeLabel(work.permissionMode)}</i>`
@@ -306,6 +313,10 @@ export interface ContextHudOptions {
   // flag is then the only proof the window is 1M and not the table's 200k.
   // Optional — when absent the model table drives the window as before.
   launchModel?: string | undefined
+  // The `--effort` flag of the hosting Claude Code process (readLaunchEffort,
+  // read once at boot). Shown on the model line only when the transcript turn
+  // carries no effort of its own. Optional — absent means «effort» is omitted.
+  launchEffort?: string | undefined
   // Owner chat(s) — the ONLY chats the HUD acts in. Stringified for comparison
   // against the hook payload's chatId.
   ownerChatIds: ReadonlyArray<string | number>
@@ -334,6 +345,7 @@ export class ContextHud {
   private readonly windowTokens: number
   private readonly windowOverride?: number | undefined
   private readonly launchModel?: string | undefined
+  private readonly launchEffort?: string | undefined
   private readonly owner: ReadonlySet<string>
   private readonly stateDir: string
   private readonly statuslineFile: string
@@ -398,6 +410,7 @@ export class ContextHud {
     this.windowTokens = opts.windowTokens
     this.windowOverride = opts.windowOverride
     this.launchModel = opts.launchModel
+    this.launchEffort = opts.launchEffort
     this.owner = new Set(opts.ownerChatIds.map((id) => String(id)))
     this.stateDir = opts.stateDir
     this.statuslineFile =
@@ -823,6 +836,15 @@ export class ContextHud {
       launchModel: this.launchModel,
     })
     const limitsBlock = renderRateLimits(snap, Date.now(), this.operatorTimeZone)
+    // Effort precedence: the transcript turn's own value (per-turn fresh, follows
+    // a mid-session /effort change) > the launch `--effort` flag > omitted.
+    const transcriptEffort = usage?.effort
+    const effort = (transcriptEffort !== undefined && transcriptEffort.length > 0
+      ? transcriptEffort
+      : undefined)
+      ?? (this.launchEffort !== undefined && this.launchEffort.length > 0
+        ? this.launchEffort
+        : undefined)
     // M3: the reconciled (pane-verified) view wins over the event-only snapshot.
     const rv = this.reconciled.get(chatId)
     const permissionMode =
@@ -846,7 +868,9 @@ export class ContextHud {
       })
       autonomyLine = undefined
     }
-    const rendered = renderHud(usage, windowTokens, model, work, autonomyLine, limitsBlock)
+    const rendered = renderHud(
+      usage, windowTokens, model, work, autonomyLine, limitsBlock, effort,
+    )
     // M4 heartbeat suffix (append last so it is always the final line). Escaped
     // for the card's HTML parse mode — the task text is user/tool-supplied.
     const suffix = this.heartbeatSuffix.get(chatId)
