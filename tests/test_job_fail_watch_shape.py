@@ -31,5 +31,36 @@ class QuotingLogsSkipped(unittest.TestCase):
             self.assertIn(name, jfw.SKIP)
 
 
+class KitFailureLines(unittest.TestCase):
+    """11.10.2026: on Albert the cloud backup failed two days running (Google token
+    expired) and nothing alerted -- the backup script writes «[stamp] FAIL: ...»,
+    which no pattern matched. The kit's other failure lines are covered too."""
+
+    def test_backup_fail_line_caught(self) -> None:
+        line = ("[2026-10-11 03:41:49 +10] FAIL: off-site не уехал ни через rclone, "
+                "ни через gws (локальная копия цела)")
+        self.assertTrue(jfw.hits(line))
+
+    def test_backup_other_fail_lines_caught(self) -> None:
+        for msg in ("нет пароля: /w/secrets/backup.pass", "tar|gpg упал (tar=2 gpg=0)",
+                    "self-check: свежий архив не расшифровался/не читается — удалён"):
+            self.assertTrue(jfw.hits(f"[2026-10-11 03:40:02 +05] FAIL: {msg}"), msg)
+
+    def test_backup_tidy_error_caught(self) -> None:
+        msg = "ОШИБКА: архив старых копий не прошёл проверку, ничего не удалено (1 проблем)"
+        self.assertTrue(jfw.hits(f"2026-10-11 04:10:00 {msg}"))   # its own log line
+        self.assertTrue(jfw.hits(msg))                            # the same on stderr
+
+    def test_memory_sync_error_caught(self) -> None:
+        self.assertTrue(jfw.hits("[ov-session-sync] ERROR: temp_upload failed: {}"))
+
+    def test_fail_inside_words_or_prose_ignored(self) -> None:
+        for line in ("FAILURES: 0", "tests: 12 passed, no FAIL here", "PASS/FAIL: see report",
+                     "[2026-10-11 03:41:49 +10] OK off-site: gdrive:x/a.tar.gz.gpg",
+                     "[2026-10-11 03:41:49 +10] WARN: нет rclone-remote 'gdrive'",
+                     "найдено 0 ошибок, ОШИБКА не обнаружена"):
+            self.assertEqual(jfw.hits(line), [], line)
+
+
 if __name__ == "__main__":
     unittest.main()

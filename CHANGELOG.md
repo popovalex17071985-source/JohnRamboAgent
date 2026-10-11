@@ -16,7 +16,7 @@ retroactively marks the state of `main` on 2026-06-14.
 ## [Unreleased]
 
 ### Added
-- **Bridge on-disk log.** Every line of the bridge's logger (including crash
+- **Bridge on-disk log (#100).** Every line of the bridge's logger (including crash
   handlers) is also appended as JSON to `<state_dir>/logs/bridge.jsonl`,
   redacted like stderr, rotated at 5 MB with two old copies kept
   (`bridge.jsonl.1`, `.2`). The MCP host keeps the bridge's stderr only for
@@ -37,6 +37,56 @@ retroactively marks the state of `main` on 2026-06-14.
   `idle_compact: { enabled: true, idle_minutes: 55, min_context_tokens: 150000 }`
   (`idle_minutes` 5–59, `min_context_tokens` 10 000–10 000 000); a missing block
   means ON with the defaults. Disable with `"idle_compact": { "enabled": false }`.
+- **Group `listen_all` (#93).** Optional per-group policy key: the agent takes
+  every group message (text, media, albums) without an @-mention or a reply to
+  the bot. Who may write is still decided by `allowlist.users` /
+  `open_to_members`. Off by default.
+- **`/update` with a plain-language choice (#92, #94, #96).** The planner
+  explains the update in plain Russian, item by item, with buttons
+  «Обновить, своё не трогать» / «Обновить всё, даже своё» / «Не сейчас»; no
+  own changes — it installs straight away and says what is new. Owner notes
+  come from a `Хозяину:` line in the commit or `update-notes.json`; «Тест: …»
+  commits are hidden. A backup is taken before any reset; the owner's local
+  commits and uncommitted changes are replayed on top of the update (checked in
+  a temporary worktree, file modes included), a conflict leaves the repo
+  untouched and writes `state/update-blocked.json`. New read-only `scan`
+  subcommand: one JSON summary of local commits, uncommitted files, kit tweaks
+  and extra files.
+- **Weekly tidy-up of old file copies (#95).** `agent-kit/bin/backup-tidy.py`
+  keeps the 5 newest and all copies younger than 14 days per file, packs the
+  rest into a verified (sha256) archive under `archive/old-copies/`, deletes
+  originals only after the check, and leaves a copy that changed after packing.
+- **Kit TDD commit gate (#99).** `agent-kit/hooks/tdd-commit-gate.py` blocks a
+  `git commit` with code but no test (or an earlier test on the branch), unless
+  the message carries «Без теста: <reason>».
+- **Effort in the status card (#104).** The model line reads
+  `claude-opus-5-5 · effort: high`; the level comes from the transcript turn or
+  the process `--effort` flag, omitted when unknown.
+
+### Changed
+- **`scan` reports blobs of uncommitted files (#97)** and no longer counts old
+  file copies and temp folders as the owner's own changes (#94).
+- **Planner gets the branch explicitly (#98).** `/update` passes `--branch`
+  instead of letting the planner guess it from `FETCH_HEAD`.
+
+### Fixed
+- **Fallback no longer leaks internal text (#105).** The «Stop hook feedback»
+  line and turn-companion lines stay part of the original Telegram turn (its
+  `reply` and `chat_id` are kept); a turn started by a background
+  `<task-notification>` is not forwarded to the last chat.
+- **`job-fail-watch` on Python 3.10 (#102).** The script no longer fails to
+  parse there (backslash inside an f-string), and the same failure with new
+  numbers is one signature again (the shape regex matched a backslash).
+- **`job-fail-watch` skips logs that quote conversation (#103):** `ov-memory.log`,
+  `tmux-pane.log`, `tmux-pane.prev.log`.
+- **`job-fail-watch` catches the kit's own failure lines:** `[stamp] FAIL: …`
+  from `agent-backup.sh` (an off-site backup failed two days unnoticed),
+  `ОШИБКА: …` from `backup-tidy.py`, `[ov-session-sync] ERROR: …`. Anchored, so
+  words like `FAILURES` or prose «no FAIL here» do not trigger.
+
+### Security
+- **webhook-listener: `aiohttp>=3.14.4` (#101).** The old `>=3.9` floor allowed
+  versions with known vulnerabilities.
 
 ## [1.3.0] — 2026-07-22
 
