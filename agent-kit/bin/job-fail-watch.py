@@ -54,6 +54,12 @@ FAIL_RX = [
     re.compile(r"сбоев[:\s]+([1-9]\d*)"),
     re.compile(r"\bСБОЙ\b"),
     re.compile(r"Traceback \(most recent call last\)"),
+    # Kit scripts' own failure lines, anchored to the line start, a «[stamp] » /
+    # «[name] » prefix or a «HH:MM:SS » stamp -- not FAILURES or «no FAIL here».
+    # 11.10.2026: Albert's off-site backup failed 2 days, «[..] FAIL: off-site не
+    # уехал» matched nothing. ОШИБКА: backup-tidy; ERROR: ov-session-sync.
+    re.compile(r"(?:^|\]\s|\d\d:\d\d:\d\d\s)(?:FAIL|ОШИБКА):\s"),
+    re.compile(r"\]\sERROR:\s"),
 ]
 
 
@@ -147,6 +153,8 @@ def _selftest() -> None:
     assert hits("готово: 70, сбоев: 6")
     assert hits("  #3 СБОЙ: на сайте 0 кнопок")
     assert hits("обычная строка лога") == []
+    assert hits("[2026-10-11 03:41:49 +10] FAIL: off-site не уехал")
+    assert hits("FAILURES: 0") == []
     print("job-fail-watch selftest: OK")
 
 
