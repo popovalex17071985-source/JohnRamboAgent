@@ -1046,59 +1046,6 @@
       <BoxSealed>Нет</BoxSealed><GoodsSubType>Моноблоки</GoodsSubType></Ad>
 
       <Ad>
-        <Id>1912304289</Id>
-        <DateBegin>2023-03-01</DateBegin>
-        <DateEnd>2033-03-31</DateEnd>
-        <ListingFee>Package</ListingFee>
-        <AdStatus>Free</AdStatus>
-        
-        <ManagerName>Тимофей</ManagerName>
-        <ContactPhone>+73422140020</ContactPhone>
-        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
-        <GoodsType>Смарт-часы и фитнес-браслеты</GoodsType>
-        <AdType>Товар приобретен на продажу</AdType>
-        <Category>Телефоны</Category>
-        <Title>Apple Watch Ultra 2 49mm White Ocean Band бу</Title>
-        <Description><![CDATA[<p>Apple Watch Ultra 2 49mm White Ocean Band бу</p>
-<p>✅Отличное состояние, технически исправен<br>✅Аккумулятор 91%<br>✅Комплект: устройство + коробка + кабель<br>✅Гарантия 180 дней</p>
-<p>🔥 Более 100 единиц проверенной бу техники всегда в наличии</p>
-<p>👍🏼 Гарантия лучшей стоимости</p>
-<p>💰Возможна покупка в кредит и по банковской карте</p>
-<p>🔄 Сдайте своё старое устройство по программе TRADE IN и получите скидку до 70%</p>
-<p>🥇Работаем для Вас с 2008 года и дорожим своей репутацией</p>
-<p>☝🏼Вся Б/У техника является ОРИГИНАЛЬНОЙ, проверена по чек-листу из 27 пунктов</p>
-<p>Арт. 95x93</p>]]></Description>
-        <Price>36990</Price>
-        
-        <Model>Apple Watch Ultra</Model>
-        <Images>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/4073/3270717417/IMG_3715.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/4081/3270717425/IMG_3716.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/4089/3270717433/IMG_3717.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/4097/3270717441/IMG_3718.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/4121/3270717465/IMG_3719.jpg"/>
-        </Images>
-        <Color>белый</Color>
-        <Category>Телефоны</Category>
-        
-        
-        <ProductType>Смарт-часы или браслет</ProductType>
-        <Condition>Б/у</Condition>
-        <AdType>Товар приобретен на продажу</AdType>
-        <Case_Condition>Без дефектов</Case_Condition>
-        <Screen_Condition>Без дефектов</Screen_Condition>
-        <Brand>Apple</Brand>
-        <ProductSubType>смарт-часы</ProductSubType>
-        <Gender>унисекс</Gender>
-        <StrapType>Полиуретановый</StrapType>
-        <AkbH>Больше 30 минут</AkbH>
-        <DeviceWork>Включается</DeviceWork>
-        <Akb>91</Akb>
-        <ScreenFlaws>Без дефектов</ScreenFlaws>
-        <CaseFlaws>Без дефектов</CaseFlaws>
-      <ScreenCondition>Без дефектов</ScreenCondition><CaseCondition>Без дефектов</CaseCondition><Devicework>Включается</Devicework><GoodsSubType>Смарт-часы</GoodsSubType></Ad>
-
-      <Ad>
         <Id>1912306161</Id>
         <DateBegin>2023-03-01</DateBegin>
         <DateEnd>2033-03-31</DateEnd>
@@ -2940,7 +2887,7 @@
         <Condition>новое</Condition>
         <MemorySize>256 ГБ</MemorySize>
         <AdType>Товар приобретен на продажу</AdType>
-      <Revalidate>2986303</Revalidate></Ad>
+      <Revalidate>2986309</Revalidate></Ad>
 <Ad>
         <Id>496127545</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -3138,7 +3085,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2986303</Revalidate></Ad>
+      <Revalidate>2986309</Revalidate></Ad>
 <Ad>
         <Id>1640714561</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -3288,7 +3235,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2986303</Revalidate></Ad>
+      <Revalidate>2986309</Revalidate></Ad>
 <Ad>
         <Id>1640726593</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -3438,7 +3385,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2986303</Revalidate></Ad>
+      <Revalidate>2986309</Revalidate></Ad>
 <Ad>
         <Id>1640736641</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4038,7 +3985,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2986303</Revalidate></Ad>
+      <Revalidate>2986309</Revalidate></Ad>
 <Ad>
         <Id>1642060329</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4138,7 +4085,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2986303</Revalidate></Ad>
+      <Revalidate>2986309</Revalidate></Ad>
 <Ad>
         <Id>1642061641</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4438,7 +4385,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2986303</Revalidate></Ad>
+      <Revalidate>2986309</Revalidate></Ad>
 <Ad>
         <Id>1645613473</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4588,7 +4535,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2986303</Revalidate></Ad>
+      <Revalidate>2986309</Revalidate></Ad>
 <Ad>
         <Id>1645614297</Id>
         <DateBegin>2023-03-01</DateBegin>
