@@ -29,16 +29,15 @@ YEAR_TOKEN_DAYS=365
 
 # --- Pure functions (tested) ---
 
-# classify_pct VALUE WARN_AT FAIL_AT LABEL -> echoes "STATUS|DETAILS"
+# classify_pct VALUE WARN_AT FAIL_AT LABEL [EXTRA] -> echoes "STATUS|DETAILS"
+# Empty LABEL -> the bare percentage; EXTRA goes after it in brackets. The check
+# name already says what is measured: «RAM -- RAM (…)» read as a stutter.
 classify_pct() {
-  local pct="$1" warn="$2" fail="$3" label="$4"
-  if [ "$pct" -ge "$fail" ]; then
-    printf 'FAIL|%s %s%%\n' "$label" "$pct"
-  elif [ "$pct" -ge "$warn" ]; then
-    printf 'WARN|%s %s%%\n' "$label" "$pct"
-  else
-    printf 'OK|%s %s%%\n' "$label" "$pct"
-  fi
+  local pct="$1" warn="$2" fail="$3" label="$4" extra="${5:-}" status="OK" text
+  if [ "$pct" -ge "$fail" ]; then status=FAIL
+  elif [ "$pct" -ge "$warn" ]; then status=WARN; fi
+  text="${label:+$label }${pct}%${extra:+ ($extra)}"
+  printf '%s|%s\n' "$status" "$text"
 }
 
 # classify_load LOAD_1M CORES -> echoes "STATUS|DETAILS"
@@ -50,9 +49,9 @@ classify_load() {
   fail_thr="$cores"
   awk -v l="$load" -v w="$warn_thr" -v f="$fail_thr" -v c="$cores" '
     BEGIN {
-      if (l+0 >= f+0)      printf "FAIL|load %.2f / %d cores\n", l, c;
-      else if (l+0 >= w+0) printf "WARN|load %.2f / %d cores\n", l, c;
-      else                 printf "OK|load %.2f / %d cores\n", l, c;
+      if (l+0 >= f+0)      printf "FAIL|%.2f (ядер: %d)\n", l, c;
+      else if (l+0 >= w+0) printf "WARN|%.2f (ядер: %d)\n", l, c;
+      else                 printf "OK|%.2f (ядер: %d)\n", l, c;
     }'
 }
 
@@ -137,13 +136,13 @@ auth_days_left() {
 classify_backup() {
   local age="$1" detail="$2"
   if [ "$age" -lt 0 ]; then
-    printf 'FAIL|бэкап: нет архивов\n'
+    printf 'FAIL|нет архивов\n'
   elif [ "$age" -ge 48 ]; then
-    printf 'FAIL|бэкап: %dч назад (>48ч)\n' "$age"
+    printf 'FAIL|%dч назад (>48ч)\n' "$age"
   elif [ "$age" -ge 26 ]; then
-    printf 'WARN|бэкап: %dч назад\n' "$age"
+    printf 'WARN|%dч назад\n' "$age"
   else
-    printf 'OK|бэкап: %s\n' "$detail"
+    printf 'OK|%s\n' "$detail"
   fi
 }
 
@@ -258,7 +257,7 @@ run_tests() {
 probe_disk() {
   local pct
   pct=$(df --output=pcent / | tail -1 | tr -dc '0-9')
-  classify_pct "$pct" 80 90 "/"
+  classify_pct "$pct" 80 90 ""
 }
 
 probe_ram() {
@@ -266,7 +265,7 @@ probe_ram() {
   read -r total used < <(free -m | awk '/^Mem:/ {print $2, $3}')
   if [ "$total" -eq 0 ]; then echo "FAIL|RAM unknown"; return; fi
   pct=$(( used * 100 / total ))
-  classify_pct "$pct" 80 90 "RAM (${used}M / ${total}M)"
+  classify_pct "$pct" 80 90 "" "${used}M / ${total}M"
 }
 
 probe_cpu() {
@@ -293,7 +292,7 @@ probe_secrets() {
   if [ -n "$hits" ]; then
     echo "FAIL|маска вместо ключа: ${hits% }"
   else
-    echo "OK|секреты без масок"
+    echo "OK|масок вместо ключей нет"
   fi
 }
 
@@ -303,7 +302,7 @@ probe_credentials() {
 
 probe_auth_expiry() {
   local left; left=$(auth_days_left)
-  [ -n "$left" ] || { echo "skip|срок входа не прочитать"; return; }
+  [ -n "$left" ] || { echo "skip|не удалось прочитать"; return; }
   classify_auth_expiry "${left%%|*}" "${left#*|}"
 }
 
@@ -312,14 +311,14 @@ probe_cron() {
   # выполняет задачи агента, какой бы ни была причина (27.08.2026: шесть часов
   # простоя из-за лишней жёсткой ссылки на файле расписания).
   if [ ! -f "$HEARTBEAT" ]; then
-    echo "FAIL|крон: канарейка ни разу не отметилась"
+    echo "FAIL|канарейка ни разу не отметилась"
     return
   fi
   local age_m
   age_m=$(( ( $(date +%s) - $(stat -c %Y "$HEARTBEAT") ) / 60 ))
-  if [ "$age_m" -le 5 ]; then echo "OK|крон: канарейка свежая (${age_m} мин)"
-  elif [ "$age_m" -le 15 ]; then echo "WARN|крон: канарейка молчит ${age_m} мин"
-  else echo "FAIL|крон НЕ ВЫПОЛНЯЕТ ЗАДАЧИ: канарейка молчит ${age_m} мин"; fi
+  if [ "$age_m" -le 5 ]; then echo "OK|канарейка свежая (${age_m} мин)"
+  elif [ "$age_m" -le 15 ]; then echo "WARN|канарейка молчит ${age_m} мин"
+  else echo "FAIL|НЕ ВЫПОЛНЯЕТ ЗАДАЧИ: канарейка молчит ${age_m} мин"; fi
 }
 
 probe_backup() {
@@ -328,7 +327,7 @@ probe_backup() {
   if [ -z "$latest" ]; then
     # Бэкап — отдельная настройка хозяина (нужен свой вход в облако). Его
     # отсутствие не поломка агента, врать красным не будем.
-    echo "WARN|бэкап не настроен ($BACKUP_DIR)"
+    echo "WARN|не настроен ($BACKUP_DIR)"
     return
   fi
   age_s=$(( $(date +%s) - $(stat -c %Y "$latest") ))
