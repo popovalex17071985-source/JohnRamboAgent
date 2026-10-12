@@ -37,7 +37,10 @@ NODE_MAJOR=22
 # НЕ запинены сознательно: nodesource сам держит мажор 22.x, а uv нужен только
 # ремонтнику как установщик Python — их поломки нам пока не встречались.
 BUN_VERSION="bun-v1.4.0"
-OPENVIKING_IMAGE="ghcr.io/volcengine/openviking@sha256:46f9e34cd37238c28cbd9535033773d179006bdf7f3e528dd1c46567abce7701"
+# OpenViking v0.5.0 (12.10.2026, Jarvis + Smith). С v0.4.21 образ работает из
+# /app/.openviking -- поэтому в ov.conf обязательно storage.workspace=/app/data
+# (agent-kit/scripts/ov-conf-fix.py), иначе память «пропадает».
+OPENVIKING_IMAGE="ghcr.io/volcengine/openviking@sha256:c60a83cd79cfce80db5266acb8bdd0908eee8abe8ff559a5f786aa504c251ccf"
 REPO_URL="${DASHI_REPO_URL:-https://github.com/popovalex17071985-source/JohnRamboAgent.git}"
 # Ветка, с которой агент обновляется (/update, советник, повторный прогон).
 # main = проверенное, раскатывается всем после обсуждения; staging-агенты
@@ -1558,6 +1561,19 @@ else
     # Была локальная память -- вектора другой размерности (384 против 1536), со
     # старой базой новая модель не сработает. Запоминаем, чтобы пересчитать ниже.
     OV_OLD_DIM="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["embedding"]["dense"].get("dimension",""))' "$OV_DIR/ov.conf" 2>/dev/null || true)"
+    # Папку данных берём из старого конфига (сначала закрепив её там, где память
+    # лежит сейчас): переписав ov.conf «по шаблону», агента, начавшего на образе
+    # 0.4.21+ без закрепления, увели бы на пустой том.
+    OV_WS=/app/data
+    if [[ -s "$OV_DIR/ov.conf" ]]; then
+      python3 "$REPO_DIR/agent-kit/scripts/ov-conf-fix.py" "$OV_DIR" >/dev/null 2>&1 || true
+      OV_WS="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("storage",{}).get("workspace",""))' "$OV_DIR/ov.conf" 2>/dev/null || true)"
+      [[ "$OV_WS" == /* ]] || OV_WS=/app/data
+    fi
+    case "$OV_WS" in
+      /app/.openviking/*) OV_DATA="$OV_DIR/${OV_WS#/app/.openviking/}" ;;
+      *) OV_DATA="$OV_DIR/appdata" ;;
+    esac
     cat > "$OV_DIR/ov.conf" <<EOF
 {
   "server": { "host": "127.0.0.1", "port": 1933 },
@@ -1570,16 +1586,17 @@ else
   "vlm": {
     "provider": "openai", "api_base": "https://api.openai.com/v1",
     "api_key": "$OPENAI_KEY", "model": "gpt-4o-mini", "max_tokens": 16000
-  }
+  },
+  "storage": { "workspace": "$OV_WS" }
 }
 EOF
     chown "$SERVICE_USER:$SERVICE_USER" "$OV_DIR/ov.conf"; chmod 600 "$OV_DIR/ov.conf"
     ok "ov.conf записан"
     # max_tokens: OpenViking 0.4.20 по умолчанию просит 32768, gpt-4o-mini даёт не
     # больше 16384 -- без потолка память молча ничего не сохраняла (Смит, 26.09.2026).
-    if [[ -n "$OV_OLD_DIM" && "$OV_OLD_DIM" != 1536 && -d "$OV_DIR/appdata/vectordb" ]]; then
+    if [[ -n "$OV_OLD_DIM" && "$OV_OLD_DIM" != 1536 && -d "$OV_DATA/vectordb" ]]; then
       docker stop openviking >/dev/null 2>&1 || true
-      mv "$OV_DIR/appdata/vectordb" "$OV_DIR/appdata/vectordb.local-$(date +%F)"
+      mv "$OV_DATA/vectordb" "$OV_DATA/vectordb.local-$(date +%F)"
       OV_REINDEX=1
       ok "старая база векторов (локальная модель) отложена -- пересчитаю по ключу"
     fi
@@ -1590,7 +1607,7 @@ EOF
   "mode": "local",
   "agentId": "$AGENT_NAME",
   "recallLimit": 3,
-  "scoreThreshold": 0.25,
+  "scoreThreshold": 0.625,
   "captureMode": "semantic",
   "captureTimeoutMs": 30000,
   "captureAssistantTurns": false
@@ -1598,6 +1615,10 @@ EOF
 EOF
     chown "$SERVICE_USER:$SERVICE_USER" "$OV_DIR/claude-code-memory-plugin/config.json"
   fi
+  # Старый ov.conf (повторный прогон, восстановление из бэкапа) -- без
+  # storage.workspace: дописываем туда, где память лежит сейчас.
+  [[ -s "$OV_DIR/ov.conf" ]] && python3 "$REPO_DIR/agent-kit/scripts/ov-conf-fix.py" "$OV_DIR" \
+    | sed 's/^/    /' || true
   if docker ps -a --format '{{.Names}}' | grep -qx openviking; then
     docker start openviking >/dev/null 2>&1 || true
     skip "контейнер openviking на месте"
@@ -1636,6 +1657,11 @@ EOF
   fi
   curl -s -o /dev/null http://127.0.0.1:1933/ 2>/dev/null && ok "сервер памяти отвечает на 1933" \
     || warn "сервер памяти не ответил за 90 сек — смотри docker logs openviking; плагин подхватит, когда поднимется"
+  # Порог плагина -- в шкале сервера: с v0.4.22 похожесть = (cos + 1) / 2, и
+  # прежние 0.25 пропускали всё подряд (0.25 <-> 0.625, свой порог хозяина не трогаем).
+  OV_VER="$(curl -s -m 5 http://127.0.0.1:1933/health 2>/dev/null | jq -r '.version // empty' 2>/dev/null || true)"
+  [[ -n "$OV_VER" ]] && python3 "$REPO_DIR/agent-kit/scripts/ov-conf-fix.py" "$OV_DIR" --server-version "$OV_VER" \
+    | grep -v 'уже закреплена' | sed 's/^/    /' || true
   # Плагин Claude Code: env в settings.json + marketplace + install (всё под агентом)
   as_agent "jq --arg a '$OV_DIR/ov.conf' --arg b '$OV_DIR/claude-code-memory-plugin/config.json' \
     '.env.OPENVIKING_CONFIG_FILE=\$a | .env.OPENVIKING_CC_CONFIG_FILE=\$b

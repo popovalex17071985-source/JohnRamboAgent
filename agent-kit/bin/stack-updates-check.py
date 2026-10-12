@@ -31,6 +31,10 @@ FRESH = "актуален"
 # on Jarvis every memory written before the upgrade stopped showing in search (files
 # intact, only new writes found); rolled back to v0.4.16. Drop a digest from here
 # only after a newer release passes the old-memory recall check on Smith.
+# 12.10.2026 root cause found: not data loss. Since v0.4.21 the image cwd is
+# /app/.openviking, so the relative workspace "./data" missed the appdata volume.
+# Fixed by storage.workspace in ov.conf (scripts/ov-conf-fix.py); since v0.4.22
+# scores are (cos + 1) / 2 -- hooks/ov_memory.py maps thresholds. The kit pins v0.5.0.
 OV_HOLD = {"v0.4.21"}
 OV_HEALTH = "http://127.0.0.1:1933/health"  # installer pins the port (install-agent.sh)
 

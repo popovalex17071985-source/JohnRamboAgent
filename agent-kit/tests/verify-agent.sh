@@ -58,6 +58,15 @@ if curl -sf -m 5 http://127.0.0.1:1933/health >/dev/null 2>&1; then
     && say ок "подсказка памяти читает СВОЙ раздел" || say плохо "ov-recall смотрит не в свой раздел"
   grep -q 'X-OpenViking-User' "$CD/hooks/ov_memory.py" 2>/dev/null \
     && say ок "запись памяти уходит в свой раздел" || say плохо "память пишется в общий котёл"
+  # С образа 0.4.21 относительная папка данных уезжает мимо тома appdata: без
+  # storage.workspace память «пропадает» при пересоздании контейнера (12.10.2026).
+  OV_WS=$(python3 -c "import json;print(json.load(open('$HOME_DIR/.openviking/ov.conf')).get('storage',{}).get('workspace',''))" 2>/dev/null)
+  case "$OV_WS" in
+    /*) say ок "папка данных памяти закреплена: $OV_WS" ;;
+    *)  say плохо "в ov.conf нет storage.workspace -- после обновления образа память пропадёт" ;;
+  esac
+  OV_VER=$(curl -sf -m 5 http://127.0.0.1:1933/health 2>/dev/null | python3 -c "import json,sys;print(json.load(sys.stdin).get('version',''))" 2>/dev/null)
+  say ок "версия сервера памяти: ${OV_VER:-не сказал}"
 else
   say плохо "сервер памяти не отвечает"
 fi

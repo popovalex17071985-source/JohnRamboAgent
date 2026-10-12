@@ -41,7 +41,11 @@ STATE_FILE = Path.home() / ".openviking/hooks/capture-state.json"
 LOG_FILE = Path.home() / ".openviking/logs/memory-hooks.log"
 
 RECALL_LIMIT = int(os.environ.get("OV_RECALL_LIMIT", "3"))
-RECALL_THRESHOLD = float(os.environ.get("OV_RECALL_THRESHOLD", "0.40"))  # measured 2026-08-21: relevant 0.39-0.51, noise mostly <0.40
+# OpenViking >= 0.4.22 reports similarity as (cos + 1) / 2. Measured 2026-08-21 on raw
+# cosine: relevant 0.39-0.51, noise mostly <0.40 -> 0.40 raw == 0.70 now (v0.5.0 on
+# Jarvis since 12.10.2026, 14-query check: new == (1 + old) / 2 within 0.0005).
+# An older server still answers in raw cosine -- threshold_for() maps back for it.
+RECALL_THRESHOLD = float(os.environ.get("OV_RECALL_THRESHOLD", "0.70"))
 MIN_QUERY_WORDS = 3
 MAX_ASK_CHARS = 500
 MAX_ANSWER_CHARS = 900
@@ -71,6 +75,22 @@ _LESSON_RE = re.compile(
     r"договорились|решили|с сегодняшнего|отныне",
     re.I,
 )
+
+
+# --- score scale ------------------------------------------------------------
+
+NEW_SCALE_SINCE = (0, 4, 22)
+
+
+def uses_new_scale(version: str) -> bool:
+    """True for OpenViking >= 0.4.22 and for an unknown version (installer pins v0.5.0)."""
+    nums = tuple(int(x) for x in re.findall(r"\d+", version or "")[:3])
+    return not nums or nums >= NEW_SCALE_SINCE
+
+
+def threshold_for(version: str, threshold: float = RECALL_THRESHOLD) -> float:
+    """Thresholds here are on the >= 0.4.22 scale; a raw-cosine server gets 2t - 1."""
+    return threshold if uses_new_scale(version) else round(2 * threshold - 1, 4)
 
 
 def clean_text(text: str) -> str:
@@ -206,6 +226,15 @@ class OVClient:
                                      method=method or ("POST" if body is not None else "GET"))
         with urllib.request.urlopen(req, timeout=self.timeout) as resp:
             return json.load(resp).get("result")
+
+    def server_version(self) -> str:
+        """Version from /health ("v0.5.0"); "" when the server does not say."""
+        try:
+            req = urllib.request.Request(self.base + "/health", headers=self.headers)
+            with urllib.request.urlopen(req, timeout=min(self.timeout, 2)) as resp:
+                return str(json.load(resp).get("version") or "")
+        except (urllib.error.URLError, OSError, ValueError):
+            return ""
 
     def find(self, query: str, scope: str, limit: int = 8) -> list[dict]:
         r = self.call("/api/v1/search/find",
