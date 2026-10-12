@@ -169,12 +169,15 @@ run_tests() {
   assert "FAIL|disk 90%" "$(classify_pct 90 80 90 disk)" "disk 90% (boundary) -> FAIL"
   assert "FAIL|disk 95%" "$(classify_pct 95 80 90 disk)" "disk 95% -> FAIL"
   assert "OK|RAM 0%"     "$(classify_pct 0 80 90 RAM)"   "RAM 0% -> OK"
+  assert "OK|45%"        "$(classify_pct 45 80 90 '')"   "без подписи -> голый процент"
+  assert "WARN|85% (3300M / 3911M)" "$(classify_pct 85 80 90 '' '3300M / 3911M')" \
+    "процент первым, подробности в скобках"
 
   echo "== classify_load =="
-  assert "OK|load 0.50 / 2 cores"   "$(classify_load 0.5 2)" "load 0.5 of 2 -> OK"
-  assert "WARN|load 1.40 / 2 cores" "$(classify_load 1.4 2)" "load 1.4 of 2 -> WARN"
-  assert "FAIL|load 2.00 / 2 cores" "$(classify_load 2.0 2)" "load 2.0 of 2 -> FAIL"
-  assert "FAIL|load 3.50 / 2 cores" "$(classify_load 3.5 2)" "load 3.5 of 2 -> FAIL"
+  assert "OK|0.50 (ядер: 2)"   "$(classify_load 0.5 2)" "load 0.5 of 2 -> OK"
+  assert "WARN|1.40 (ядер: 2)" "$(classify_load 1.4 2)" "load 1.4 of 2 -> WARN"
+  assert "FAIL|2.00 (ядер: 2)" "$(classify_load 2.0 2)" "load 2.0 of 2 -> FAIL"
+  assert "FAIL|3.50 (ядер: 2)" "$(classify_load 3.5 2)" "load 3.5 of 2 -> FAIL"
 
   echo "== classify_service =="
   assert "OK|claude-gateway: active"      "$(classify_service claude-gateway active)"     "active -> OK"
@@ -240,10 +243,10 @@ run_tests() {
   rm -rf "$adir"
 
   echo "== classify_backup =="
-  assert "FAIL|бэкап: нет архивов"        "$(classify_backup -1 '')"  "none -> FAIL"
-  assert "OK|бэкап: arch (5 ч)"           "$(classify_backup 5 'arch (5 ч)')" "5h -> OK"
-  assert "WARN|бэкап: 30ч назад"          "$(classify_backup 30 'x')" "30h -> WARN"
-  assert "FAIL|бэкап: 50ч назад (>48ч)"   "$(classify_backup 50 'x')" "50h -> FAIL"
+  assert "FAIL|нет архивов"        "$(classify_backup -1 '')"  "none -> FAIL"
+  assert "OK|arch (5 ч)"           "$(classify_backup 5 'arch (5 ч)')" "5h -> OK"
+  assert "WARN|30ч назад"          "$(classify_backup 30 'x')" "30h -> WARN"
+  assert "FAIL|50ч назад (>48ч)"   "$(classify_backup 50 'x')" "50h -> FAIL"
 
   echo ""
   echo "Tests: $((total - fails))/$total passed"
