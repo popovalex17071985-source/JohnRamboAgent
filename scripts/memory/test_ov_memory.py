@@ -6,7 +6,10 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from ov_memory import clean_text, is_noise, last_turn, make_digest, rank, render  # noqa: E402
+from ov_memory import (  # noqa: E402
+    RECALL_THRESHOLD, clean_text, is_noise, last_turn, make_digest, rank, render, threshold_for,
+    uses_new_scale,
+)
 
 WRAPPED = ('<channel source="dashi-channel" source="telegram" chat_id="140141496" user_id="140141496" '
            'ts="2026-08-21T13:15:04.306Z" message_id="32583">\nА почему написано на куче трубок '
@@ -94,6 +97,43 @@ def test_last_turn_falls_back_to_final_text():
         fh.write("\n".join(rows))
         path = fh.name
     assert last_turn(path) == ("u1", "вопрос без реплая в чат", "финальный текст")
+
+
+def test_threshold_follows_server_scale():
+    # OpenViking >= 0.4.22 scores (cos + 1) / 2: 0.40 raw cosine == 0.70 now
+    assert RECALL_THRESHOLD == 0.70
+    assert uses_new_scale("v0.5.0") and uses_new_scale("v0.4.22") and uses_new_scale("")
+    assert not uses_new_scale("v0.4.16") and not uses_new_scale("0.4.21")
+    assert threshold_for("v0.5.0") == 0.70
+    assert threshold_for("v0.4.16") == 0.40
+    assert threshold_for("v0.4.16", 0.71) == 0.42
+
+
+def test_recall_asks_server_for_scale():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "ov_recall", Path(__file__).resolve().parent / "ov-recall.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.log = lambda *a, **k: None  # no log file in the tester's home
+    hits = [{"uri": "viking://user/x/memories/events/a.md", "score": 0.66, "abstract": "запись A"},
+            {"uri": "viking://user/x/memories/events/b.md", "score": 0.45, "abstract": "запись B"}]
+
+    class Fake:
+        def __init__(self, version):
+            self.version = version
+
+        def server_version(self):
+            return self.version
+
+        def find(self, query, scope, limit=8):
+            return [dict(h) for h in hits]
+
+    q = "какие цены на айфоны мы ставили на прошлой неделе"
+    old = [m["uri"][-4:] for m in mod.recall(q, client=Fake("v0.4.16"))]
+    new = [m["uri"][-4:] for m in mod.recall(q, client=Fake("v0.5.0"))]
+    assert old == ["a.md", "b.md"], old   # raw cosine: both above 0.40
+    assert new == [], new                 # (cos + 1) / 2: both are noise below 0.70
 
 
 if __name__ == "__main__":

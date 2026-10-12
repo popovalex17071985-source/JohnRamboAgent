@@ -24,6 +24,10 @@ done
 [ -n "$WORKSPACE" ] && [ -n "$AGENT" ] || { echo "setup-memory: нужны --workspace и --agent" >&2; exit 2; }
 
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# OpenViking v0.5.0, pinned by digest like scripts/install-agent.sh: «:latest» gave
+# every new agent whatever was out that day (0.4.21+ moved the data dir, see
+# ov-conf-fix.py). Bump only after the old-memory recall check on Smith.
+OV_IMAGE="ghcr.io/volcengine/openviking@sha256:c60a83cd79cfce80db5266acb8bdd0908eee8abe8ff559a5f786aa504c251ccf"
 OWNER="$(stat -c %U "$WORKSPACE")"
 OWNER_HOME="$(getent passwd "$OWNER" | cut -d: -f6)"
 say() { echo "[memory] $*"; }
@@ -146,6 +150,9 @@ cfg = {
         "provider": "openai", "dimension": int(os.environ["EMBED_DIM"]),
         "model": "local-embed", "input": "text"}},
     "server": {"host": "127.0.0.1"},
+    # Absolute: since v0.4.21 the image cwd is /app/.openviking and the default
+    # "./data" misses the appdata volume (ov-conf-fix.py).
+    "storage": {"workspace": "/app/data"},
 }
 if os.environ.get("VLM_KEY"):
     cfg["vlm"] = {"api_base": os.environ["VLM_BASE"], "api_key": os.environ["VLM_KEY"],
@@ -158,6 +165,9 @@ PY
 elif [ -s "$OV_DIR/ov.conf" ]; then
   say "настройка памяти уже есть -- не переписываю"
 fi
+# Старый ov.conf (до 12.10.2026) без storage.workspace: дописываем ровно эту строку,
+# туда, где память лежит сейчас -- иначе после обновления образа она «пропадает».
+[ -s "$OV_DIR/ov.conf" ] && python3 "$KIT/ov-conf-fix.py" "$OV_DIR" | sed 's/^/[memory] /' || true
 
 # --- service ----------------------------------------------------------------
 if ! docker ps --format '{{.Names}}' | grep -qx openviking; then
@@ -167,12 +177,17 @@ if ! docker ps --format '{{.Names}}' | grep -qx openviking; then
   docker run -d --name openviking --restart unless-stopped --network host \
     -e OPENVIKING_SERVER_HOST=127.0.0.1 -e OPENVIKING_CONFIG_FILE=/app/.openviking/ov.conf \
     -v "$OV_DIR:/app/.openviking" -v "$OV_DIR/appdata:/app/data" \
-    ghcr.io/volcengine/openviking:latest >/dev/null
+    "$OV_IMAGE" >/dev/null
 fi
 for _ in $(seq 1 24); do sleep 5; curl -sf -m 5 "http://127.0.0.1:$OV_PORT/health" >/dev/null && break; done
 curl -sf -m 5 "http://127.0.0.1:$OV_PORT/health" >/dev/null \
   && say "сервис памяти жив на 127.0.0.1:$OV_PORT" \
   || { say "сервис памяти не поднялся -- смотри docker logs openviking"; exit 0; }
+# Порог плагина памяти -- под шкалу этого сервера (с v0.4.22 похожесть = (cos + 1) / 2).
+OV_VER="$(curl -s -m 5 "http://127.0.0.1:$OV_PORT/health" 2>/dev/null \
+  | python3 -c 'import json,sys;print(json.load(sys.stdin).get("version",""))' 2>/dev/null || true)"
+[ -n "$OV_VER" ] && python3 "$KIT/ov-conf-fix.py" "$OV_DIR" --server-version "$OV_VER" \
+  | grep -v 'уже закреплена' | sed 's/^/[memory] /' || true
 
 # --- flush path: a copied kit used to point at the coordinator's own folder --
 SYNC="$WORKSPACE/scripts/ov-session-sync.sh"

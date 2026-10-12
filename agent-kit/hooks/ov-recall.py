@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ov_memory import (  # noqa: E402
-    OVClient, RECALL_LIMIT, RECALL_THRESHOLD, clean_text, is_noise, log, rank, render,
+    OVClient, RECALL_LIMIT, clean_text, is_noise, log, rank, render, threshold_for,
 )
 
 # Only this agent's own scope: «default» is the shared bucket every agent
@@ -19,12 +19,15 @@ SCOPES = ("viking://user/__AGENT__/memories",)
 
 
 def recall(prompt: str, client: OVClient | None = None,
-           threshold: float = RECALL_THRESHOLD, limit: int = RECALL_LIMIT) -> list[dict]:
+           threshold: float | None = None, limit: int = RECALL_LIMIT) -> list[dict]:
     query = clean_text(prompt)
     if is_noise(query):
         log("recall_skip", reason="noise", query=query[:80])
         return []
     client = client or OVClient()
+    if threshold is None:  # the server's score scale changed in OpenViking 0.4.22
+        version = client.server_version() if hasattr(client, "server_version") else ""
+        threshold = threshold_for(version)
     cands = []
     for scope in SCOPES:
         try:
@@ -32,7 +35,7 @@ def recall(prompt: str, client: OVClient | None = None,
         except Exception as exc:  # noqa: BLE001 — a dead server must not block the turn
             log("recall_error", scope=scope, error=str(exc)[:120])
     picked = rank(cands, threshold=threshold, limit=limit, query=query)
-    log("recall", query=query[:120], candidates=len(cands),
+    log("recall", query=query[:120], candidates=len(cands), threshold=threshold,
         top=[round(float(c.get("score") or 0), 3) for c in
              sorted(cands, key=lambda c: float(c.get("score") or 0), reverse=True)[:4]],
         picked=[(m["uri"].rsplit("/", 1)[-1], round(m["score"], 3)) for m in picked])

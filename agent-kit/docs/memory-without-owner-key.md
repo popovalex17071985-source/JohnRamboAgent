@@ -20,7 +20,9 @@ no card, no owner action. Two containers, both bound to loopback.
 
 3. `~/.openviking/ov.conf` (mode 600): `embedding.dense` -> the local endpoint,
    `provider: openai`, `dimension` = what `/v1/embeddings` actually returns
-   (384 for e5-small); `vlm` -> the Groq base + model; `server.host: 127.0.0.1`.
+   (384 for e5-small); `vlm` -> the Groq base + model; `server.host: 127.0.0.1`;
+   `storage.workspace: /app/data` (since v0.4.21 the default `./data` misses the
+   appdata volume and memory «disappears»).
 
 4. Run OpenViking with `--network host` AND `-e OPENVIKING_SERVER_HOST=127.0.0.1`
    -- without the env it binds 0.0.0.0 and dev auth mode refuses to start.

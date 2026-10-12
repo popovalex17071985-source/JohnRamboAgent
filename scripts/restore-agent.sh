@@ -116,6 +116,11 @@ if [[ -d "$WORKSPACE/.openviking" ]]; then
   [[ -e "$OV_HOME" ]] && mv "$OV_HOME" "$OV_HOME.pre-restore-$(date +%Y%m%d-%H%M)"
   mv "$WORKSPACE/.openviking" "$OV_HOME"
   chown -R "$SERVICE_USER:$SERVICE_USER" "$OV_HOME"
+  # Бэкап до 12.10.2026 везёт ov.conf без storage.workspace: образ 0.4.21+ (а
+  # ставим 0.5.0) без него стартует на пустой базе -- «память пропала». Закрепляем
+  # папку данных ДО старта контейнера; установщик ниже повторит это идемпотентно.
+  OV_FIX="$SCRIPT_DIR/../agent-kit/scripts/ov-conf-fix.py"
+  [[ -f "$OV_FIX" && -s "$OV_HOME/ov.conf" ]] && python3 "$OV_FIX" "$OV_HOME" | sed 's/^/    /'
   [[ -n "$OV_WAS_UP" ]] && docker start openviking >/dev/null
   ok "память на месте ($OV_HOME)"
 fi
