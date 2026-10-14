@@ -1461,3 +1461,13 @@ describe('catastrophic rm — --no-preserve-root with a single flag', () => {
     })
   }
 })
+
+// Mutation audit 14.10.2026: `-execdir` could drop out of the destructive
+// find actions without any test going red (only -delete / -exec were pinned).
+describe('catastrophic find — -execdir on a root scope', () => {
+  for (const cmd of ['find / -execdir rm {} ;', 'find /home -execdir rm -rf {} +']) {
+    test(`denies: ${cmd}`, () => {
+      expect(classify('Bash', { command: cmd }, VARIANT1).tier).toBe('deny')
+    })
+  }
+})
