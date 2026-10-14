@@ -7,7 +7,7 @@ import {
   writeFileSync,
 } from 'fs'
 import { tmpdir } from 'os'
-import { join } from 'path'
+import { basename, join } from 'path'
 
 import {
   MAX_ATTACHMENT_BYTES,
@@ -166,5 +166,51 @@ describe('photo extension helper', () => {
     expect(isPhotoExtension('/x/Y.JPG')).toBe(true)
     expect(isPhotoExtension('/x/y.pdf')).toBe(false)
     expect(PHOTO_EXTENSIONS.has('.webp')).toBe(true)
+  })
+})
+
+// Containment edge cases (mutation audit 14.10.2026). Dropping the path
+// separator from the containment prefix left every test green, and the
+// existing `../` test aims at a file that does not exist, so it passes on
+// the "file does not exist" branch without ever reaching containment.
+describe('resolveInsideWorkspace — containment prefix', () => {
+  test('rejects a sibling directory that shares the workspace name as a prefix', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'dashi-paths-parent-'))
+    try {
+      const ws = join(parent, 'ws')
+      const evilDir = join(parent, 'ws-evil')
+      mkdirSync(ws)
+      mkdirSync(evilDir)
+      const leak = join(evilDir, 'leak.txt')
+      writeFileSync(leak, 'secret')
+      // `/parent/ws-evil/leak.txt` starts with the string `/parent/ws`.
+      expect(() => resolveInsideWorkspace(leak, ws)).toThrow(/outside workspace: /)
+      expect(() => resolveInsideWorkspace(join('..', 'ws-evil', 'leak.txt'), ws)).toThrow(
+        /outside workspace: /,
+      )
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  test('rejects ../ traversal to a file that DOES exist outside', () => {
+    const { ws, cleanup } = makeWorkspace()
+    const out = makeOutside()
+    try {
+      writeFileSync(join(out.outside, 'pwned.txt'), 'x')
+      const traversal = join('..', basename(out.outside), 'pwned.txt')
+      let message = ''
+      try {
+        resolveInsideWorkspace(traversal, ws)
+      } catch (err) {
+        message = err instanceof Error ? err.message : String(err)
+      }
+      expect(message).toMatch(/outside workspace/)
+      // Must be refused for containment, not because the file is missing.
+      expect(message).not.toMatch(/does not exist/)
+    } finally {
+      cleanup()
+      out.cleanup()
+    }
   })
 })
