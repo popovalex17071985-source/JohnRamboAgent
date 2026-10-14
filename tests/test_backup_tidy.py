@@ -483,6 +483,11 @@ class ArchivePruneTest(Fixture):
         for p in [*self.fresh, *self.foreign]:
             self.assertNotIn(p.name, out)
 
+    def test_dry_run_declines_copy_counts(self) -> None:
+        _, out, _ = self.run_tidy("--dry-run")
+        self.assertIn("В архив ушло бы: 6 копий", out)
+        self.assertIn("осталось бы: 22 копии", out)
+
     def test_archive_folder_symlink_is_left_alone(self) -> None:
         real = self.ws / "elsewhere"
         self.folder.rename(real)
