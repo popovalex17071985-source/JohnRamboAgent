@@ -184,13 +184,27 @@ export function splitMessage(text: string, max: number = DEFAULT_MAX): string[] 
     // Budget for the substring we cut from `remaining`. Prefix tags eat
     // into the budget; we reserve room only for closing-tags we know are
     // open RIGHT NOW (inherited stack). Tags opened inside `body` are
-    // handled by the overflow-recovery branch below.
+    // reserved by the line-aware retry just below.
     const suffixReserve = inherited.open.length * perTagSuffix
-    const cut = chooseCut(remaining, Math.max(1, max - prefix.length - suffixReserve))
-    const body = remaining.slice(0, cut)
+    let cut = chooseCut(remaining, Math.max(1, max - prefix.length - suffixReserve))
+    let body = remaining.slice(0, cut)
 
-    const afterState = openTagsAt(prefix + body)
-    const suffix = closingTagsFor(afterState)
+    let afterState = openTagsAt(prefix + body)
+    let suffix = closingTagsFor(afterState)
+
+    // The body itself opened a tag (e.g. the FIRST chunk of a `<pre>` block
+    // carries its own `<pre>`) and its closing tag does not fit. Re-pick the
+    // cut at a paragraph/line boundary with room for that suffix, so code is
+    // not hard-cut mid-line by the overflow branch below.
+    if (prefix.length + body.length + suffix.length > max) {
+      const retryBudget = Math.max(1, max - prefix.length - Math.max(suffixReserve, suffix.length))
+      if (retryBudget < cut) {
+        cut = chooseCut(remaining, retryBudget)
+        body = remaining.slice(0, cut)
+        afterState = openTagsAt(prefix + body)
+        suffix = closingTagsFor(afterState)
+      }
+    }
     let chunk = prefix + body + suffix
 
     // Overflow recovery. Triggers when the body itself opens new tags
