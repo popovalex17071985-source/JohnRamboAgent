@@ -241,11 +241,11 @@ describe('assertSendableFile — secret files are refused', () => {
   })
 
   test('an ordinary file is still sendable', () => {
-    const { ws, cleanup } = wsWith({ 'out/report.pdf': 'pdf', 'notes.env.md': 'not a secret' })
+    const { ws, cleanup } = wsWith({ 'out/report.pdf': 'pdf', 'token-economy.md': 'not a secret' })
     try {
       const config = makeConfig({ workspace_root: ws })
       expect(assertSendableFile({ filePath: 'out/report.pdf', config }).endsWith('/out/report.pdf')).toBe(true)
-      expect(assertSendableFile({ filePath: 'notes.env.md', config }).endsWith('/notes.env.md')).toBe(true)
+      expect(assertSendableFile({ filePath: 'token-economy.md', config }).endsWith('/token-economy.md')).toBe(true)
     } finally {
       cleanup()
     }

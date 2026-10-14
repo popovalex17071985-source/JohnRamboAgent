@@ -12,7 +12,7 @@
 // (no stack traces leak through).
 
 import { existsSync, realpathSync, statSync } from 'fs'
-import { resolve, sep, extname } from 'path'
+import { extname, relative, resolve, sep } from 'path'
 
 import type { AppConfig } from '../config.js'
 
@@ -24,6 +24,39 @@ export const PHOTO_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp
 
 export function isPhotoExtension(filePath: string): boolean {
   return PHOTO_EXTENSIONS.has(extname(filePath).toLowerCase())
+}
+
+// Secret-file denylist for every outbound attachment (warchief 2026-06-10:
+// «только секреты не слать, всё остальное можно» — deny secrets by path).
+// Used by the multichat outbox (the ONLY hard limit there, no workspace
+// confinement) and by assertSendableFile for the MCP `reply` tool. This is the exfil gate for a session
+// that may live in a PUBLIC group: a group member's prompt injection must not be
+// able to attach a credential file. The check runs server-side, on BOTH the
+// raw path AND its realpath (a non-secret-named symlink can resolve into a
+// secret — see sendOutboxFiles). Covers the real credential STORES, not just a
+// casual word, so it neither under-blocks (Codex/automated review HIGH) nor
+// over-blocks ordinary files named e.g. "token-economy.md".
+const SECRET_ATTACHMENT_PATTERNS: RegExp[] = [
+  /\.env$|\.envrc$|\.env\.[^/]*$/i, //                          env files (.env, prod.env, .env.production, .envrc)
+  /\.(?:pem|key|p12|pfx|asc|gpg|ppk|jks|keystore|kdbx)(?:\.(?:bak|old|orig|txt|save|[0-9]+))?$/i, // private-key material (+ backups)
+  /(?:^|\/)\.?secrets?(?:\.d)?\//i, //                          a secrets/ directory
+  /(?:^|\/)\.ssh\//i, //                                        ssh dir
+  /(?:^|\/)id_(?:rsa|ed25519|ecdsa|dsa)(?:\.[^/]*)?$/i, //      ssh private keys (+ .pub/.bak)
+  /(?:^|\/)\.(?:npmrc|netrc|pgpass|pypirc|git-credentials)$/i,
+  /(?:^|\/)\.(?:aws|kube|gnupg|codex)\//i, //                   credential-store dirs
+  /(?:^|\/)\.docker\/config\.json$/i,
+  /(?:^|\/)\.config\/(?:gcloud|gh)\//i,
+  /(?:^|\/)\.cargo\/credentials/i,
+  /(?:^|\/)\.gem\/credentials$/i,
+  /(?:^|\/)\.(?:claude|credentials)\.json$/i, //                .claude.json / .credentials.json
+  /(?:^|\/)sa-[\w-]*\.json$/i,
+  /(?:^|\/)(?:service[_-]?account|firebase-adminsdk)[\w.-]*\.json$/i,
+  /(?:^|\/)(?:credentials?|auth|secret|token|apikey|api[_-]?key)\.(?:json|ya?ml|toml|txt|ini|env)$/i,
+  /\.secrets?$/i,
+]
+
+export function isSecretAttachmentPath(filePath: string): boolean {
+  return SECRET_ATTACHMENT_PATTERNS.some((re) => re.test(filePath))
 }
 
 // resolveInsideWorkspace
@@ -83,8 +116,9 @@ export interface SendableFileChecks {
 // Full gate for reply.files entries:
 //   1. workspace_root configured (else clear error)
 //   2. path resolves inside workspace (no escapes)
-//   3. target is a regular file (not a directory)
-//   4. size <= MAX_ATTACHMENT_BYTES
+//   3. neither the requested nor the real path is a secret file
+//   4. target is a regular file (not a directory)
+//   5. size <= MAX_ATTACHMENT_BYTES
 // Returns the canonical resolved path; callers should use this when
 // invoking Telegram sendDocument/sendPhoto so we ship the canonical file,
 // not the user-supplied path.
@@ -94,6 +128,20 @@ export function assertSendableFile({ filePath, config }: SendableFileChecks): st
   }
 
   const canonical = resolveInsideWorkspace(filePath, config.workspace_root)
+
+  // Secret denylist on BOTH the requested path and the real path (an
+  // innocently named symlink can resolve into `.env`). Matched relative to the
+  // workspace — containment is already proven — so where the workspace itself
+  // lives (e.g. under a dot-dir) can never block every file.
+  const canonicalWorkspace = realpathSync(config.workspace_root)
+  const requestedRel = relative(canonicalWorkspace, resolve(canonicalWorkspace, filePath))
+  const canonicalRel = relative(canonicalWorkspace, canonical)
+  if (
+    isSecretAttachmentPath(requestedRel.split(sep).join('/')) ||
+    isSecretAttachmentPath(canonicalRel.split(sep).join('/'))
+  ) {
+    throw new Error(`refusing to send secret file: ${filePath}`)
+  }
 
   let st: ReturnType<typeof statSync>
   try {
