@@ -59,3 +59,18 @@ describe('isLoopbackAddress', () => {
     }
   })
 })
+
+describe('authGate — loopback origin', () => {
+  test('a non-loopback peer is refused with 403 even with the right bearer token', () => {
+    const r = fakeRes()
+    expect(authGate(fakeReq('203.0.113.7', `Bearer ${TOKEN}`), r.res, TOKEN)).toBe(false)
+    expect(r.status).toBe(403)
+    expect(r.body).toContain('loopback only')
+  })
+
+  test('a loopback peer with the right token passes', () => {
+    const r = fakeRes()
+    expect(authGate(fakeReq('127.0.0.1', `Bearer ${TOKEN}`), r.res, TOKEN)).toBe(true)
+    expect(r.status).toBeUndefined()
+  })
+})
