@@ -192,3 +192,62 @@ describe('resolveInsideWorkspace — containment prefix', () => {
     }
   })
 })
+
+// Secret files must never leave through the reply tool — DM or group. The
+// group outbox already refused them (multichat-router); the MCP `reply`
+// tool only checked workspace containment, so `files: ['.env']` shipped.
+describe('assertSendableFile — secret files are refused', () => {
+  function wsWith(files: Record<string, string>): { ws: string; cleanup: () => void } {
+    const w = makeWorkspace()
+    for (const [rel, body] of Object.entries(files)) {
+      mkdirSync(join(w.ws, rel, '..'), { recursive: true })
+      writeFileSync(join(w.ws, rel), body)
+    }
+    return w
+  }
+
+  test('.env is refused', () => {
+    const { ws, cleanup } = wsWith({ '.env': 'TOKEN=x' })
+    try {
+      expect(() =>
+        assertSendableFile({ filePath: '.env', config: makeConfig({ workspace_root: ws }) }),
+      ).toThrow(/refusing to send secret file: \.env/)
+    } finally {
+      cleanup()
+    }
+  })
+
+  test('a file under secrets/ is refused', () => {
+    const { ws, cleanup } = wsWith({ 'secrets/x': 'k' })
+    try {
+      expect(() =>
+        assertSendableFile({ filePath: join(ws, 'secrets', 'x'), config: makeConfig({ workspace_root: ws }) }),
+      ).toThrow(/refusing to send secret file/)
+    } finally {
+      cleanup()
+    }
+  })
+
+  test('an innocently named symlink pointing at .env is refused (real path checked)', () => {
+    const { ws, cleanup } = wsWith({ '.env': 'TOKEN=x' })
+    try {
+      symlinkSync(join(ws, '.env'), join(ws, 'report.txt'))
+      expect(() =>
+        assertSendableFile({ filePath: 'report.txt', config: makeConfig({ workspace_root: ws }) }),
+      ).toThrow(/refusing to send secret file: report\.txt/)
+    } finally {
+      cleanup()
+    }
+  })
+
+  test('an ordinary file is still sendable', () => {
+    const { ws, cleanup } = wsWith({ 'out/report.pdf': 'pdf', 'notes.env.md': 'not a secret' })
+    try {
+      const config = makeConfig({ workspace_root: ws })
+      expect(assertSendableFile({ filePath: 'out/report.pdf', config }).endsWith('/out/report.pdf')).toBe(true)
+      expect(assertSendableFile({ filePath: 'notes.env.md', config }).endsWith('/notes.env.md')).toBe(true)
+    } finally {
+      cleanup()
+    }
+  })
+})

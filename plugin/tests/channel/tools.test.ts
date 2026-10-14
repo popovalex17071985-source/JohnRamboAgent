@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
@@ -948,5 +948,38 @@ describe('reply — outbound journal', () => {
     )
     expect(result.isError).toBeUndefined()
     expect(result.content[0]!.text).toContain('sent (id: 7)')
+  })
+})
+
+describe('reply tool — secret attachments', () => {
+  test('a .env attachment is refused before anything is sent', async () => {
+    const ws = mkdtempSync(join(tmpdir(), 'dashi-reply-secret-'))
+    writeFileSync(join(ws, '.env'), 'TOKEN=x')
+    const sent: string[] = []
+    const deps = makeDeps({
+      config: makeConfig({ workspace_root: ws }),
+      telegramApi: makeStubApi({
+        sendMessage: async (_c, text) => {
+          sent.push(`msg:${text}`)
+          return { message_id: 1 }
+        },
+        sendDocument: async (_c, p) => {
+          sent.push(`doc:${p}`)
+          return { message_id: 2 }
+        },
+      }),
+    })
+    try {
+      const result = await callTool(
+        callReq('reply', { chat_id: '164795011', text: 'вот файл', files: ['.env'] }),
+        deps,
+      )
+      expect(result.isError).toBe(true)
+      expect(result.content[0]?.text).toContain('refusing to send secret file')
+      expect(sent).toEqual([])
+    } finally {
+      rmSync(ws, { recursive: true, force: true })
+      rmSync(deps.statePaths.root, { recursive: true, force: true })
+    }
   })
 })
