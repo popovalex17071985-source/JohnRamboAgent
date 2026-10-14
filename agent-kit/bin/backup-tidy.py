@@ -51,6 +51,8 @@ from pathlib import Path
 KEEP_NEWEST = 5
 KEEP_YOUNGER_DAYS = 14
 ARCHIVE_KEEP_DAYS = 45  # our own archives older than this (by name stamp) are deleted
+# How a keep period reads to the owner; any other value is «N дней».
+NAMED_PERIODS = {45: "полтора месяца"}
 SECONDS_PER_DAY = 86400
 MB = 1024 * 1024
 WHOLE_MB_FROM = 10  # below this many MB the message shows one decimal
@@ -258,6 +260,15 @@ def copies_phrase(count: int) -> str:
     return f"{count} {ru_plural(count, 'копия', 'копии', 'копий')}"
 
 
+def keep_period() -> str:
+    """How long an archive is kept, in words: «полтора месяца», «30 дней», «21 день»."""
+    named = NAMED_PERIODS.get(ARCHIVE_KEEP_DAYS)
+    if named:
+        return named
+    days = ru_plural(ARCHIVE_KEEP_DAYS, "день", "дня", "дней")
+    return f"{ARCHIVE_KEEP_DAYS} {days}"
+
+
 def archives_phrase(count: int) -> str:
     """«2 старых архива копий старше 45 дней»."""
     noun = ru_plural(count, "старый архив", "старых архива", "старых архивов")
@@ -271,9 +282,10 @@ def owner_message(count: int, freed: int, archives_removed: int = 0,
     if count:
         noun = ru_plural(count, "старую копию", "старые копии", "старых копий")
         files = "файла" if count == 1 else "файлов"
+        period = keep_period()
         tail = (
-            "Она в архиве, если понадобится — скажите." if count == 1
-            else "Они в архиве, если понадобятся — скажите."
+            f"Она в архиве {period}, если понадобится — скажите." if count == 1
+            else f"Они в архиве {period}, если понадобятся — скажите."
         )
         parts.append(f"Прибрал {count} {noun} {files}, освободил {fmt_mb(freed)} МБ. {tail}")
     if archives_removed:
