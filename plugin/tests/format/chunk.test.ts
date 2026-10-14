@@ -213,3 +213,28 @@ describe('splitMessage', () => {
     expect(out[1]).toContain(bodyB)
   })
 })
+
+// Mutation audit 14.10.2026: dropping `prefix.length` from the cut budget
+// (the reopened `<pre>` of a continuation chunk) left every test green —
+// the overflow safety net still kept chunks under max, but by hard-cutting
+// mid-line instead of at a line boundary. Line width is chosen so the
+// reopened `<pre>` is exactly what tips a 5th line over the limit.
+//
+// The FIRST chunk opens `<pre>` inside the text itself; its closing tag must
+// be reserved too, or it falls into the overflow branch and is cut mid-line.
+describe('splitMessage — continuation chunks of a <pre> block', () => {
+  test('every chunk but the last ends on a line boundary, not mid-line', () => {
+    const lines: string[] = []
+    for (let i = 0; i < 40; i++) lines.push(`L${i}_`.padEnd(21, 'y'))
+    const out = splitMessage(`<pre>${lines.join('\n')}</pre>`, 120)
+    expect(out.length).toBeGreaterThan(3)
+    for (const c of out.slice(0, -1)) {
+      expect(c.length).toBeLessThanOrEqual(120)
+      expect(c.startsWith('<pre>')).toBe(true)
+      expect(c.endsWith('\n</pre>')).toBe(true)
+    }
+    // No line is split across chunks: every code line survives whole.
+    const rejoined = out.map((c) => c.replace(/^<pre>/, '').replace(/<\/pre>$/, '')).join('')
+    expect(rejoined.split('\n')).toEqual(lines)
+  })
+})

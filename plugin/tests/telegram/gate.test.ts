@@ -8,6 +8,7 @@ import {
   gateTelegramMessage,
   type GateInput,
 } from '../../src/telegram/gate.js'
+import type { MultichatPolicy } from '../../src/chats/policy-loader.js'
 import { makeConfig } from '../helpers/config.js'
 
 function dmInput(senderId: string, chatId: string): GateInput {
@@ -111,5 +112,60 @@ describe('assertAllowedChat', () => {
     const config = makeConfig({ allowed_chat_ids: [164795011, '777'] })
     expect(() => assertAllowedChat('164795011', config)).not.toThrow()
     expect(() => assertAllowedChat('777', config)).not.toThrow()
+  })
+})
+
+// Multichat outbound: policy.allowlist.chats is the single source of truth
+// and the chat must also have a policy.chats entry. Both checks were
+// untested — dropping either one left the whole suite green (mutation
+// audit 14.10.2026), so reply/react/edit could leak into a chat the
+// inbound side never serves.
+describe('assertAllowedChat — multichat policy', () => {
+  const GROUP = '-1001111111111'
+  const ORPHAN = '-1002222222222'
+  const chatPolicy = {
+    mode: 'public' as const,
+    streaming: 'off' as const,
+    tmux_mirror: false,
+    edit_message_progress: false,
+    delivery: 'final_only' as const,
+    persona_file: 'persona.md',
+    handoff_file: 'handoff.md',
+    system_reminder: '',
+    idle_ttl_ms: 1_800_000,
+    max_queue_depth: 1,
+  }
+  function policy(): MultichatPolicy {
+    return {
+      version: 1,
+      // ORPHAN is allowlisted but has no policy.chats entry.
+      allowlist: { chats: [GROUP, ORPHAN], users: ['164795011'] },
+      mention_allowlist: [],
+      // NOT_LISTED has a chat entry but is absent from allowlist.chats.
+      chats: { [GROUP]: chatPolicy, '-1003333333333': chatPolicy },
+    }
+  }
+
+  test('allows a chat that is allowlisted AND has a policy entry', () => {
+    expect(() => assertAllowedChat(GROUP, makeConfig(), policy())).not.toThrow()
+  })
+
+  test('refuses an allowlisted chat that has no policy.chats entry', () => {
+    expect(() => assertAllowedChat(ORPHAN, makeConfig(), policy())).toThrow(
+      /no policy\.chats entry/,
+    )
+  })
+
+  test('refuses a chat absent from policy.allowlist.chats even with a chat entry', () => {
+    expect(() => assertAllowedChat('-1003333333333', makeConfig(), policy())).toThrow(
+      /not allowlisted/,
+    )
+  })
+
+  test('legacy config.allowed_chat_ids is ignored once a policy is present', () => {
+    // 164795011 is in makeConfig().allowed_chat_ids but not in the policy.
+    expect(() => assertAllowedChat('164795011', makeConfig(), policy())).toThrow(
+      /policy\.allowlist\.chats/,
+    )
   })
 })

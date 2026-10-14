@@ -1450,3 +1450,43 @@ describe('git-exec-surface round-13 — config family is POSITION/SUBCOMMAND gat
     expect(classify('Bash', { command: 'git config user.name x' }, VARIANT1).tier).toBe('allow')
   })
 })
+
+// Mutation audit 14.10.2026: `--no-preserve-root` with only ONE of -r/-f
+// could stop being catastrophic without any test going red.
+describe('catastrophic rm — --no-preserve-root with a single flag', () => {
+  for (const cmd of ['rm --no-preserve-root -r /', 'rm -r --no-preserve-root /', 'rm --no-preserve-root -f /']) {
+    test(`denies: ${cmd}`, () => {
+      const r = classify('Bash', { command: cmd }, VARIANT1)
+      expect(r.tier).toBe('deny')
+    })
+  }
+})
+
+// Mutation audit 14.10.2026: `-execdir` could drop out of the destructive
+// find actions without any test going red (only -delete / -exec were pinned).
+describe('catastrophic find — -execdir on a root scope', () => {
+  for (const cmd of ['find / -execdir rm {} ;', 'find /home -execdir rm -rf {} +']) {
+    test(`denies: ${cmd}`, () => {
+      expect(classify('Bash', { command: cmd }, VARIANT1).tier).toBe('deny')
+    })
+  }
+})
+
+// Mutation audit 14.10.2026: no test had an operator DENY and an operator
+// ALLOW matching the same command, so letting allow win over deny left the
+// suite green. Deny must always take precedence.
+describe('operator deny beats operator allow on the same command', () => {
+  const MIXED: PermissionPolicy = {
+    default_tier: 'confirm',
+    deny: { bash_patterns: ['deploy.sh --prod'] },
+    allow: { bash_patterns: ['deploy.sh'] },
+  }
+  test('the narrower deny wins over the broader allow', () => {
+    const v = classify('Bash', { command: './deploy.sh --prod now' }, MIXED)
+    expect(v.tier).toBe('deny')
+    expect(v.matchedRule).toBe('deny:bash_patterns:deploy.sh --prod')
+  })
+  test('the allow still applies where the deny does not match', () => {
+    expect(classify('Bash', { command: './deploy.sh --staging' }, MIXED).tier).toBe('allow')
+  })
+})

@@ -1352,5 +1352,27 @@ class PlainTextTest(unittest.TestCase):
                       up.notify_text(real_plan()))
 
 
+
+class Merge3Test(unittest.TestCase):
+    """_merge3 replays one path of the owner's local commit onto the update.
+
+    Mutation audit 14.10.2026: turning «changed on one side, deleted on the
+    other» into a clean take-the-update left all 61 tests green -- the owner's
+    edit of a file the update deletes would vanish without a question.
+    """
+
+    BASE = ("100644", b"line\n")
+    EDITED = ("100644", b"line\nowner tweak\n")
+
+    def test_update_deletes_a_file_the_owner_edited_is_a_conflict(self):
+        self.assertEqual(up._merge3(self.BASE, None, self.EDITED), (None, False))
+
+    def test_owner_deletes_a_file_the_update_edited_is_a_conflict(self):
+        self.assertEqual(up._merge3(self.BASE, self.EDITED, None), (None, False))
+
+    def test_both_sides_delete_is_clean(self):
+        self.assertEqual(up._merge3(self.BASE, None, None), (None, True))
+
+
 if __name__ == "__main__":
     unittest.main()

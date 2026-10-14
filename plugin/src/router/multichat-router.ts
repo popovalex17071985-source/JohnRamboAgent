@@ -31,7 +31,7 @@ import { basename, join } from 'node:path'
 import type { TelegramApi } from '../channel/tools.js'
 import { splitMessage } from '../format/chunk.js'
 import { markdownToTelegramHtml } from '../format/html.js'
-import { isPhotoExtension, MAX_ATTACHMENT_BYTES } from '../security/paths.js'
+import { isPhotoExtension, isSecretAttachmentPath, MAX_ATTACHMENT_BYTES } from '../security/paths.js'
 import type { Logger } from '../log.js'
 import {
   assertValidChatId,
@@ -108,36 +108,10 @@ function parseMessageId(raw: string): number | undefined {
 }
 
 // The ONLY hard limit on multichat attachments (warchief 2026-06-10: «только
-// секреты не слать, всё остальное можно» — deny secrets by path, allow every
-// other file; NO workspace confinement). This is the exfil gate for a session
-// that may live in a PUBLIC group: a group member's prompt injection must not be
-// able to attach a credential file. The check runs server-side, on BOTH the
-// raw path AND its realpath (a non-secret-named symlink can resolve into a
-// secret — see sendOutboxFiles). Covers the real credential STORES, not just a
-// casual word, so it neither under-blocks (Codex/automated review HIGH) nor
-// over-blocks ordinary files named e.g. "token-economy.md".
-const SECRET_ATTACHMENT_PATTERNS: RegExp[] = [
-  /\.env$|\.envrc$|\.env\.[^/]*$/i, //                          env files (.env, prod.env, .env.production, .envrc)
-  /\.(?:pem|key|p12|pfx|asc|gpg|ppk|jks|keystore|kdbx)(?:\.(?:bak|old|orig|txt|save|[0-9]+))?$/i, // private-key material (+ backups)
-  /(?:^|\/)\.?secrets?(?:\.d)?\//i, //                          a secrets/ directory
-  /(?:^|\/)\.ssh\//i, //                                        ssh dir
-  /(?:^|\/)id_(?:rsa|ed25519|ecdsa|dsa)(?:\.[^/]*)?$/i, //      ssh private keys (+ .pub/.bak)
-  /(?:^|\/)\.(?:npmrc|netrc|pgpass|pypirc|git-credentials)$/i,
-  /(?:^|\/)\.(?:aws|kube|gnupg|codex)\//i, //                   credential-store dirs
-  /(?:^|\/)\.docker\/config\.json$/i,
-  /(?:^|\/)\.config\/(?:gcloud|gh)\//i,
-  /(?:^|\/)\.cargo\/credentials/i,
-  /(?:^|\/)\.gem\/credentials$/i,
-  /(?:^|\/)\.(?:claude|credentials)\.json$/i, //                .claude.json / .credentials.json
-  /(?:^|\/)sa-[\w-]*\.json$/i,
-  /(?:^|\/)(?:service[_-]?account|firebase-adminsdk)[\w.-]*\.json$/i,
-  /(?:^|\/)(?:credentials?|auth|secret|token|apikey|api[_-]?key)\.(?:json|ya?ml|toml|txt|ini|env)$/i,
-  /\.secrets?$/i,
-]
-
-export function isSecretAttachmentPath(filePath: string): boolean {
-  return SECRET_ATTACHMENT_PATTERNS.some((re) => re.test(filePath))
-}
+// секреты не слать, всё остальное можно»). The denylist itself lives in
+// security/paths.ts so the MCP `reply` tool applies the same rule; re-exported
+// here for existing importers.
+export { isSecretAttachmentPath }
 
 // Per-chat outbox loop bookkeeping. fs.watch is intentionally NOT used
 // today — Node's watcher behaviour differs across platforms (linux

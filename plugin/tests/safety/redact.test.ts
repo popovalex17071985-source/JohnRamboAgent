@@ -497,3 +497,22 @@ describe('redactSecrets — Zoom join links (public passcode exemption)', () => 
     expect(out).not.toContain(nul)
   })
 })
+
+// Mutation audit 14.10.2026: these two boundaries could be moved without
+// any test going red.
+describe('redactSecrets — boundaries pinned by the mutation audit', () => {
+  test('an extras secret of exactly 4 chars IS masked (only <4 is ignored)', () => {
+    expect(redactSecrets('pin is k9Zq here', ['k9Zq'])).toBe('pin is [REDACTED] here')
+  })
+
+  test('X-Amz-Credential (access key id) inside a presigned URL is redacted', () => {
+    // The generic long-token rule is exempt inside URLs, so the named
+    // param is the only thing standing between the key id and the chat.
+    const keyId = 'AKIAIOSFODNN7EXAMPLE'
+    const out = redactSecrets(
+      `https://bucket.s3.amazonaws.com/f?X-Amz-Credential=${keyId}%2F20261014%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Expires=300`,
+    )
+    expect(out).not.toContain(keyId)
+    expect(out).toContain('X-Amz-Credential=[REDACTED]')
+  })
+})

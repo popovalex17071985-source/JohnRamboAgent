@@ -7,7 +7,7 @@ import {
   writeFileSync,
 } from 'fs'
 import { tmpdir } from 'os'
-import { join } from 'path'
+import { basename, join } from 'path'
 
 import {
   MAX_ATTACHMENT_BYTES,
@@ -84,11 +84,12 @@ describe('resolveInsideWorkspace', () => {
     const out = makeOutside()
     try {
       writeFileSync(join(out.outside, 'pwned.txt'), 'x')
-      // From inside the workspace, climbing `..` should land outside.
-      // We need a relative path that resolves outside ws. Easiest: name the
-      // outside dir we just made and traverse via its basename.
-      const traversal = join('..', 'no-such-thing', 'pwned.txt')
+      // From inside the workspace, climbing `..` lands on a file that DOES
+      // exist outside (both dirs are siblings under tmpdir), so the refusal
+      // must come from the containment check, not from "file does not exist".
+      const traversal = join('..', basename(out.outside), 'pwned.txt')
       expect(() => resolveInsideWorkspace(traversal, ws)).toThrow(/outside workspace/)
+      expect(() => resolveInsideWorkspace(traversal, ws)).not.toThrow(/does not exist/)
     } finally {
       cleanup()
       out.cleanup()
@@ -166,5 +167,87 @@ describe('photo extension helper', () => {
     expect(isPhotoExtension('/x/Y.JPG')).toBe(true)
     expect(isPhotoExtension('/x/y.pdf')).toBe(false)
     expect(PHOTO_EXTENSIONS.has('.webp')).toBe(true)
+  })
+})
+
+// Containment edge cases (mutation audit 14.10.2026). Dropping the path
+// separator from the containment prefix left every test green.
+describe('resolveInsideWorkspace — containment prefix', () => {
+  test('rejects a sibling directory that shares the workspace name as a prefix', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'dashi-paths-parent-'))
+    try {
+      const ws = join(parent, 'ws')
+      const evilDir = join(parent, 'ws-evil')
+      mkdirSync(ws)
+      mkdirSync(evilDir)
+      const leak = join(evilDir, 'leak.txt')
+      writeFileSync(leak, 'secret')
+      // `/parent/ws-evil/leak.txt` starts with the string `/parent/ws`.
+      expect(() => resolveInsideWorkspace(leak, ws)).toThrow(/outside workspace: /)
+      expect(() => resolveInsideWorkspace(join('..', 'ws-evil', 'leak.txt'), ws)).toThrow(
+        /outside workspace: /,
+      )
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+})
+
+// Secret files must never leave through the reply tool — DM or group. The
+// group outbox already refused them (multichat-router); the MCP `reply`
+// tool only checked workspace containment, so `files: ['.env']` shipped.
+describe('assertSendableFile — secret files are refused', () => {
+  function wsWith(files: Record<string, string>): { ws: string; cleanup: () => void } {
+    const w = makeWorkspace()
+    for (const [rel, body] of Object.entries(files)) {
+      mkdirSync(join(w.ws, rel, '..'), { recursive: true })
+      writeFileSync(join(w.ws, rel), body)
+    }
+    return w
+  }
+
+  test('.env is refused', () => {
+    const { ws, cleanup } = wsWith({ '.env': 'TOKEN=x' })
+    try {
+      expect(() =>
+        assertSendableFile({ filePath: '.env', config: makeConfig({ workspace_root: ws }) }),
+      ).toThrow(/refusing to send secret file: \.env/)
+    } finally {
+      cleanup()
+    }
+  })
+
+  test('a file under secrets/ is refused', () => {
+    const { ws, cleanup } = wsWith({ 'secrets/x': 'k' })
+    try {
+      expect(() =>
+        assertSendableFile({ filePath: join(ws, 'secrets', 'x'), config: makeConfig({ workspace_root: ws }) }),
+      ).toThrow(/refusing to send secret file/)
+    } finally {
+      cleanup()
+    }
+  })
+
+  test('an innocently named symlink pointing at .env is refused (real path checked)', () => {
+    const { ws, cleanup } = wsWith({ '.env': 'TOKEN=x' })
+    try {
+      symlinkSync(join(ws, '.env'), join(ws, 'report.txt'))
+      expect(() =>
+        assertSendableFile({ filePath: 'report.txt', config: makeConfig({ workspace_root: ws }) }),
+      ).toThrow(/refusing to send secret file: report\.txt/)
+    } finally {
+      cleanup()
+    }
+  })
+
+  test('an ordinary file is still sendable', () => {
+    const { ws, cleanup } = wsWith({ 'out/report.pdf': 'pdf', 'token-economy.md': 'not a secret' })
+    try {
+      const config = makeConfig({ workspace_root: ws })
+      expect(assertSendableFile({ filePath: 'out/report.pdf', config }).endsWith('/out/report.pdf')).toBe(true)
+      expect(assertSendableFile({ filePath: 'token-economy.md', config }).endsWith('/token-economy.md')).toBe(true)
+    } finally {
+      cleanup()
+    }
   })
 })

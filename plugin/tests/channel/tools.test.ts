@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
@@ -948,5 +948,57 @@ describe('reply — outbound journal', () => {
     )
     expect(result.isError).toBeUndefined()
     expect(result.content[0]!.text).toContain('sent (id: 7)')
+  })
+})
+
+describe('reply tool — secret attachments', () => {
+  // Саня 14.10.2026: «как это мне не отправит? Так не пойдет» -- the owner's own
+  // DM gets any workspace file; every other chat (groups, other users) is refused.
+  async function sendEnv(chatId: string, extra: Record<string, unknown> = {}) {
+    const ws = mkdtempSync(join(tmpdir(), 'dashi-reply-secret-'))
+    writeFileSync(join(ws, '.env'), 'TOKEN=x')
+    const sent: string[] = []
+    const deps = makeDeps({
+      config: makeConfig({ workspace_root: ws, allowed_chat_ids: [164795011, -100500], ...extra }),
+      telegramApi: makeStubApi({
+        sendMessage: async (_c, text) => {
+          sent.push(`msg:${text}`)
+          return { message_id: 1 }
+        },
+        sendDocument: async (_c, p) => {
+          sent.push(`doc:${p}`)
+          return { message_id: 2 }
+        },
+      }),
+    })
+    try {
+      const result = await callTool(
+        callReq('reply', { chat_id: chatId, text: 'вот файл', files: ['.env'] }),
+        deps,
+      )
+      return { result, sent }
+    } finally {
+      rmSync(ws, { recursive: true, force: true })
+      rmSync(deps.statePaths.root, { recursive: true, force: true })
+    }
+  }
+
+  test('a .env attachment to a group is refused before anything is sent', async () => {
+    const { result, sent } = await sendEnv('-100500')
+    expect(result.isError).toBe(true)
+    expect(result.content[0]?.text).toContain('refusing to send secret file')
+    expect(sent).toEqual([])
+  })
+
+  test('the owner DM receives a .env attachment', async () => {
+    const { result, sent } = await sendEnv('164795011')
+    expect(result.isError).toBeFalsy()
+    expect(sent.some((s) => s.startsWith('doc:') && s.endsWith('.env'))).toBe(true)
+  })
+
+  test('explicit owner_chat_ids wins: an allowed non-owner DM is refused', async () => {
+    const { result, sent } = await sendEnv('164795011', { owner_chat_ids: [777] })
+    expect(result.isError).toBe(true)
+    expect(sent).toEqual([])
   })
 })
