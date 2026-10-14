@@ -497,3 +497,12 @@ describe('redactSecrets — Zoom join links (public passcode exemption)', () => 
     expect(out).not.toContain(nul)
   })
 })
+
+// Mutation audit 14.10.2026: these two boundaries could be moved without
+// any test going red.
+describe('redactSecrets — boundaries pinned by the mutation audit', () => {
+  test('an extras secret of exactly 4 chars IS masked (only <4 is ignored)', () => {
+    expect(redactSecrets('pin is k9Zq here', ['k9Zq'])).toBe('pin is [REDACTED] here')
+  })
+
+})
