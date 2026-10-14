@@ -84,11 +84,12 @@ describe('resolveInsideWorkspace', () => {
     const out = makeOutside()
     try {
       writeFileSync(join(out.outside, 'pwned.txt'), 'x')
-      // From inside the workspace, climbing `..` should land outside.
-      // We need a relative path that resolves outside ws. Easiest: name the
-      // outside dir we just made and traverse via its basename.
-      const traversal = join('..', 'no-such-thing', 'pwned.txt')
+      // From inside the workspace, climbing `..` lands on a file that DOES
+      // exist outside (both dirs are siblings under tmpdir), so the refusal
+      // must come from the containment check, not from "file does not exist".
+      const traversal = join('..', basename(out.outside), 'pwned.txt')
       expect(() => resolveInsideWorkspace(traversal, ws)).toThrow(/outside workspace/)
+      expect(() => resolveInsideWorkspace(traversal, ws)).not.toThrow(/does not exist/)
     } finally {
       cleanup()
       out.cleanup()
@@ -170,9 +171,7 @@ describe('photo extension helper', () => {
 })
 
 // Containment edge cases (mutation audit 14.10.2026). Dropping the path
-// separator from the containment prefix left every test green, and the
-// existing `../` test aims at a file that does not exist, so it passes on
-// the "file does not exist" branch without ever reaching containment.
+// separator from the containment prefix left every test green.
 describe('resolveInsideWorkspace — containment prefix', () => {
   test('rejects a sibling directory that shares the workspace name as a prefix', () => {
     const parent = mkdtempSync(join(tmpdir(), 'dashi-paths-parent-'))
@@ -190,27 +189,6 @@ describe('resolveInsideWorkspace — containment prefix', () => {
       )
     } finally {
       rmSync(parent, { recursive: true, force: true })
-    }
-  })
-
-  test('rejects ../ traversal to a file that DOES exist outside', () => {
-    const { ws, cleanup } = makeWorkspace()
-    const out = makeOutside()
-    try {
-      writeFileSync(join(out.outside, 'pwned.txt'), 'x')
-      const traversal = join('..', basename(out.outside), 'pwned.txt')
-      let message = ''
-      try {
-        resolveInsideWorkspace(traversal, ws)
-      } catch (err) {
-        message = err instanceof Error ? err.message : String(err)
-      }
-      expect(message).toMatch(/outside workspace/)
-      // Must be refused for containment, not because the file is missing.
-      expect(message).not.toMatch(/does not exist/)
-    } finally {
-      cleanup()
-      out.cleanup()
     }
   })
 })
