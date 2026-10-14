@@ -1450,3 +1450,14 @@ describe('git-exec-surface round-13 — config family is POSITION/SUBCOMMAND gat
     expect(classify('Bash', { command: 'git config user.name x' }, VARIANT1).tier).toBe('allow')
   })
 })
+
+// Mutation audit 14.10.2026: `--no-preserve-root` with only ONE of -r/-f
+// could stop being catastrophic without any test going red.
+describe('catastrophic rm — --no-preserve-root with a single flag', () => {
+  for (const cmd of ['rm --no-preserve-root -r /', 'rm -r --no-preserve-root /', 'rm --no-preserve-root -f /']) {
+    test(`denies: ${cmd}`, () => {
+      const r = classify('Bash', { command: cmd }, VARIANT1)
+      expect(r.tier).toBe('deny')
+    })
+  }
+})
