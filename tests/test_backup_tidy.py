@@ -14,7 +14,11 @@ What must hold:
 - right before each delete the copy is hashed again; one that changed since it
   was packed (even to the same size) stays where it is;
 - --dry-run changes nothing;
-- the owner hears one plain line only when something was archived.
+- the owner hears one plain line only when something was archived or an old
+  archive was removed; «N старых копий» is declined right for every N;
+- archives of our own (old-copies-YYYYMMDD-HHMM[-N].tar.gz in archive/old-copies)
+  older than ARCHIVE_KEEP_DAYS (45) by the stamp in their name are deleted;
+  nothing else in that folder is ever touched; --dry-run only lists them.
 """
 
 from __future__ import annotations
@@ -29,6 +33,7 @@ import tempfile
 import time
 import unittest
 from contextlib import redirect_stdout
+from datetime import datetime, timedelta
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
 from unittest.mock import patch
@@ -329,6 +334,160 @@ class RunTest(Fixture):
         self.assertIn("6 копий", out)
         self.assertIn("feed-2.xlsx", out)
         self.assertIn("tg-send.py", out)
+
+
+def make_archive(folder: Path, stamp: datetime, age_days: float, size: int = 2048,
+                 suffix: str = "") -> Path:
+    """A file named like the tool's own archive for `stamp`, mtime `age_days` ago."""
+    name = f"old-copies-{stamp.strftime('%Y%m%d-%H%M')}{suffix}.tar.gz"
+    return make(folder / name, age_days, size)
+
+
+class PluralTest(unittest.TestCase):
+    def test_copies_declined_for_every_n(self) -> None:
+        cases = {
+            1: "Прибрал 1 старую копию файла, освободил 1 МБ. "
+               "Она в архиве, если понадобится — скажите.",
+            2: "Прибрал 2 старые копии файлов, освободил 1 МБ. "
+               "Они в архиве, если понадобятся — скажите.",
+            4: "Прибрал 4 старые копии файлов",
+            5: "Прибрал 5 старых копий файлов",
+            11: "Прибрал 11 старых копий файлов",
+            12: "Прибрал 12 старых копий файлов",
+            14: "Прибрал 14 старых копий файлов",
+            21: "Прибрал 21 старую копию файлов",
+            22: "Прибрал 22 старые копии файлов",
+            111: "Прибрал 111 старых копий файлов",
+            112: "Прибрал 112 старых копий файлов",
+            101: "Прибрал 101 старую копию файлов",
+        }
+        for n, text in cases.items():
+            self.assertTrue(tidy.owner_message(n, MB_BYTES).startswith(text),
+                            (n, tidy.owner_message(n, MB_BYTES)))
+
+    def test_plural_helper(self) -> None:
+        forms = ("архив", "архива", "архивов")
+        for n, want in [(0, "архивов"), (1, "архив"), (3, "архива"), (5, "архивов"),
+                        (11, "архивов"), (13, "архивов"), (21, "архив"), (24, "архива"),
+                        (25, "архивов"), (1011, "архивов")]:
+            self.assertEqual(tidy.ru_plural(n, *forms), want, n)
+
+
+MB_BYTES = 1024 * 1024
+
+
+class ArchivePruneTest(Fixture):
+    """Own archives older than 45 days go; fresh ones and foreign files stay."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.folder = self.ws / "archive" / "old-copies"
+        now_dt = datetime.fromtimestamp(self.now)
+        self.stale = [
+            make_archive(self.folder, now_dt - timedelta(days=60), 60, 3 * MB_BYTES),
+            make_archive(self.folder, now_dt - timedelta(days=50), 50, MB_BYTES, suffix="-2"),
+        ]
+        self.fresh = [
+            make_archive(self.folder, now_dt - timedelta(days=10), 10),
+            make_archive(self.folder, now_dt - timedelta(days=44), 44),
+        ]
+        # look like ours by mtime only, or sit in the folder: never ours to delete
+        self.foreign = [
+            make(self.folder / "notes.txt", 400),
+            make(self.folder / "old-copies-manual.tar.gz", 400),
+            make(self.folder / "old-copies-20250101-0000.tar.gz.keep", 400),
+            make(self.folder / "my-old-copies-20250101-0000.tar.gz", 400),
+            make(self.folder / "old-copies-20251399-0000.tar.gz", 400),
+            make(self.folder / "sub" / "old-copies-20250101-0000.tar.gz", 400),
+            make(self.ws / "archive" / "old-copies-20250101-0000.tar.gz", 400),
+        ]
+
+    def test_constant_is_named(self) -> None:
+        self.assertEqual(tidy.ARCHIVE_KEEP_DAYS, 45)
+
+    def test_archive_name_pattern(self) -> None:
+        self.assertTrue(tidy.ARCHIVE_NAME_RE.fullmatch("old-copies-20261001-0400.tar.gz"))
+        self.assertTrue(tidy.ARCHIVE_NAME_RE.fullmatch("old-copies-20261001-0400-3.tar.gz"))
+        for name in ["old-copies-manual.tar.gz", "x-old-copies-20261001-0400.tar.gz",
+                     "old-copies-20261001-0400.tar.gz.part",
+                     ".old-copies-20261001-0400.tar.gz.part"]:
+            self.assertIsNone(tidy.ARCHIVE_NAME_RE.fullmatch(name), name)
+
+    def test_stale_by_name_stamp_not_mtime(self) -> None:
+        """A restored/copied archive gets a fresh mtime; the name stamp still rules."""
+        now_dt = datetime.fromtimestamp(self.now)
+        restored = make_archive(self.folder, now_dt - timedelta(days=90), 0)
+        touched_new = make_archive(self.folder, now_dt - timedelta(days=5), 100)
+        picked = set(tidy.select_stale_archives(self.ws, self.now))
+        self.assertIn(restored, picked)
+        self.assertNotIn(touched_new, picked)
+
+    def test_selects_only_own_stale_archives(self) -> None:
+        picked = set(tidy.select_stale_archives(self.ws, self.now))
+        self.assertEqual(picked, set(self.stale))
+
+    def test_symlink_archive_is_not_deleted(self) -> None:
+        target = make(self.ws / "elsewhere.bin", 400)
+        now_dt = datetime.fromtimestamp(self.now)
+        link = self.folder / f"old-copies-{(now_dt - timedelta(days=80)).strftime('%Y%m%d-%H%M')}.tar.gz"
+        link.symlink_to(target)
+        self.assertNotIn(link, set(tidy.select_stale_archives(self.ws, self.now)))
+
+    def test_run_deletes_stale_keeps_rest_and_tells_owner(self) -> None:
+        code, _, sent = self.run_tidy()
+        self.assertEqual(code, 0)
+        for p in self.stale:
+            self.assertFalse(p.exists(), p)
+        for p in [*self.fresh, *self.foreign]:
+            self.assertTrue(p.exists(), p)
+        self.assertEqual(len(sent), 1)
+        self.assertIn("Прибрал 6 старых копий файлов", sent[0])
+        self.assertIn("Удалил 2 старых архива копий старше 45 дней (4 МБ)", sent[0])
+        log = (self.ws / "logs" / "backup-tidy.log").read_text(encoding="utf-8")
+        for p in self.stale:
+            self.assertIn(p.name, log)
+
+    def test_prunes_even_when_no_copies_to_archive(self) -> None:
+        for p in self.expected_archived():
+            p.unlink()
+        code, _, sent = self.run_tidy()
+        self.assertEqual(code, 0)
+        for p in self.stale:
+            self.assertFalse(p.exists(), p)
+        self.assertEqual(
+            sent,
+            ["Удалил 2 старых архива копий старше 45 дней, освободил 4 МБ."],
+        )
+
+    def test_failed_archive_check_prunes_nothing(self) -> None:
+        def broken(ws: Path, files: list[Path], dest: Path) -> dict[str, str]:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"garbage")
+            return {}
+
+        with patch.object(tidy, "build_archive", side_effect=broken):
+            code, _, _ = self.run_tidy()
+        self.assertNotEqual(code, 0)
+        for p in self.stale:
+            self.assertTrue(p.exists(), p)
+
+    def test_dry_run_lists_and_deletes_nothing(self) -> None:
+        before = {p: p.stat().st_mtime for p in self.ws.rglob("*")}
+        code, out, sent = self.run_tidy("--dry-run")
+        self.assertEqual(code, 0)
+        self.assertEqual(sent, [])
+        self.assertEqual(before, {p: p.stat().st_mtime for p in self.ws.rglob("*")})
+        self.assertIn("Удалил бы 2 старых архива копий старше 45 дней, 4 МБ", out)
+        for p in self.stale:
+            self.assertIn(p.name, out)
+        for p in [*self.fresh, *self.foreign]:
+            self.assertNotIn(p.name, out)
+
+    def test_archive_folder_symlink_is_left_alone(self) -> None:
+        real = self.ws / "elsewhere"
+        self.folder.rename(real)
+        self.folder.symlink_to(real, target_is_directory=True)
+        self.assertEqual(tidy.select_stale_archives(self.ws, self.now), [])
 
 
 if __name__ == "__main__":
