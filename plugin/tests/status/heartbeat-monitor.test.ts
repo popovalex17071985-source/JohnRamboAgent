@@ -380,3 +380,20 @@ describe('isolation — best-effort, never throws', () => {
     expect(h.pins).toEqual([])
   })
 })
+
+// Mutation audit 14.10.2026: the owner-only guard in observePane could be
+// removed without any test going red — the existing non-owner test observes
+// the pane once, which only seeds a baseline and can never alert. A frozen
+// pane in a non-owner (group) chat must not get the dead-man alert.
+describe('dead-man alert — owner-only', () => {
+  test('a frozen pane in a non-owner chat never alerts that chat', () => {
+    const h = make({ isOwnerChat: () => false })
+    h.outbound = h.now
+    h.monitor.observePane(CHAT, 'frame-A', h.now, true)
+    h.now += 11 * MIN
+    h.monitor.observePane(CHAT, 'frame-A', h.now, true)
+    h.now += 11 * MIN
+    h.monitor.observePane(CHAT, 'frame-A', h.now, true)
+    expect(h.sends).toEqual([])
+  })
+})
