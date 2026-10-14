@@ -207,7 +207,7 @@ class RunTest(Fixture):
         self.assertEqual(
             tidy.owner_message(6, 3 * 1024 * 1024),
             "Прибрал 6 старых копий файлов, освободил 3 МБ. "
-            "Они в архиве, если понадобятся — скажите.",
+            "Они в архиве полтора месяца, если понадобятся — скажите.",
         )
         self.assertIn("освободил 0,5 МБ", tidy.owner_message(2, 512 * 1024))
 
@@ -347,9 +347,9 @@ class PluralTest(unittest.TestCase):
     def test_copies_declined_for_every_n(self) -> None:
         cases = {
             1: "Прибрал 1 старую копию файла, освободил 1 МБ. "
-               "Она в архиве, если понадобится — скажите.",
+               "Она в архиве полтора месяца, если понадобится — скажите.",
             2: "Прибрал 2 старые копии файлов, освободил 1 МБ. "
-               "Они в архиве, если понадобятся — скажите.",
+               "Они в архиве полтора месяца, если понадобятся — скажите.",
             4: "Прибрал 4 старые копии файлов",
             5: "Прибрал 5 старых копий файлов",
             11: "Прибрал 11 старых копий файлов",
@@ -364,6 +364,15 @@ class PluralTest(unittest.TestCase):
         for n, text in cases.items():
             self.assertTrue(tidy.owner_message(n, MB_BYTES).startswith(text),
                             (n, tidy.owner_message(n, MB_BYTES)))
+
+    def test_keep_period_follows_the_constant(self) -> None:
+        """45 days reads «полтора месяца»; any other value is «N дней», declined."""
+        for days, period in [(30, "30 дней"), (21, "21 день"), (3, "3 дня"), (60, "60 дней")]:
+            with patch.object(tidy, "ARCHIVE_KEEP_DAYS", days):
+                self.assertIn(f"Они в архиве {period}, если понадобятся",
+                              tidy.owner_message(5, MB_BYTES), days)
+                self.assertIn(f"Она в архиве {period}, если понадобится",
+                              tidy.owner_message(1, MB_BYTES), days)
 
     def test_plural_helper(self) -> None:
         forms = ("архив", "архива", "архивов")
