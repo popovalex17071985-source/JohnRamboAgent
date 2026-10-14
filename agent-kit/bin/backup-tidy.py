@@ -253,6 +253,11 @@ def ru_plural(n: int, one: str, few: str, many: str) -> str:
     return many
 
 
+def copies_phrase(count: int) -> str:
+    """«1 копия», «22 копии», «6 копий»."""
+    return f"{count} {ru_plural(count, 'копия', 'копии', 'копий')}"
+
+
 def archives_phrase(count: int) -> str:
     """«2 старых архива копий старше 45 дней»."""
     noun = ru_plural(count, "старый архив", "старых архива", "старых архивов")
@@ -368,9 +373,10 @@ def dry_run(ws: Path, groups: dict[tuple[Path, str], list[Path]], old: list[Path
     sizes = sizes_of(old)
     total = sum(len(files) for files in groups.values())
     print("Пробный прогон -- ничего не меняю.")
+    left = total - len(old)
     print(
-        f"В архив ушли бы {len(old)} копий, {fmt_mb(sum(sizes.values()))} МБ; "
-        f"остались бы {total - len(old)} копий."
+        f"В архив ушло бы: {copies_phrase(len(old))}, {fmt_mb(sum(sizes.values()))} МБ; "
+        f"осталось бы: {copies_phrase(left)}."
     )
     per_group: dict[str, list[int]] = defaultdict(lambda: [0, 0])
     for path, size in sizes.items():
