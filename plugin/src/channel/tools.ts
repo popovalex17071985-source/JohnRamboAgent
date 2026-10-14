@@ -18,7 +18,7 @@ import type { ReactionTypeEmoji } from 'grammy/types'
 import { z } from 'zod'
 
 import type { AppConfig, StatePaths } from '../config.js'
-import { resolveAskGuardMode } from '../config.js'
+import { resolveAskGuardMode, resolveOwnerChatIds } from '../config.js'
 import { fetchTelegramFile } from '../telegram/media.js'
 import { journalSentOutbound } from './outbound-journal.js'
 import type { Logger } from '../log.js'
@@ -760,9 +760,11 @@ export async function callTool(req: CallToolRequest, deps: ToolDeps): Promise<Ca
         // attachment then refused). Canonical paths come back from the gate
         // and we use those for sendDocument/sendPhoto below.
         const canonicalFiles: string[] = []
+        // Secret files (.env, keys) go only to the owner's own DM (owner 14.10.2026).
+        const ownerDm = resolveOwnerChatIds(config).includes(Number(args.chat_id))
         for (const f of files) {
           try {
-            canonicalFiles.push(assertSendableFile({ filePath: f, config }))
+            canonicalFiles.push(assertSendableFile({ filePath: f, config, allowSecrets: ownerDm }))
           } catch (err) {
             return toolError(name, err instanceof Error ? err.message : String(err))
           }

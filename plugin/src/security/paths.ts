@@ -109,6 +109,9 @@ export function resolveInsideWorkspace(filePath: string, workspaceRoot: string):
 export interface SendableFileChecks {
   filePath: string
   config: AppConfig
+  /** The recipient is the owner's own DM: secret files are allowed there
+   *  (owner 14.10.2026). Every other chat gets the denylist. */
+  allowSecrets?: boolean
 }
 
 // assertSendableFile
@@ -122,7 +125,7 @@ export interface SendableFileChecks {
 // Returns the canonical resolved path; callers should use this when
 // invoking Telegram sendDocument/sendPhoto so we ship the canonical file,
 // not the user-supplied path.
-export function assertSendableFile({ filePath, config }: SendableFileChecks): string {
+export function assertSendableFile({ filePath, config, allowSecrets = false }: SendableFileChecks): string {
   if (config.workspace_root === undefined) {
     throw new Error('files attachment rejected: TELEGRAM_WORKSPACE_ROOT not configured')
   }
@@ -141,8 +144,9 @@ export function assertSendableFile({ filePath, config }: SendableFileChecks): st
   const requestedRel = relative(canonicalWorkspace, resolve(canonicalWorkspace, filePath))
   const canonicalRel = relative(canonicalWorkspace, canonical)
   if (
-    isSecretAttachmentPath(requestedRel.split(sep).join('/')) ||
-    isSecretAttachmentPath(canonicalRel.split(sep).join('/'))
+    !allowSecrets &&
+    (isSecretAttachmentPath(requestedRel.split(sep).join('/')) ||
+      isSecretAttachmentPath(canonicalRel.split(sep).join('/')))
   ) {
     throw new Error(`refusing to send secret file: ${filePath}`)
   }
