@@ -132,7 +132,11 @@ export function assertSendableFile({ filePath, config }: SendableFileChecks): st
   // Secret denylist on BOTH the requested path and the real path (an
   // innocently named symlink can resolve into `.env`). Matched relative to the
   // workspace — containment is already proven — so where the workspace itself
-  // lives (e.g. under a dot-dir) can never block every file.
+  // lives (e.g. under a dot-dir) can never block every file. "Requested" is the
+  // lexical path (path math, no symlink resolution); the realpath check below
+  // covers symlinked parents. Known gap, same as the group outbox: a hardlink
+  // under an innocent name is indistinguishable from a regular file here — it
+  // needs a prior deliberate `ln` by the agent, which the permission gate sees.
   const canonicalWorkspace = realpathSync(config.workspace_root)
   const requestedRel = relative(canonicalWorkspace, resolve(canonicalWorkspace, filePath))
   const canonicalRel = relative(canonicalWorkspace, canonical)
