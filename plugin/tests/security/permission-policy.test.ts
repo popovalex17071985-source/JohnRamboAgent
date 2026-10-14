@@ -1471,3 +1471,22 @@ describe('catastrophic find — -execdir on a root scope', () => {
     })
   }
 })
+
+// Mutation audit 14.10.2026: no test had an operator DENY and an operator
+// ALLOW matching the same command, so letting allow win over deny left the
+// suite green. Deny must always take precedence.
+describe('operator deny beats operator allow on the same command', () => {
+  const MIXED: PermissionPolicy = {
+    default_tier: 'confirm',
+    deny: { bash_patterns: ['deploy.sh --prod'] },
+    allow: { bash_patterns: ['deploy.sh'] },
+  }
+  test('the narrower deny wins over the broader allow', () => {
+    const v = classify('Bash', { command: './deploy.sh --prod now' }, MIXED)
+    expect(v.tier).toBe('deny')
+    expect(v.matchedRule).toBe('deny:bash_patterns:deploy.sh --prod')
+  })
+  test('the allow still applies where the deny does not match', () => {
+    expect(classify('Bash', { command: './deploy.sh --staging' }, MIXED).tier).toBe('allow')
+  })
+})
