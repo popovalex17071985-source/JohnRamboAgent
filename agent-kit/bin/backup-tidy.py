@@ -15,7 +15,19 @@ and exits non-zero. Right before each delete the copy is hashed again: one that
 changed since it was packed (even to the same size) stays and is logged. Files
 that are not copies are never touched.
 
-The owner hears one plain line only when something was archived.
+Our own archives live ARCHIVE_KEEP_DAYS (45, about 1.5 months): an archive in
+archive/old-copies whose name is exactly ours (`old-copies-YYYYMMDD-HHMM.tar.gz`,
+optionally `-N` before `.tar.gz`) and whose name stamp is older than that is
+deleted. Age comes from the stamp in the name, not from mtime: the tool writes
+the stamp once at creation and nothing changes it, while mtime is reset by a
+restore, a copy or rsync without -t and would keep such an archive forever (or
+make a touched one look old). Only regular files directly in that folder are
+considered; anything else there -- other names, subfolders, symlinks, a
+symlinked folder -- is never touched. If the copy archive fails its check, no
+old archive is deleted in that run either.
+
+The owner hears one plain line only when something was archived or an old
+archive was deleted.
 
 Usage: backup-tidy.py [--workspace DIR] [--dry-run]
 """
@@ -38,6 +50,9 @@ from pathlib import Path
 
 KEEP_NEWEST = 5
 KEEP_YOUNGER_DAYS = 14
+ARCHIVE_KEEP_DAYS = 45  # our own archives older than this (by name stamp) are deleted
+# How a keep period reads to the owner; any other value is «N дней».
+NAMED_PERIODS = {45: "полтора месяца"}
 SECONDS_PER_DAY = 86400
 MB = 1024 * 1024
 WHOLE_MB_FROM = 10  # below this many MB the message shows one decimal
@@ -46,6 +61,10 @@ NOTIFY_TIMEOUT_S = 30
 READ_CHUNK = 1024 * 1024
 
 ARCHIVE_REL = Path("archive") / "old-copies"
+ARCHIVE_PREFIX = "old-copies-"
+ARCHIVE_STAMP_FMT = "%Y%m%d-%H%M"
+# Exactly the names archive_path() produces; nothing else in the folder is ours.
+ARCHIVE_NAME_RE = re.compile(r"old-copies-(?P<stamp>[0-9]{8}-[0-9]{4})(?:-[0-9]+)?\.tar\.gz")
 LOG_REL = Path("logs") / "backup-tidy.log"
 # Never descend into these by name: VCS internals, dependency trees, caches and
 # toolchains. A package cache may ship its own *.orig files; they are not ours.
@@ -225,11 +244,57 @@ def fmt_mb(size: int) -> str:
     return text[:-2] if text.endswith(",0") else text
 
 
-def owner_message(count: int, freed: int) -> str:
-    return (
-        f"Прибрал {count} старых копий файлов, освободил {fmt_mb(freed)} МБ. "
-        "Они в архиве, если понадобятся — скажите."
-    )
+def ru_plural(n: int, one: str, few: str, many: str) -> str:
+    """Russian noun form for `n`: 1/21/101 -> one, 2-4/22-24 -> few, rest (and 11-14) -> many."""
+    if n % 100 in range(11, 15):
+        return many
+    if n % 10 == 1:
+        return one
+    if n % 10 in (2, 3, 4):
+        return few
+    return many
+
+
+def copies_phrase(count: int) -> str:
+    """«1 копия», «22 копии», «6 копий»."""
+    return f"{count} {ru_plural(count, 'копия', 'копии', 'копий')}"
+
+
+def keep_period() -> str:
+    """How long an archive is kept, in words: «полтора месяца», «30 дней», «21 день»."""
+    named = NAMED_PERIODS.get(ARCHIVE_KEEP_DAYS)
+    if named:
+        return named
+    days = ru_plural(ARCHIVE_KEEP_DAYS, "день", "дня", "дней")
+    return f"{ARCHIVE_KEEP_DAYS} {days}"
+
+
+def archives_phrase(count: int) -> str:
+    """«2 старых архива копий старше 45 дней»."""
+    noun = ru_plural(count, "старый архив", "старых архива", "старых архивов")
+    days = ru_plural(ARCHIVE_KEEP_DAYS, "дня", "дней", "дней")
+    return f"{count} {noun} копий старше {ARCHIVE_KEEP_DAYS} {days}"
+
+
+def owner_message(count: int, freed: int, archives_removed: int = 0,
+                  archives_bytes: int = 0) -> str:
+    parts: list[str] = []
+    if count:
+        noun = ru_plural(count, "старую копию", "старые копии", "старых копий")
+        files = "файла" if count == 1 else "файлов"
+        period = keep_period()
+        tail = (
+            f"Она в архиве {period}, если понадобится — скажите." if count == 1
+            else f"Они в архиве {period}, если понадобятся — скажите."
+        )
+        parts.append(f"Прибрал {count} {noun} {files}, освободил {fmt_mb(freed)} МБ. {tail}")
+    if archives_removed:
+        size = fmt_mb(archives_bytes)
+        if count:
+            parts.append(f"Удалил {archives_phrase(archives_removed)} ({size} МБ).")
+        else:
+            parts.append(f"Удалил {archives_phrase(archives_removed)}, освободил {size} МБ.")
+    return " ".join(parts)
 
 
 def log(ws: Path, line: str) -> None:
@@ -252,7 +317,7 @@ def notify(ws: Path, text: str) -> None:
 
 
 def archive_path(ws: Path, now: float) -> Path:
-    base = f"old-copies-{datetime.fromtimestamp(now).strftime('%Y%m%d-%H%M')}"
+    base = f"{ARCHIVE_PREFIX}{datetime.fromtimestamp(now).strftime(ARCHIVE_STAMP_FMT)}"
     folder = ws / ARCHIVE_REL
     dest = folder / f"{base}.tar.gz"
     n = 2
@@ -260,6 +325,49 @@ def archive_path(ws: Path, now: float) -> Path:
         dest = folder / f"{base}-{n}.tar.gz"
         n += 1
     return dest
+
+
+def select_stale_archives(ws: Path, now: float) -> list[Path]:
+    """Our own archives whose name stamp is older than ARCHIVE_KEEP_DAYS.
+
+    Only regular files directly in archive/old-copies with exactly our name; a
+    symlinked folder, symlinks, subfolders and foreign names are never picked.
+    """
+    folder = ws / ARCHIVE_REL
+    if folder.is_symlink() or not folder.is_dir():
+        return []
+    cut = now - ARCHIVE_KEEP_DAYS * SECONDS_PER_DAY
+    picked: list[Path] = []
+    for path in folder.iterdir():
+        match = ARCHIVE_NAME_RE.fullmatch(path.name)
+        if match is None:
+            continue
+        try:
+            made = datetime.strptime(match.group("stamp"), ARCHIVE_STAMP_FMT).timestamp()
+            if not stat.S_ISREG(path.lstat().st_mode):
+                continue
+        except (ValueError, OSError):
+            continue
+        if made < cut:
+            picked.append(path)
+    return sorted(picked)
+
+
+def prune_archives(ws: Path, now: float) -> tuple[int, int]:
+    """Delete our stale archives; returns (count, bytes) actually removed."""
+    removed = 0
+    removed_bytes = 0
+    for path, size in sizes_of(select_stale_archives(ws, now)).items():
+        rel = path.relative_to(ws).as_posix()
+        try:
+            path.unlink()
+        except OSError as exc:
+            log(ws, f"не смог удалить старый архив {rel}: {exc}")
+            continue
+        log(ws, f"удалил старый архив {rel} ({fmt_mb(size)} МБ), старше {ARCHIVE_KEEP_DAYS} дней")
+        removed += 1
+        removed_bytes += size
+    return removed, removed_bytes
 
 
 def sizes_of(files: list[Path]) -> dict[Path, int]:
@@ -272,13 +380,15 @@ def sizes_of(files: list[Path]) -> dict[Path, int]:
     return out
 
 
-def dry_run(ws: Path, groups: dict[tuple[Path, str], list[Path]], old: list[Path]) -> int:
+def dry_run(ws: Path, groups: dict[tuple[Path, str], list[Path]], old: list[Path],
+            stale: list[Path]) -> int:
     sizes = sizes_of(old)
     total = sum(len(files) for files in groups.values())
     print("Пробный прогон -- ничего не меняю.")
+    left = total - len(old)
     print(
-        f"В архив ушли бы {len(old)} копий, {fmt_mb(sum(sizes.values()))} МБ; "
-        f"остались бы {total - len(old)} копий."
+        f"В архив ушло бы: {copies_phrase(len(old))}, {fmt_mb(sum(sizes.values()))} МБ; "
+        f"осталось бы: {copies_phrase(left)}."
     )
     per_group: dict[str, list[int]] = defaultdict(lambda: [0, 0])
     for path, size in sizes.items():
@@ -288,17 +398,39 @@ def dry_run(ws: Path, groups: dict[tuple[Path, str], list[Path]], old: list[Path
     top = sorted(per_group.items(), key=lambda kv: (-kv[1][1], -kv[1][0], kv[0]))
     for name, (count, size) in top[:TOP_GROUPS]:
         print(f"  {name}: копий {count}, {fmt_mb(size)} МБ")
+    stale_sizes = sizes_of(stale)
+    if stale_sizes:
+        print(
+            f"Удалил бы {archives_phrase(len(stale_sizes))}, "
+            f"{fmt_mb(sum(stale_sizes.values()))} МБ:"
+        )
+        for path, size in stale_sizes.items():
+            print(f"  {path.relative_to(ws).as_posix()}: {fmt_mb(size)} МБ")
+    else:
+        print(f"Архивов старше {ARCHIVE_KEEP_DAYS} дней нет -- удалять нечего.")
     return 0
 
 
 def run(ws: Path, now: float) -> int:
     groups = find_copies(ws)
     old = select_old(groups, now)
-    if not old:
+    removed, freed = 0, 0
+    if old:
+        result = archive_copies(ws, old, now)
+        if result is None:
+            return 1
+        removed, freed = result
+    else:
         total = sum(len(files) for files in groups.values())
         log(ws, f"нечего убирать: копий {total}, все свежие или в пятёрке новых")
-        return 0
+    archives_removed, archives_bytes = prune_archives(ws, now)
+    if removed or archives_removed:
+        notify(ws, owner_message(removed, freed, archives_removed, archives_bytes))
+    return 0
 
+
+def archive_copies(ws: Path, old: list[Path], now: float) -> tuple[int, int] | None:
+    """Pack, verify, then remove `old`; (removed, freed bytes), None on a failed check."""
     dest = archive_path(ws, now)
     part = dest.with_name(f".{dest.name}.part")
     try:
@@ -314,7 +446,7 @@ def run(ws: Path, now: float) -> int:
         )
         log(ws, msg)
         print(msg, file=sys.stderr)
-        return 1
+        return None
     part.rename(dest)
 
     removed = 0
@@ -342,9 +474,7 @@ def run(ws: Path, now: float) -> int:
         f"убрал {removed} копий ({fmt_mb(removed_bytes)} МБ) в "
         f"{dest.relative_to(ws).as_posix()}, освобождено {fmt_mb(freed)} МБ",
     )
-    if removed:
-        notify(ws, owner_message(removed, freed))
-    return 0
+    return removed, freed
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -359,7 +489,7 @@ def main(argv: list[str] | None = None) -> int:
     now = time.time()
     if args.dry_run:
         groups = find_copies(ws)
-        return dry_run(ws, groups, select_old(groups, now))
+        return dry_run(ws, groups, select_old(groups, now), select_stale_archives(ws, now))
     return run(ws, now)
 
 
