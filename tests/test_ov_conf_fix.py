@@ -11,6 +11,7 @@ import importlib.util
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -190,6 +191,99 @@ class InstallersPinV050Test(unittest.TestCase):
         fix = text.index("ov-conf-fix.py")
         start = text.index("docker start openviking")
         self.assertLess(fix, start)
+
+
+class InstallKitRunsFixTest(unittest.TestCase):
+    """`dashi-ctl update` and /update run install-kit.sh as the agent user, where
+    setup-memory.sh skips (no root) -- so the kit pins ov.conf itself, or an agent
+    updated that way loses its memory on the next image (>=0.4.21)."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        # A copy of the kit without setup-memory.sh: the test must not start
+        # docker/systemd even when run as root.
+        self.kit = root / "agent-kit"
+        shutil.copytree(REPO_ROOT / "agent-kit", self.kit,
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        (self.kit / "scripts" / "setup-memory.sh").unlink()
+        self.ws = root / "ws"
+        (self.ws / ".claude").mkdir(parents=True)
+        self.ov = root / "ov"
+        self.health = root / "health.json"
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def _ov(self, conf: dict, threshold: float | None = None) -> None:
+        (self.ov / "appdata").mkdir(parents=True)
+        (self.ov / "ov.conf").write_text(json.dumps(conf))
+        os.chmod(self.ov / "ov.conf", 0o600)
+        if threshold is not None:
+            plugin = self.ov / "claude-code-memory-plugin" / "config.json"
+            plugin.parent.mkdir()
+            plugin.write_text(json.dumps({"agentId": "x", "scoreThreshold": threshold}))
+
+    def _kit(self, version: str | None = "v0.5.0", **extra: str) -> subprocess.CompletedProcess:
+        if version is not None:
+            self.health.write_text(json.dumps({"status": "ok", "version": version}))
+        env = {**os.environ, "KIT_NO_CRON": "1", "KIT_OV_DIR": str(self.ov),
+               "KIT_OV_HEALTH_URL": self.health.as_uri(), **extra}
+        env.pop("KIT_NO_MEMORY", None)
+        if "KIT_NO_MEMORY" in extra:
+            env["KIT_NO_MEMORY"] = extra["KIT_NO_MEMORY"]
+        r = subprocess.run(["bash", str(self.kit / "install-kit.sh"),
+                            "--claude-dir", str(self.ws / ".claude"), "--chat-id", "42",
+                            "--agent", "smoke", "--tz", "UTC"],
+                           capture_output=True, text=True, env=env)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        return r
+
+    def _conf(self) -> dict:
+        return json.loads((self.ov / "ov.conf").read_text())
+
+    def _threshold(self) -> float:
+        path = self.ov / "claude-code-memory-plugin" / "config.json"
+        return json.loads(path.read_text())["scoreThreshold"]
+
+    def test_unpinned_conf_gets_pinned_and_threshold_follows_server(self) -> None:
+        self._ov(BASE_CONF, threshold=0.25)
+        r = self._kit("v0.5.0")
+        self.assertEqual(self._conf()["storage"]["workspace"], "/app/data")
+        self.assertEqual(self._conf()["embedding"], BASE_CONF["embedding"])
+        self.assertEqual(stat.S_IMODE((self.ov / "ov.conf").stat().st_mode), 0o600)
+        self.assertEqual(self._threshold(), 0.625)
+        self.assertIn("/app/data", r.stdout)
+
+    def test_pinned_conf_and_owner_values_are_a_noop(self) -> None:
+        self._ov({**BASE_CONF, "storage": {"workspace": "/srv/ov"}}, threshold=0.4)
+        conf_before = (self.ov / "ov.conf").read_bytes()
+        self._kit("v0.5.0")
+        self._kit("v0.5.0")
+        self.assertEqual((self.ov / "ov.conf").read_bytes(), conf_before)
+        self.assertEqual(self._threshold(), 0.4)
+
+    def test_no_openviking_dir_is_fine(self) -> None:
+        self._kit("v0.5.0")
+        self.assertFalse(self.ov.exists())
+
+    def test_server_down_still_pins_and_leaves_threshold(self) -> None:
+        self._ov(BASE_CONF, threshold=0.25)
+        self._kit(None)  # health file never written: curl fails
+        self.assertEqual(self._conf()["storage"]["workspace"], "/app/data")
+        self.assertEqual(self._threshold(), 0.25)
+
+    def test_broken_conf_does_not_fail_the_kit(self) -> None:
+        (self.ov / "appdata").mkdir(parents=True)
+        (self.ov / "ov.conf").write_text("{not json")
+        self._kit("v0.5.0")
+        self.assertEqual((self.ov / "ov.conf").read_text(), "{not json")
+
+    def test_kit_no_memory_leaves_conf_alone(self) -> None:
+        self._ov(BASE_CONF, threshold=0.25)
+        self._kit("v0.5.0", KIT_NO_MEMORY="1")
+        self.assertNotIn("storage", self._conf())
+        self.assertEqual(self._threshold(), 0.25)
 
 
 if __name__ == "__main__":

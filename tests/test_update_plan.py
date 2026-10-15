@@ -21,6 +21,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "update-plan.py"
 INSTALL_KIT = REPO_ROOT / "agent-kit" / "install-kit.sh"
+OV_CONF_FIX = REPO_ROOT / "agent-kit" / "scripts" / "ov-conf-fix.py"
 
 
 def load_planner():
@@ -74,6 +75,7 @@ class Fixture:
         self.settings = tmp / "settings.json"
         self.bun = tmp / "bun"
         self.bun_log = tmp / "bun.log"
+        self.extra_env: dict[str, str] = {}
         self.set_bun(0)
 
         self.origin.mkdir()
@@ -105,7 +107,7 @@ class Fixture:
     # -- agent side --------------------------------------------------------
     def env(self) -> dict[str, str]:
         return {**GIT_ENV, "KIT_NO_CRON": "1", "KIT_NO_MEMORY": "1",
-                "DASHI_BUN": str(self.bun)}
+                "DASHI_BUN": str(self.bun), **self.extra_env}
 
     def install(self) -> None:
         subprocess.run(
@@ -1372,6 +1374,75 @@ class Merge3Test(unittest.TestCase):
 
     def test_both_sides_delete_is_clean(self):
         self.assertEqual(up._merge3(self.BASE, None, None), (None, True))
+
+
+class OvConfTest(unittest.TestCase):
+    """Both /update paths pin the memory data dir in ov.conf: the bridge through
+    install-kit.sh, kit items alone through update-plan itself (install-kit does
+    not run there). Unpinned, memory looks empty after an image >=0.4.21."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        tmp = Path(self._tmp.name)
+        self.fx = Fixture(tmp)
+        self.ov = tmp / "ov"
+        (self.ov / "appdata").mkdir(parents=True)
+        self.conf = self.ov / "ov.conf"
+        self.conf.write_text(json.dumps({"server": {"host": "127.0.0.1"}}))
+        os.chmod(self.conf, 0o600)
+        plugin = self.ov / "claude-code-memory-plugin" / "config.json"
+        plugin.parent.mkdir()
+        plugin.write_text(json.dumps({"scoreThreshold": 0.25}))
+        self.plugin = plugin
+        health = tmp / "health.json"
+        health.write_text(json.dumps({"status": "ok", "version": "v0.5.0"}))
+        self.fx.extra_env = {"KIT_NO_MEMORY": "0", "KIT_OV_DIR": str(self.ov),
+                             "KIT_OV_HEALTH_URL": health.as_uri()}
+        # the fix ships with the update: only FETCH_HEAD has it, HEAD does not
+        self.fx.write_origin("agent-kit/scripts/ov-conf-fix.py", OV_CONF_FIX.read_text())
+        self.fx.commit("ov-conf-fix в комплекте")
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _pinned(self) -> str | None:
+        return json.loads(self.conf.read_text()).get("storage", {}).get("workspace")
+
+    def _threshold(self) -> float:
+        return json.loads(self.plugin.read_text())["scoreThreshold"]
+
+    def test_bridge_update_pins_through_install_kit(self) -> None:
+        self.fx.standard_update()
+        self.fx.run("plan")
+        self.assertEqual(self.fx.run("apply", "all")["status"], "UPDATED")
+        self.assertEqual(self._pinned(), "/app/data")
+        self.assertEqual(self._threshold(), 0.625)
+
+    def test_kit_items_only_pin_too(self) -> None:
+        self.fx.standard_update()
+        head = self.fx.head()
+        self.fx.run("plan")
+        self.assertEqual(self.fx.run("apply", "2")["status"], "UPDATED")
+        self.assertEqual(self.fx.head(), head)
+        self.assertFalse((self.fx.repo / "agent-kit" / "scripts" / "ov-conf-fix.py").exists())
+        self.assertEqual(self._pinned(), "/app/data")
+        self.assertEqual(self._threshold(), 0.625)
+        self.assertEqual(oct(self.conf.stat().st_mode & 0o777), oct(0o600))
+
+    def test_kit_items_with_no_memory_leave_conf(self) -> None:
+        self.fx.extra_env["KIT_NO_MEMORY"] = "1"
+        self.fx.standard_update()
+        self.fx.run("plan")
+        self.fx.run("apply", "2")
+        self.assertIsNone(self._pinned())
+        self.assertEqual(self._threshold(), 0.25)
+
+    def test_kit_items_without_openviking_are_fine(self) -> None:
+        shutil.rmtree(self.ov)
+        self.fx.standard_update()
+        self.fx.run("plan")
+        self.assertEqual(self.fx.run("apply", "2")["status"], "UPDATED")
+        self.assertFalse(self.ov.exists())
 
 
 if __name__ == "__main__":

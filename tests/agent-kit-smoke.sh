@@ -24,6 +24,9 @@ grep -q "/home/\$SERVICE_USER/.claude/settings.json' --tz" "$INSTALLER" || fail 
 
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/.claude/core"
+# Память того, кто гоняет тест (~/.openviking), комплект трогать не должен:
+# шаг ov.conf смотрит в песочницу, где памяти нет.
+export KIT_OV_DIR="$T/no-openviking"
 # crontab — подменный: комплект пишет в крон, а тест не должен трогать живой
 # крон того, кто его гоняет (раньше спасало только то, что строки уже стояли)
 mkdir -p "$T/shim"; export CRONTAB_FILE="$T/crontab.txt"

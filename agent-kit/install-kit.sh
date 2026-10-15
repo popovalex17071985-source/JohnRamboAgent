@@ -263,6 +263,23 @@ else
   fi
 fi
 
+# Папка данных памяти в ov.conf и порог плагина под шкалу сервера. setup-memory.sh
+# делает то же, но только от root, а dashi-ctl update и /update гоняют комплект от
+# пользователя агента -- там он уходит раньше. Без закрепления агент, обновлённый
+# так, после образа >=0.4.21 стартует на пустой памяти (ov-conf-fix.py).
+# Идемпотентно, чужие явные значения не трогает, обновление не валит.
+# KIT_OV_DIR / KIT_OV_HEALTH_URL -- подмена для тестов.
+# || true внутри: под set -e/pipefail неизвестный getent пользователь валил бы весь комплект.
+OV_DIR="${KIT_OV_DIR:-}"
+[ -n "$OV_DIR" ] || OV_DIR="$(getent passwd "$(stat -c %U "$WORKSPACE" 2>/dev/null || id -un)" \
+  | cut -d: -f6 || true)/.openviking"
+if [ "${KIT_NO_MEMORY:-0}" != "1" ] && [ -s "$OV_DIR/ov.conf" ] && [ -f "$KIT/scripts/ov-conf-fix.py" ]; then
+  OV_VER="$(curl -s -m 5 --noproxy "*" "${KIT_OV_HEALTH_URL:-http://127.0.0.1:1933/health}" 2>/dev/null \
+    | python3 -c 'import json,sys;print(json.load(sys.stdin).get("version",""))' 2>/dev/null || true)"
+  python3 "$KIT/scripts/ov-conf-fix.py" "$OV_DIR" ${OV_VER:+--server-version "$OV_VER"} 2>&1 \
+    | sed 's/^/  [memory] /' || true
+fi
+
 # Долгая память (OpenViking). Ставим сразу, с заделом на будущее: денег не
 # стоит -- эмбеддинги локальные, пересказы на ключе, который уже лежит на этой
 # машине. Не хватает железа или нет docker -- скрипт сам пропускает шаг, а
