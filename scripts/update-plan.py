@@ -1508,8 +1508,10 @@ def ov_dir(ctx: Ctx) -> Path | None:
 
 def ov_server_version() -> str:
     url = os.environ.get("KIT_OV_HEALTH_URL", OV_HEALTH_URL)
+    # No proxies: the server is on this box, a proxy from the env would miss it.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     try:
-        with urllib.request.urlopen(url, timeout=5) as resp:
+        with opener.open(url, timeout=5) as resp:
             data = json.loads(resp.read().decode("utf-8"))
     except (OSError, ValueError):
         return ""
@@ -1540,7 +1542,7 @@ def fix_ov_conf(ctx: Ctx) -> None:
         out = (res.stdout + res.stderr).decode("utf-8", "replace").strip()
         if out:
             log_update(ctx, "ov.conf: " + " | ".join(out.splitlines()))
-    except (OSError, GitError, subprocess.SubprocessError) as err:
+    except (OSError, ValueError, GitError, subprocess.SubprocessError) as err:
         log_update(ctx, f"ov.conf step skipped: {err}")
 
 
