@@ -45,12 +45,14 @@ import hashlib
 import html
 import json
 import os
+import pwd
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Tuple
@@ -69,6 +71,9 @@ MAX_TWEAK_LINES = 3
 MAX_TWEAK_LINE_CHARS = 80
 TEXT_BUDGET = 3800
 SHA_KEY = re.compile(r"[0-9a-f]{7,40}")
+OV_CONF_FIX = "agent-kit/scripts/ov-conf-fix.py"
+OV_HEALTH_URL = "http://127.0.0.1:1933/health"
+OV_TIMEOUT_S = 30
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1479,12 +1484,64 @@ def apply_kit_items(ctx: Ctx, chosen: list[dict[str, Any]], left: list[dict[str,
         render_to(ctx, Path(item["target"]), ctx.render(ctx.git.blob(item["blob"])), stamp)
         applied[item["path"]] = item["blob"]
     ctx.save("update-applied.json", applied)
+    # install-kit.sh does not run on this path, so its ov.conf step goes here.
+    fix_ov_conf(ctx)
     drop_saved_plan(ctx)
     if overwrote:
         log_update(ctx, f"owner files backed up to {ctx.workspace / '.kit-backup' / stamp}")
     return {"status": "UPDATED", "restart": False,
             "text_html": result_text(chosen, left, restart=False, local=local,
                                      overwrote=overwrote, blocked=blocked)}
+
+
+def ov_dir(ctx: Ctx) -> Path | None:
+    """The agent's OpenViking dir (~/.openviking of the workspace owner), as
+    install-kit.sh finds it; KIT_OV_DIR overrides it for tests."""
+    override = os.environ.get("KIT_OV_DIR")
+    if override:
+        return Path(override)
+    try:
+        return Path(pwd.getpwuid(ctx.workspace.stat().st_uid).pw_dir) / ".openviking"
+    except (OSError, KeyError):
+        return None
+
+
+def ov_server_version() -> str:
+    url = os.environ.get("KIT_OV_HEALTH_URL", OV_HEALTH_URL)
+    try:
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except (OSError, ValueError):
+        return ""
+    version = data.get("version") if isinstance(data, dict) else None
+    return version if isinstance(version, str) else ""
+
+
+def fix_ov_conf(ctx: Ctx) -> None:
+    """Same step as install-kit.sh: pin the memory data dir in ov.conf and move the
+    memory plugin's threshold to the server's scale (ov-conf-fix.py). The script
+    is taken from the update itself (ctx.ref), the repo copy is the fallback.
+    Idempotent; never fails the update."""
+    if os.environ.get("KIT_NO_MEMORY", "0") == "1":
+        return
+    ov = ov_dir(ctx)
+    try:
+        if ov is None or not (ov / "ov.conf").is_file() or (ov / "ov.conf").stat().st_size == 0:
+            return
+        blob = ctx.git.file_blob(ctx.ref, OV_CONF_FIX)
+        script = ctx.git.blob(blob) if blob else read_bytes(ctx.repo / OV_CONF_FIX)
+        if not script:
+            return
+        cmd = [sys.executable or "python3", "-", str(ov)]
+        version = ov_server_version()
+        if version:
+            cmd += ["--server-version", version]
+        res = subprocess.run(cmd, input=script, capture_output=True, timeout=OV_TIMEOUT_S)
+        out = (res.stdout + res.stderr).decode("utf-8", "replace").strip()
+        if out:
+            log_update(ctx, "ov.conf: " + " | ".join(out.splitlines()))
+    except (OSError, GitError, subprocess.SubprocessError) as err:
+        log_update(ctx, f"ov.conf step skipped: {err}")
 
 
 def drop_saved_plan(ctx: Ctx) -> None:
