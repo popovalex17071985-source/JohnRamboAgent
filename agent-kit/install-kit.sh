@@ -274,7 +274,7 @@ OV_DIR="${KIT_OV_DIR:-}"
 [ -n "$OV_DIR" ] || OV_DIR="$(getent passwd "$(stat -c %U "$WORKSPACE" 2>/dev/null || id -un)" \
   | cut -d: -f6 || true)/.openviking"
 if [ "${KIT_NO_MEMORY:-0}" != "1" ] && [ -s "$OV_DIR/ov.conf" ] && [ -f "$KIT/scripts/ov-conf-fix.py" ]; then
-  OV_VER="$(curl -s -m 5 "${KIT_OV_HEALTH_URL:-http://127.0.0.1:1933/health}" 2>/dev/null \
+  OV_VER="$(curl -s -m 5 --noproxy "*" "${KIT_OV_HEALTH_URL:-http://127.0.0.1:1933/health}" 2>/dev/null \
     | python3 -c 'import json,sys;print(json.load(sys.stdin).get("version",""))' 2>/dev/null || true)"
   python3 "$KIT/scripts/ov-conf-fix.py" "$OV_DIR" ${OV_VER:+--server-version "$OV_VER"} 2>&1 \
     | sed 's/^/  [memory] /' || true
