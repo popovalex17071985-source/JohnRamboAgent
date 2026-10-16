@@ -1205,13 +1205,14 @@ ok "еженедельная уборка диска включена (поне�
 # облако, кладёт копию за пределы сервера. По желанию: человек сам решает.
 say "Шифрованный бэкап (по желанию)"
 cat <<'EOF'
-    Память, характер и секреты агента лежат только на этом сервере — в GitHub их
-    нет. Если сервер умрёт, всё это пропадёт безвозвратно. Бэкап делает
-    шифрованный слепок этих данных раз в сутки. Если подключишь облако (Google
-    Drive через rclone) — копия уедет за пределы сервера, и тогда после смерти
-    VPS агента можно поднять заново из бэкапа.
-    ВАЖНО: пароль от бэкапа сохрани ОТДЕЛЬНО (не только на этом сервере) — иначе
-    облачную копию нечем будет расшифровать, когда сервер пропадёт.
+    Память, характер, секреты агента и вся его работа (скрипты, данные, проекты в
+    домашней папке) лежат только на этом сервере — в GitHub их нет. Если сервер
+    умрёт, всё это пропадёт безвозвратно. Бэкап делает шифрованный слепок ВСЕЙ
+    домашней папки агента раз в сутки (без кэшей и логов). Если подключишь облако
+    (Google Drive через rclone) — копия уедет за пределы сервера, и тогда после
+    смерти VPS агента можно поднять заново из бэкапа.
+    ВАЖНО: пароль от бэкапа придёт тебе в Telegram файлом — сохрани его в
+    менеджер паролей. Без него облачную копию не расшифровать.
 EOF
 setup_backup=0
 if [[ $ASSUME_YES -eq 1 ]]; then
@@ -1234,13 +1235,35 @@ if [[ $setup_backup -eq 1 ]]; then
   else
     skip "пароль бэкапа уже есть ($PASS_FILE)"
   fi
+  BK_SCRIPTS="$CLAUDE_DIR/dashi-plugin-claude-code/scripts"
+  BK_ENV="DASHI_AGENT=$AGENT_NAME DASHI_WORKSPACE=$WORKSPACE"
   cat > "/etc/cron.d/dashi-$AGENT_NAME-backup" <<EOF
-# Шифрованный бэкап агента $AGENT_NAME — каждый день в 03:40
+# Шифрованный бэкап агента $AGENT_NAME — каждый день в 03:40 (вся домашняя
+# папка минус $WORKSPACE/deploy/backup-exclude.txt).
+# Сторож облачной копии — каждый день в 11:20: нет свежей копии вне сервера
+# дольше 48 ч или облако не настроено -> сообщение хозяину. Всё хорошо -- молчит.
 SHELL=/bin/bash
-40 3 * * * $SERVICE_USER DASHI_AGENT=$AGENT_NAME DASHI_WORKSPACE=$WORKSPACE /bin/bash $CLAUDE_DIR/dashi-plugin-claude-code/scripts/agent-backup.sh >/dev/null 2>&1
+40 3 * * * $SERVICE_USER $BK_ENV /bin/bash $BK_SCRIPTS/agent-backup.sh >/dev/null 2>&1
+20 11 * * * $SERVICE_USER $BK_ENV /bin/bash $BK_SCRIPTS/backup-offsite-watch.sh >/dev/null 2>&1
 EOF
   chmod 644 "/etc/cron.d/dashi-$AGENT_NAME-backup"
-  ok "бэкап включён (ежедневно 03:40, локально в $WORKSPACE/backups)"
+  # Exclude list with sane defaults; the owner edits it, re-runs never overwrite it.
+  runuser -u "$SERVICE_USER" -- env DASHI_AGENT="$AGENT_NAME" DASHI_WORKSPACE="$WORKSPACE" \
+    /bin/bash "$BK_SCRIPTS/agent-backup.sh" --init-excludes >/dev/null 2>&1 || true
+  ok "бэкап включён (ежедневно 03:40: вся домашняя папка агента, локально в $WORKSPACE/backups)"
+  ok "что НЕ идёт в архив: $WORKSPACE/deploy/backup-exclude.txt; пути вне домашки: deploy/backup-extra-paths"
+  ok "сторож облачной копии: ежедневно 11:20, пишет хозяину только когда копии вне сервера нет"
+  # The password must leave the server: send it to the owner as a file through the
+  # agent's own bot. Not delivered (the owner has not pressed Start yet) -> the
+  # daily watchdog retries until it is.
+  if as_agent "test -s '$WORKSPACE/state/backup/password-delivered.json'"; then
+    skip "пароль бэкапа уже у хозяина в Telegram"
+  elif runuser -u "$SERVICE_USER" -- env DASHI_AGENT="$AGENT_NAME" DASHI_WORKSPACE="$WORKSPACE" \
+         /bin/bash "$BK_SCRIPTS/backup-pass-send.sh" >/dev/null 2>&1; then
+    ok "пароль бэкапа отправлен тебе в Telegram файлом -- сохрани его в менеджер паролей"
+  else
+    warn "пароль бэкапа в Telegram не ушёл (нажми Start у бота) -- сторож пришлёт его сам в 11:20"
+  fi
   # Первый архив -- сразу, а не ночью: иначе до первой ночи проверка здоровья
   # пишет «бэкап не настроен», и у свежего агента нет ни одной копии (Смит,
   # переустановка 26.09.2026). Прогон занимает секунды.

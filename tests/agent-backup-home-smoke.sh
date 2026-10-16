@@ -238,4 +238,11 @@ rm -rf "$TG"; pass_send >/dev/null
 pass_send --force >/dev/null; grep -rq sendDocument "$TG" || fail "--force не отправил заново"
 ok "пароль: файлом хозяину, отметка о доставке, повтор только с --force"
 
+# ── 5. the installer wires all of it ────────────────────────────────────────
+I="$PLUGIN/scripts/install-agent.sh"
+grep -q 'backup-offsite-watch.sh' "$I" || fail "установщик не ставит сторожа облачной копии в крон"
+grep -q 'agent-backup.sh" --init-excludes' "$I" || fail "установщик не создаёт список исключений"
+grep -q 'backup-pass-send.sh' "$I" || fail "установщик не отправляет пароль хозяину"
+ok "установщик: крон сторожа, список исключений, пароль хозяину"
+
 echo "✓ agent-backup home smoke ok"
