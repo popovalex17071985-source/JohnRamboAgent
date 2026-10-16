@@ -21,9 +21,9 @@ for c in "$A" "$B"; do
   docker run -d --name "$c" ubuntu:22.04 sleep infinity >/dev/null || fail "контейнер $c не стартовал"
   docker cp "$PLUGIN" "$c:/opt/plugin" >/dev/null
 done
-inA "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq gnupg python3 python3-venv cron jq >/dev/null 2>&1" \
+inA "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq gnupg python3 python3-venv python3-pip cron jq >/dev/null 2>&1" \
   || fail "A: пакеты не встали"
-ok "A: ubuntu 22.04 + gnupg/python3-venv/cron/jq"
+ok "A: ubuntu 22.04 + gnupg/python3-venv/python3-pip/cron/jq"
 
 # ── the old server: an agent with work outside the classic workspace items ──
 inA "adduser --disabled-password --gecos '' agent >/dev/null
@@ -42,10 +42,14 @@ mkdir -p '/opt/shop extra/conf' \$W/deploy; echo 'mode=prod' > '/opt/shop extra/
 echo '/opt/shop extra' > \$W/deploy/backup-extra-paths; chown -R agent:agent \$W/deploy
 mkdir -p \$W/state/backup; echo '{"ts": 1, "method": "rclone", "file": "x.gpg"}' > \$W/state/backup/last-offsite.json; chown -R agent:agent \$W/state
 su - agent -c 'python3 -m venv /home/agent/shop/.venv && /home/agent/shop/.venv/bin/pip install -q six==1.16.0' >/dev/null 2>&1
+su - agent -c 'python3 -m pip install -q --user idna==3.4' >/dev/null 2>&1
 su - agent -c '(echo \"* * * * * /home/agent/.local/bin/tick >> /home/agent/shop/logs/cron.log 2>&1\") | crontab -'
 su - agent -c 'DASHI_AGENT=$AGENT DASHI_WORKSPACE=\$HOME/.claude-lab/$AGENT bash /opt/plugin/scripts/agent-backup.sh'
 ls \$W/backups/*.gpg" >/dev/null || fail "A: бэкап не создан: $(inA "tail -5 /home/agent/.claude-lab/$AGENT/logs/backup.log")"
 inA "tail -3 /home/agent/.claude-lab/$AGENT/logs/backup.log"
+inA "su - agent -c 'python3 -c \"import idna; print(idna.__version__)\"'" | grep -qx 3.4 || fail "A: idna --user не встал"
+n_us="$(inA "gpg --batch --quiet --passphrase '$PASS' -d /home/agent/.claude-lab/$AGENT/backups/*.gpg | tar tzf - | grep -c '/.local/lib/python3'")"
+[[ "$n_us" == 0 ]] && ok "A: пакеты pip --user в архив не пошли" || fail "A: в архиве $n_us записей из ~/.local/lib/python3*"
 ARCH="$(inA "ls /home/agent/.claude-lab/$AGENT/backups/*.gpg | head -1")"
 docker cp "$A:$ARCH" "$WORK/arch.gpg" >/dev/null || fail "архив не скопирован"
 docker rm -f "$A" >/dev/null   # the old server is dead
@@ -77,6 +81,8 @@ inB "su - agent -c '/home/agent/.local/bin/tick' && test -s /home/agent/shop/log
   && ok "скрипт из крона отрабатывает на новом сервере" || fail "скрипт из крона не работает"
 inB "su - agent -c '/home/agent/shop/.venv/bin/python -c \"import six; print(six.__version__)\"' | grep -qx 1.16.0" \
   && ok "venv пересобран тем же python, six==1.16.0 импортируется" || fail "venv не пересобран"
+inB "su - agent -c 'python3 -c \"import idna; print(idna.__version__)\"'" | grep -qx 3.4 \
+  && ok "пакеты pip --user поставлены заново (idna==3.4)" || fail "pip --user пакеты не вернулись"
 inB "command -v jq >/dev/null" && ok "apt-пакет со старого сервера (jq) поставлен" || fail "jq не поставлен"
 inB "grep -q -- '--name $AGENT' /root/installer-called" && ok "установщик вызван" || fail "установщик не вызван"
 inB "grep -q /home/agent/.local/bin/tick /etc/systemd/system/shop-web.service" \
