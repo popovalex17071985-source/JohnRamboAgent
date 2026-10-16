@@ -1,145 +1,315 @@
 #!/usr/bin/env bash
-# Шифрованный бэкап того, чего НЕТ на GitHub: память агента, его характер,
-# секреты, состояние канала. Один AES-256 (GPG symmetric) архив в день, ротация
-# последних RETAIN штук. Если настроен rclone-remote — копия ещё и off-site
-# (смерть VPS = весь смысл бэкапа именно в этом).
+# Шифрованный бэкап ВСЕЙ домашней папки агента: память, характер, секреты,
+# состояние канала И его работа — скрипты в ~/bin и ~/.local/bin, данные,
+# проекты рядом с workspace. Минус мусор из deploy/backup-exclude.txt (кэши,
+# node_modules, логи, сами архивы). Плюс пути вне домашки из
+# deploy/backup-extra-paths (/opt/..., свои юниты, сайты nginx).
 #
-# ВАЖНО про пароль: он лежит в secrets/backup.pass НА СЕРВЕРЕ. Если сервер умрёт,
-# а копию пароля ты нигде больше не сохранил — off-site архив расшифровать НЕЧЕМ.
-# Установщик показывает пароль один раз и просит сохранить его отдельно.
+# До 16.10.2026 архив брал только .claude/secrets/state/deploy в workspace:
+# умер сервер — агент помнил всё, кроме сделанной работы (bin/, data/, проекты,
+# venv-ы, инструменты из ~/.local/bin пропадали).
 #
-# Восстановление (нужен пароль):
-#   gpg -d -o restore.tar.gz <архив>.tar.gz.gpg && tar xzf restore.tar.gz
+# Что ещё кладётся в архив (deploy/, восстанавливает restore-agent.sh):
+#   apt-manual.txt        пакеты, поставленные руками (apt-mark showmanual)
+#   pyenvs/*.txt          список пакетов каждого venv + версия Python: сами venv
+#                         в архив НЕ идут (непереносимы), их пересобирают
+#   systemd-system/       юниты из /etc/systemd/system, которые запускают код агента
+#   crontab.txt, channel.env, cron.d — как и раньше
+#   node-projects.txt     проекты, где node_modules срезан: там нужен npm install
+# В корне архива DASHI-BACKUP.json — кто, откуда, какие доп. пути (формат 2).
 #
-# Запускается кроном раз в сутки. Всегда exit 0 — чтобы не заклинить крон;
-# ошибки пишутся в лог.
+# ВАЖНО про пароль: он лежит в secrets/backup.pass НА СЕРВЕРЕ. Установщик шлёт его
+# хозяину файлом в Telegram (scripts/backup-pass-send.sh). Без пароля облачную
+# копию не расшифровать.
+#
+# Режимы:
+#   agent-backup.sh                  ночной прогон (крон), всегда exit 0
+#   agent-backup.sh --init-excludes  создать deploy/backup-exclude.txt, если нет
+#   agent-backup.sh --print-excludes итоговые шаблоны исключений (для проверки)
+#   agent-backup.sh --size-report    сколько весит что попадёт в архив, без архива
 set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=backup-lib.sh
+source "$SCRIPT_DIR/backup-lib.sh"
 
 AGENT="${DASHI_AGENT:?DASHI_AGENT не задан}"
 WORKSPACE="${DASHI_WORKSPACE:?DASHI_WORKSPACE не задан}"   # /home/<user>/.claude-lab/<agent>
+AGENT_HOME="${DASHI_HOME:-$HOME}"
+KIND="${DASHI_KIND:-claude}"                              # claude | codex
 BACKUP_DIR="${DASHI_BACKUP_DIR:-$WORKSPACE/backups}"
 PASS_FILE="${DASHI_BACKUP_PASS:-$WORKSPACE/secrets/backup.pass}"
+EXCLUDE_FILE="${DASHI_BACKUP_EXCLUDE:-$WORKSPACE/deploy/backup-exclude.txt}"
+EXTRA_CONF="$WORKSPACE/deploy/backup-extra-paths"
+CHANNEL_ENV="${DASHI_CHANNEL_ENV:-/etc/dashi-plugin/$AGENT/channel.env}"
+SYSTEMD_DIR="${DASHI_SYSTEMD_DIR:-/etc/systemd/system}"
+STATE_DIR="$WORKSPACE/state/backup"
 LOG="$WORKSPACE/logs/backup.log"
 RCLONE_BIN="${RCLONE_BIN:-$(command -v rclone 2>/dev/null || echo "$HOME/.local/bin/rclone")}"
 RCLONE_REMOTE="${DASHI_RCLONE_REMOTE:-gdrive}"        # имя rclone-remote (off-site)
 RCLONE_PATH="${DASHI_RCLONE_PATH:-dashi-$AGENT-backups}"
 RETAIN="${DASHI_BACKUP_RETAIN:-7}"
+GROWTH_WARN_MB="${DASHI_BACKUP_GROWTH_WARN_MB:-200}"
 
-STAMP="$(date +%Y%m%d-%H%M)"
-ARCHIVE="$BACKUP_DIR/$AGENT-$STAMP.tar.gz.gpg"
+MODE="run"
+case "${1:-}" in
+  --init-excludes)  MODE=init ;;
+  --print-excludes) MODE=print ;;
+  --size-report)    MODE=size ;;
+  "") ;;
+  *) echo "неизвестный аргумент: $1" >&2; exit 2 ;;
+esac
 
-mkdir -p "$BACKUP_DIR" "$(dirname "$LOG")"
+mkdir -p "$BACKUP_DIR" "$(dirname "$LOG")" "$WORKSPACE/deploy" "$STATE_DIR"
 log() { echo "[$(date '+%F %T %Z')] $*" >>"$LOG"; }
-fail() { log "FAIL: $*"; exit 0; }   # exit 0: крон не должен клинить на ошибке
+fail() { log "FAIL: $*"; exit 0; }   # exit 0: cron must never jam on an error
 
-[[ -s "$PASS_FILE" ]] || fail "нет пароля: $PASS_FILE — прогони установку бэкапа"
+# ── exclude list ────────────────────────────────────────────────────────────
+init_excludes() {
+  [[ -s "$EXCLUDE_FILE" ]] && return 0
+  bk_default_excludes "$AGENT_HOME" "$WORKSPACE" >"$EXCLUDE_FILE"
+  log "создан список исключений по умолчанию: $EXCLUDE_FILE"
+}
+init_excludes
+[[ "$MODE" == init ]] && { echo "$EXCLUDE_FILE"; exit 0; }
 
-cd "$WORKSPACE" || fail "не могу зайти в $WORKSPACE"
-
-# Снимок системного конфига, живущего ВНЕ workspace: crontab агента и systemd-юнит.
-# Без него на новом VPS не будет ни расписания, ни сервиса.
-mkdir -p deploy
-crontab -l >deploy/crontab.txt 2>/dev/null || true
-for u in "/etc/systemd/system/dashi-$AGENT.service" "$HOME/.config/systemd/user/dashi-$AGENT.service"; do
-  [[ -f "$u" ]] && cp -f "$u" deploy/ 2>/dev/null || true
-done
-# channel.env (токен бота, доступ, пути) живёт в /etc, вне workspace — без него
-# восстановление неполное (агент не подключится к Telegram). Он root:agent 660,
-# группа agent читает. Кладём в снимок, чтобы restore был однокомандным.
-cp -f "/etc/dashi-plugin/$AGENT/channel.env" deploy/channel.env 2>/dev/null || true
-# cron.d юниты агента (советник/модалки/бэкап) — тоже вне workspace.
-for c in "/etc/cron.d/dashi-$AGENT"-*; do [[ -f "$c" ]] && cp -f "$c" deploy/ 2>/dev/null || true; done
-
-# Что бэкапим (относительно WORKSPACE): всё незаменимое, чего нет в git-репе плагина.
-ITEMS=(".claude" "secrets" "state" "deploy")
-present=()
-for it in "${ITEMS[@]}"; do [[ -e "$it" ]] && present+=("$it"); done
-[[ ${#present[@]} -gt 0 ]] || fail "нечего бэкапить"
-
-# Исключаем сам git-репозиторий плагина (он на GitHub) и node_modules — иначе
-# архив раздувается гигабайтами того, что и так восстановится git-клоном.
-# Долгая память (OpenViking) живёт ВНЕ workspace, в ~/.openviking. До 02.10.2026
-# её в архиве не было: умер сервер -- агент помнит всё, кроме прожитого.
-# Кладём под префиксом .openviking/, restore-agent.sh вернёт её в домашку.
-# --ignore-failed-read: контейнер оставляет там root-файлы (замок, studio.sqlite3),
-# их не прочесть -- это не повод терять весь архив.
-OV_ARGS=()
-[[ -d "$HOME/.openviking" ]] && OV_ARGS=(-C "$HOME" .openviking)
-
-# Доп. пути ВНЕ workspace — для серверов, где агент жил до нашего кита: бизнес-
-# скрипты в ~/bin, свои юниты в /etc/systemd/system, старая папка памяти.
-# Конфиг: deploy/backup-extra-paths, по одному абсолютному пути или глобу на
-# строку, # — комментарий. Нет файла — вызов tar ровно прежний.
-# В архиве они лежат под extra/<путь без ведущего />: -C / и --transform,
-# привязанный якорем к каждому пути, — имена workspace и .openviking не трогает.
-# Флаг S: цели жёстких ссылок тоже переименовываются -- иначе ссылка в архиве указала бы на имя без extra/; цели симлинков вне пути под регэксп не попадают. Исключения стоят ПЕРЕД -C / — у GNU tar
-# --exclude позиционный и действует только на extras.
-EXTRA_CONF="$WORKSPACE/deploy/backup-extra-paths"
-EXTRA_ARGS=()
-if [[ -f "$EXTRA_CONF" ]]; then
-  extra_paths=(); extra_xform=()
+# Extra paths outside home (one absolute path or glob per line).
+extra_paths=()
+read_extras() {
+  [[ -f "$EXTRA_CONF" ]] || return 0
+  local line p rel q dup matched
   while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line%%#*}"
     line="${line#"${line%%[![:space:]]*}"}"; line="${line%"${line##*[![:space:]]}"}"
     [[ -z "$line" ]] && continue
     if [[ "$line" != /* ]]; then log "extra: пропуск, путь не абсолютный: $line"; continue; fi
     matched=0
-    # Глоб раскрываем сами (nullglob, IFS= — пробелы в путях не режут): пустой
-    # глоб — строка в лог, а не ошибка tar.
+    # Globs are expanded here (nullglob, IFS= keeps spaces): an empty glob is a
+    # log line, not a tar error.
     while IFS= read -r -d '' p; do
       matched=1
-      p="${p%/}"; rel="${p#/}"
+      p="${p%/}"; rel="$(bk_to_member "$p")"
       [[ -n "$rel" ]] || { log "extra: пропуск корня /"; continue; }
-      [[ "$rel" == *,* ]] && { log "extra: пропуск, запятая в пути ломает --transform: $p"; continue; }
-      top="${rel%%/*}"
-      case "$top" in
-        .claude|secrets|state|deploy|.openviking)
-          log "extra: пропуск, совпадает с именем workspace в архиве: $p"; continue ;;
-      esac
+      if [[ "$p" == "$AGENT_HOME" || "$p" == "$AGENT_HOME"/* ]]; then
+        log "extra: пропуск, это и так в архиве (домашняя папка): $p"; continue
+      fi
+      if [[ "$AGENT_HOME" == "$p"/* ]]; then
+        log "extra: пропуск, путь содержит всю домашнюю папку: $p"; continue
+      fi
       dup=0; for q in "${extra_paths[@]:-}"; do [[ "$q" == "$rel" ]] && dup=1; done
-      [[ $dup -eq 1 ]] && continue
-      extra_paths+=("$rel")
-      re="$(printf '%s' "$rel" | sed 's/[][\.*^$]/\\&/g')"
-      extra_xform+=("--transform=s,^${re}\\(/.*\\)\\?\$,extra/&,S")
+      [[ $dup -eq 1 ]] || extra_paths+=("$rel")
     done < <(shopt -s nullglob; IFS=; for g in $line; do
                [[ -e "$g" || -L "$g" ]] && printf '%s\0' "$g"; done)
     [[ $matched -eq 1 ]] || log "extra: пропуск, нет такого пути/пустой глоб: $line"
   done <"$EXTRA_CONF"
-  if [[ ${#extra_paths[@]} -gt 0 ]]; then
-    EXTRA_ARGS=("${extra_xform[@]}"
-      --exclude='__pycache__' --exclude='*.pyc' --exclude='node_modules'
-      -C / "${extra_paths[@]}")
-    log "extra: в архив под extra/ идут ${#extra_paths[@]} путь(ей)"
-  fi
+}
+read_extras
+
+# Python venvs under home and extra paths: excluded from the archive (not
+# portable), their package lists go to deploy/pyenvs instead.
+venvs=()
+find_venvs() {
+  local roots=("$AGENT_HOME") r cfg
+  for r in "${extra_paths[@]:-}"; do [[ -n "$r" ]] && roots+=("/$r"); done
+  while IFS= read -r -d '' cfg; do
+    venvs+=("${cfg%/pyvenv.cfg}")
+  done < <(find "${roots[@]}" -xdev -maxdepth 8 \
+             \( -name node_modules -o -name .cache -o -path "$AGENT_HOME/.local/share/uv" \
+                -o -path "$BACKUP_DIR" -o -path "$WORKSPACE/.claude/dashi-plugin-claude-code" \
+                -o -path "$AGENT_HOME/.openviking" -o -name .git \) -prune \
+             -o -name pyvenv.cfg -type f -print0 2>/dev/null)
+}
+find_venvs
+
+EXCL=()
+build_excludes() {
+  local line pat
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if pat="$(bk_exclude_pattern "$line" "$AGENT_HOME")"; then
+      [[ -n "$pat" ]] && EXCL+=("$pat")
+    else
+      log "исключения: строка отвергнута (срезала бы всю домашку): $line"
+    fi
+  done <"$EXCLUDE_FILE"
+  # Always out, whatever the file says: the archives themselves, the plugin's git
+  # clone (it is on GitHub), the staging folder of a previous restore, venvs.
+  EXCL+=("$(bk_to_member "$BACKUP_DIR")"
+         "$(bk_to_member "$WORKSPACE/.claude/dashi-plugin-claude-code")"
+         "$(bk_to_member "$WORKSPACE/extra")")
+  local v; for v in "${venvs[@]:-}"; do [[ -n "$v" ]] && EXCL+=("$(bk_to_member "$v")"); done
+}
+build_excludes
+TAR_EXCL=(); for p in "${EXCL[@]}"; do TAR_EXCL+=("--exclude=$p"); done
+HOME_M="$(bk_to_member "$AGENT_HOME")"
+
+if [[ "$MODE" == print ]]; then printf '%s\n' "${EXCL[@]}"; exit 0; fi
+
+if [[ "$MODE" == size ]]; then
+  # tar into /dev/null does not read file contents: a fast, exact listing with sizes.
+  # Grouped two levels below home (home/agent/projects/shop), extras likewise.
+  depth=$(( $(tr -cd '/' <<<"$HOME_M" | wc -c) + 4 ))
+  rep="$(tar -cvvf /dev/null --ignore-failed-read "${TAR_EXCL[@]}" -C / "$HOME_M" "${extra_paths[@]}" 2>/dev/null \
+    | awk -v d="$depth" '
+        $1 !~ /^d/ { size=$3; path=""; for (i=6;i<=NF;i++) path = path (i>6?" ":"") $i
+          sub(/ -> .*/, "", path)
+          n=split(path, a, "/"); k=a[1]; for (i=2;i<d && i<n;i++) k=k "/" a[i]
+          s[k]+=size; t+=size; c++ }
+        END { for (k in s) printf "%10.1f МБ  /%s\n", s[k]/1048576, k
+              printf "TOTAL итого: %.1f МБ в %d файлах (до сжатия)\n", t/1048576, c }')"
+  grep -v '^TOTAL ' <<<"$rep" | sort -rn | head -25
+  grep '^TOTAL ' <<<"$rep" | sed 's/^TOTAL //'
+  exit 0
 fi
 
-tar czf - --ignore-failed-read \
-  --exclude='.claude/dashi-plugin-claude-code' \
-  --exclude='*/node_modules' \
-  --exclude='state/telegram/inbox' \
-  --exclude='.openviking/appdata/temp' \
-  --exclude='.openviking/data/.openviking.lock' \
-  "${present[@]}" "${OV_ARGS[@]}" "${EXTRA_ARGS[@]}" 2>>"$LOG" \
+# ── run ─────────────────────────────────────────────────────────────────────
+# Whatever happens below (fail() exits too), refresh the off-site status: the
+# fleet health summary and the agent's own failure watch read it.
+MAN_DIR=""; TAR_ERR=""
+on_exit() {
+  rm -rf "$MAN_DIR" "$TAR_ERR"
+  bash "$SCRIPT_DIR/backup-offsite-watch.sh" --status-only >/dev/null 2>&1 || true
+}
+trap on_exit EXIT
+[[ -s "$PASS_FILE" ]] || fail "нет пароля: $PASS_FILE — прогони установку бэкапа"
+cd "$WORKSPACE" || fail "не могу зайти в $WORKSPACE"
+
+STAMP="$(date +%Y%m%d-%H%M)"
+ARCHIVE="$BACKUP_DIR/$AGENT-$STAMP.tar.gz.gpg"
+PREV="$(ls -1t "$BACKUP_DIR/$AGENT"-*.tar.gz.gpg 2>/dev/null | head -1)"
+
+# System config that lives OUTSIDE home: crontab, the agent's own units, channel.env.
+crontab -l >deploy/crontab.txt 2>/dev/null || true
+for u in "$SYSTEMD_DIR/dashi-$AGENT.service" "$AGENT_HOME/.config/systemd/user/dashi-$AGENT.service"; do
+  [[ -f "$u" ]] && cp -f "$u" deploy/ 2>/dev/null || true
+done
+# channel.env (bot token, access, paths) lives in /etc: root:agent 660, readable.
+cp -f "/etc/dashi-plugin/$AGENT/channel.env" deploy/channel.env 2>/dev/null || true
+for c in "/etc/cron.d/dashi-$AGENT"-*; do [[ -f "$c" ]] && cp -f "$c" deploy/ 2>/dev/null || true; done
+
+# Hand-installed system packages: restore-agent.sh installs whatever a new box lacks.
+apt-mark showmanual >deploy/apt-manual.txt 2>/dev/null || : >deploy/apt-manual.txt
+
+# Venvs: what is in each one and which Python built it. A venv rebuilt on another
+# Python minor dies on binary wheels (Jarvis DR drill 16.10.2026, numpy on 3.10).
+rm -rf deploy/pyenvs; mkdir -p deploy/pyenvs
+for v in "${venvs[@]:-}"; do
+  [[ -n "$v" && -x "$v/bin/python" ]] || continue
+  ver="$("$v/bin/python" -c 'import sys;print("%d.%d"%sys.version_info[:2])' 2>/dev/null)" || continue
+  pkgs="$("$v/bin/python" -m pip freeze 2>/dev/null)" \
+    || pkgs="$(command -v uv >/dev/null && uv pip freeze --python "$v/bin/python" 2>/dev/null)" || pkgs=""
+  sys_site=false
+  grep -qiE '^include-system-site-packages *= *true' "$v/pyvenv.cfg" 2>/dev/null && sys_site=true
+  slug="$(sed 's#^/##; s#[/. ]#_#g' <<<"$v")"
+  printf '# venv=%s python=%s system_site=%s\n%s\n' "$v" "$ver" "$sys_site" "$pkgs" >"deploy/pyenvs/$slug.txt"
+done
+
+# Units in /etc/systemd/system that belong to this agent: run as its user, point
+# into its home, or carry its name. Copies + which of them were enabled.
+rm -rf deploy/systemd-system; mkdir -p deploy/systemd-system
+me="$(id -un)"
+for u in "$SYSTEMD_DIR"/*.service "$SYSTEMD_DIR"/*.timer; do
+  [[ -f "$u" && ! -L "$u" ]] || continue
+  n="$(basename "$u")"
+  mine=0
+  [[ "$n" == dashi-"$AGENT"* || "$n" == *-"$AGENT".service ]] && mine=1
+  [[ "$me" != root ]] && grep -qE "^User=$me[[:space:]]*$" "$u" && mine=1
+  grep -qF "$AGENT_HOME/" "$u" && mine=1
+  # a timer belongs if its service does
+  [[ "$n" == *.timer && -f "${u%.timer}.service" ]] && grep -qF "$AGENT_HOME/" "${u%.timer}.service" && mine=1
+  [[ $mine -eq 1 ]] || continue
+  cp -f "$u" deploy/systemd-system/ 2>/dev/null || continue
+  [[ "$(systemctl is-enabled "$n" 2>/dev/null)" == enabled ]] && echo "$n" >>deploy/systemd-system/enabled.txt
+  # Env files outside home are not in the archive unless listed in extra paths.
+  grep -oE '^EnvironmentFile=-?/[^ ]+' "$u" | sed 's/^EnvironmentFile=-\{0,1\}//' | while IFS= read -r ef; do
+    [[ "$ef" == "$AGENT_HOME"/* || "$ef" == "/etc/dashi-plugin/$AGENT/"* ]] && continue
+    grep -qxF "$ef" "$EXTRA_CONF" 2>/dev/null || log "WARN: юнит $n читает $ef вне домашки -- добавь путь в deploy/backup-extra-paths"
+  done
+done
+
+# Node projects whose node_modules is cut out: restore runs npm/bun install there.
+: >deploy/node-projects.txt
+find "$AGENT_HOME" -xdev -maxdepth 6 \
+  \( -path "$WORKSPACE/.claude/dashi-plugin-claude-code" -o -path "$AGENT_HOME/.npm-global" \
+     -o -path "$AGENT_HOME/.bun" -o -path "$AGENT_HOME/.cache" -o -path "$AGENT_HOME/.npm" \
+     -o -path "$BACKUP_DIR" -o -name .git \) -prune \
+  -o -type d -name node_modules -prune -print 2>/dev/null \
+  | while IFS= read -r nm; do [[ -f "${nm%/node_modules}/package.json" ]] && echo "${nm%/node_modules}"; done \
+  | sort -u >deploy/node-projects.txt
+# Global npm tools when npm's prefix is inside home (their node_modules is cut too).
+npm_prefix="$(npm config get prefix 2>/dev/null || true)"
+if [[ -n "$npm_prefix" && "$npm_prefix" == "$AGENT_HOME"/* && -d "$npm_prefix/lib/node_modules" ]]; then
+  for d in "$npm_prefix"/lib/node_modules/* "$npm_prefix"/lib/node_modules/@*/*; do
+    [[ -f "$d/package.json" && "$(basename "$d")" != npm ]] || continue
+    python3 -c 'import json,sys; j=json.load(open(sys.argv[1])); print(j["name"]+"@"+j["version"])' "$d/package.json" 2>/dev/null
+  done >deploy/npm-global.txt
+else
+  rm -f deploy/npm-global.txt
+fi
+
+# Manifest at the archive root: restore reads it first.
+MAN_DIR="$(mktemp -d)"; TAR_ERR="$(mktemp)"
+{
+  printf '{"format": 2, "agent": %s, "kind": %s, "user": %s,\n' \
+    "$(bk_json_str "$AGENT")" "$(bk_json_str "$KIND")" "$(bk_json_str "$me")"
+  printf ' "home": %s, "workspace": %s, "host": %s, "created": %s,\n' \
+    "$(bk_json_str "$AGENT_HOME")" "$(bk_json_str "$WORKSPACE")" \
+    "$(bk_json_str "$(hostname 2>/dev/null)")" "$(bk_json_str "$(date -Iseconds)")"
+  printf ' "extras": ['
+  sep=""; for p in "${extra_paths[@]:-}"; do [[ -n "$p" ]] && { printf '%s%s' "$sep" "$(bk_json_str "/$p")"; sep=", "; }; done
+  printf ']}\n'
+} >"$MAN_DIR/DASHI-BACKUP.json"
+cp -f "$MAN_DIR/DASHI-BACKUP.json" deploy/backup-manifest.json
+[[ ${#extra_paths[@]} -gt 0 ]] && log "extra: в архив идут ${#extra_paths[@]} путь(ей) вне домашки"
+
+# --ignore-failed-read: live dirs change under us, and the OpenViking container
+# leaves root-owned files in ~/.openviking; neither may cost the whole night.
+# Excludes come BEFORE -C: in GNU tar they apply to the names that follow them.
+tar czf - --ignore-failed-read "${TAR_EXCL[@]}" \
+  -C "$MAN_DIR" DASHI-BACKUP.json -C / "$HOME_M" "${extra_paths[@]}" 2>"$TAR_ERR" \
   | gpg --batch --yes --symmetric --cipher-algo AES256 \
         --passphrase-file "$PASS_FILE" -o "$ARCHIVE" 2>>"$LOG"
 rc=("${PIPESTATUS[@]}"); tar_rc=${rc[0]}; gpg_rc=${rc[1]}
-# tar exit 1 = «файл изменился при чтении» (архив валиден); 2 = фатально.
+unreadable="$(grep -cE 'Permission denied|Cannot open|Cannot read' "$TAR_ERR" 2>/dev/null || true)"
+if [[ "${unreadable:-0}" -gt 0 ]]; then
+  log "WARN: tar не смог прочитать $unreadable файл(ов), они не в архиве: $(grep -m3 -E 'Permission denied|Cannot open|Cannot read' "$TAR_ERR" | tr '\n' ' ' | cut -c1-400)"
+fi
+grep -vE 'Permission denied|Cannot open|Cannot read|file changed as we read it|socket ignored' "$TAR_ERR" | head -5 >>"$LOG"
+# tar exit 1 = "file changed as we read it" (archive valid); 2 = fatal.
 if [[ $tar_rc -gt 1 || $gpg_rc -ne 0 ]]; then
   rm -f "$ARCHIVE"; fail "tar|gpg упал (tar=$tar_rc gpg=$gpg_rc)"
 fi
-# Self-check: свежий архив ОБЯЗАН расшифровываться и разворачиваться. Битый бэкап
-# хуже отсутствующего — создаёт ложное чувство защиты. Не прошёл — удаляем и фейлим.
-if ! gpg --batch --quiet --passphrase-file "$PASS_FILE" -d "$ARCHIVE" 2>>"$LOG" | tar tzf - >/dev/null 2>>"$LOG"; then
+# Self-check: the fresh archive MUST decrypt and list. A broken backup is worse
+# than none: it gives a false sense of safety. Failed -> delete and FAIL.
+check="$(gpg --batch --quiet --passphrase-file "$PASS_FILE" -d "$ARCHIVE" 2>>"$LOG" | tar tvzf - 2>>"$LOG" \
+  | awk '$NF == "DASHI-BACKUP.json" {m=1} $1 !~ /^d/ {s+=$3; c++}
+         END {printf "%d|%.0f МБ в %d файлах", m, s/1048576, c}'
+  echo "|${PIPESTATUS[0]}${PIPESTATUS[1]}")"
+pipe_rc="${check##*|}"; check="${check%|*}"
+if [[ "$pipe_rc" != 00 ]]; then
   rm -f "$ARCHIVE"; fail "self-check: свежий архив не расшифровался/не читается — удалён"
 fi
-log "OK local: $ARCHIVE ($(du -h "$ARCHIVE" | cut -f1)), self-check пройден"
+[[ "${check%%|*}" == 1 ]] || { rm -f "$ARCHIVE"; fail "self-check: в архиве нет DASHI-BACKUP.json — удалён"; }
+raw_mb="${check#*|}"
+size_b=$(stat -c %s "$ARCHIVE")
+log "OK local: $ARCHIVE ($(du -h "$ARCHIVE" | cut -f1); до сжатия $raw_mb), self-check пройден"
+if [[ -n "$PREV" && -f "$PREV" ]]; then
+  prev_b=$(stat -c %s "$PREV")
+  if (( size_b > 2 * prev_b && size_b - prev_b > GROWTH_WARN_MB * 1048576 )); then
+    log "WARN: архив вырос с $((prev_b/1048576)) до $((size_b/1048576)) МБ -- проверь, что попало: agent-backup.sh --size-report"
+  fi
+fi
 
-# Ротация локально.
+# Local rotation.
 mapfile -t old < <(ls -1t "$BACKUP_DIR/$AGENT"-*.tar.gz.gpg 2>/dev/null | tail -n +$((RETAIN + 1)))
 for f in "${old[@]:-}"; do [[ -n "$f" ]] && rm -f "$f" && log "rotated: $f"; done
 
-# Запасной канал в Drive: gws CLI под нашим OAuth-клиентом (~/.config/gws).
-# ponytail: без своего кода загрузки -- зовём готовый хелпер +upload.
+offsite_ok() {  # offsite_ok <method>: remember the last good copy for the watchdog
+  printf '{"ts": %s, "method": %s, "file": %s, "remote": %s}\n' "$(date +%s)" \
+    "$(bk_json_str "$1")" "$(bk_json_str "$(basename "$ARCHIVE")")" \
+    "$(bk_json_str "${RCLONE_REMOTE}:${RCLONE_PATH}")" >"$STATE_DIR/last-offsite.json"
+}
+
+# Fallback to Drive: gws CLI under our own OAuth client (~/.config/gws).
 gws_upload() {
   local f="$1"
   command -v npx >/dev/null 2>&1 || return 1
@@ -147,12 +317,10 @@ gws_upload() {
   npx --yes @googleworkspace/cli drive +upload "$f" >>"$LOG" 2>&1
 }
 
-# Off-site — только если rclone и remote настроены.
+# Off-site — only when rclone and the remote are configured.
 if [[ -x "$RCLONE_BIN" ]] && "$RCLONE_BIN" listremotes 2>/dev/null | grep -q "^${RCLONE_REMOTE}:"; then
-  # Общий OAuth-клиент rclone делит квоту Google на сотни агентов, и одиночный
-  # 403 rateLimitExceeded почти всегда проходит со второй-третьей попытки.
-  # Найдено агентом Гора 11.09.2026: бэкап падал 4 дня подряд, а тот же
-  # рукой повторённый copy уезжал через несколько секунд.
+  # rclone's shared OAuth client splits Google's quota across everyone; a single
+  # 403 rateLimitExceeded almost always passes on the 2nd-3rd try (Gor, 11.09.2026).
   ok=""
   for attempt in 1 2 3 4 5; do
     if "$RCLONE_BIN" copy "$ARCHIVE" "${RCLONE_REMOTE}:${RCLONE_PATH}/" 2>>"$LOG"; then
@@ -162,14 +330,13 @@ if [[ -x "$RCLONE_BIN" ]] && "$RCLONE_BIN" listremotes 2>/dev/null | grep -q "^$
   done
   if [[ -n "$ok" ]]; then
     log "OK off-site: ${RCLONE_REMOTE}:${RCLONE_PATH}/$(basename "$ARCHIVE")"
-    # Мимо корзины: Google держит удалённое 30 дней и всё это время считает в квоту
-    # (у Jarvis корзина старых архивов съела 8,3 ГБ из 15, 02.10.2026).
+    offsite_ok rclone
+    # Skip the trash: Google keeps deleted files 30 days and counts them in quota
+    # (Jarvis: old archives in the trash ate 8.3 of 15 GB, 02.10.2026).
     "$RCLONE_BIN" delete --drive-use-trash=false --min-age "${RETAIN}d" "${RCLONE_REMOTE}:${RCLONE_PATH}/" 2>>"$LOG" || true
   elif gws_upload "$ARCHIVE"; then
-    # rclone по умолчанию ходит под ОБЩИМ ключом -- в пик Google отвечает «квота».
-    # Запасной канал: googleworkspace CLI, он авторизован под нашим собственным
-    # OAuth-клиентом, и своя квота не зависит от чужих людей (проверено 11.09.2026).
     log "OK off-site через gws (rclone упёрся в квоту): $(basename "$ARCHIVE")"
+    offsite_ok gws
   else
     fail "off-site не уехал ни через rclone, ни через gws (локальная копия цела)"
   fi
