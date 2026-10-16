@@ -15,6 +15,7 @@
 #                         в архив НЕ идут (непереносимы), их пересобирают
 #   systemd-system/       юниты из /etc/systemd/system, которые запускают код агента
 #   crontab.txt, channel.env, cron.d — как и раньше
+#   timezone.txt          часовой пояс сервера (кроны идут по местному времени)
 #   node-projects.txt     проекты, где node_modules срезан: там нужен npm install
 # В корне архива DASHI-BACKUP.json — кто, откуда, какие доп. пути (формат 2).
 #
@@ -188,6 +189,9 @@ for c in "/etc/cron.d/dashi-$AGENT"-*; do [[ -f "$c" ]] && cp -f "$c" deploy/ 2>
 
 # Hand-installed system packages: restore-agent.sh installs whatever a new box lacks.
 apt-mark showmanual >deploy/apt-manual.txt 2>/dev/null || : >deploy/apt-manual.txt
+# Server timezone: cron lines are local time; a new box in UTC shifts every job.
+{ timedatectl show -p Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null; } \
+  | head -1 >deploy/timezone.txt
 
 # Venvs: what is in each one and which Python built it. A venv rebuilt on another
 # Python minor dies on binary wheels (Jarvis DR drill 16.10.2026, numpy on 3.10).
@@ -304,7 +308,12 @@ fi
 mapfile -t old < <(ls -1t "$BACKUP_DIR/$AGENT"-*.tar.gz.gpg 2>/dev/null | tail -n +$((RETAIN + 1)))
 for f in "${old[@]:-}"; do [[ -n "$f" ]] && rm -f "$f" && log "rotated: $f"; done
 
+attempt() {  # attempt <1|0> [error]: the last upload try, for the watchdog's «failing»
+  printf '{"ts": %s, "ok": %s, "error": %s}\n' "$(date +%s)" "$([[ $1 == 1 ]] && echo true || echo false)" \
+    "$(bk_json_str "${2:-}")" >"$STATE_DIR/last-attempt.json"
+}
 offsite_ok() {  # offsite_ok <method>: remember the last good copy for the watchdog
+  attempt 1
   printf '{"ts": %s, "method": %s, "file": %s, "remote": %s}\n' "$(date +%s)" \
     "$(bk_json_str "$1")" "$(bk_json_str "$(basename "$ARCHIVE")")" \
     "$(bk_json_str "${RCLONE_REMOTE}:${RCLONE_PATH}")" >"$STATE_DIR/last-offsite.json"
@@ -339,6 +348,7 @@ if [[ -x "$RCLONE_BIN" ]] && "$RCLONE_BIN" listremotes 2>/dev/null | grep -q "^$
     log "OK off-site через gws (rclone упёрся в квоту): $(basename "$ARCHIVE")"
     offsite_ok gws
   else
+    attempt 0 "$(grep -E 'ERROR|Failed' "$LOG" | tail -1 | cut -c1-200)"
     fail "off-site не уехал ни через rclone, ни через gws (локальная копия цела)"
   fi
 else

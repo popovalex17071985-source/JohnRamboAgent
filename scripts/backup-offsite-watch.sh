@@ -9,6 +9,16 @@
 # журнал (state/backup/last-offsite.json, его пишет agent-backup.sh) нужен только
 # для запасного канала gws и когда облако не ответило.
 #
+# Плохо — это любое из:
+#   not_configured  облака нет вовсе;
+#   not_offsite     «облако» на самом деле папка на этом же сервере (remote типа
+#                   local или alias/crypt поверх локальной папки);
+#   failing         последняя попытка отправки (state/backup/last-attempt.json)
+#                   провалилась позже последней копии в облаке;
+#   stale           новейшая копия старше 48 ч.
+# stub — тестовая заглушка, объявленная явно (DASHI_BACKUP_OFFSITE_STUB или файл
+# deploy/offsite-stub): не OK и не тревога, никому не пишет.
+#
 # Куда пишет, когда плохо:
 #   - хозяину через бота самого агента (токен и чат из channel.env / .env);
 #   - доп. получателям из DASHI_BACKUP_ALERT_CHATS (в env или в channel.env);
@@ -51,9 +61,9 @@ now=$(date +%s)
 
 # ── newest off-site copy ────────────────────────────────────────────────────
 status=""; source_="none"; newest_ts=0; newest_name=""; reason=""
-remote_ok=0
+remote_ok=0; has_remote=0
 if [[ -x "$RCLONE_BIN" ]] && "$RCLONE_BIN" listremotes 2>/dev/null | grep -q "^${RCLONE_REMOTE}:"; then
-  remote_ok=1
+  remote_ok=1; has_remote=1
   if js="$("$RCLONE_BIN" lsjson --files-only --no-mimetype "${RCLONE_REMOTE}:${RCLONE_PATH}/" 2>"$STATE_DIR/.rclone.err")"; then
     read -r newest_ts newest_name < <(python3 -c '
 import json, re, sys
@@ -94,13 +104,78 @@ print(int(d.get("ts", 0)), d.get("file") or "-")' "$STATE_DIR/last-offsite.json"
   fi
 fi
 
+# ── is the "off-site" remote really off this server? ────────────────────────
+# A remote of type local, or an alias/crypt/... wrapper over a local folder, keeps
+# the "cloud" copy on the same machine: it dies with the server (Smith e2e
+# 16.10.2026: gdrive = alias to /srv/offsite on /dev/vda2, and the watcher said OK).
+# A local path on a network mount (nfs, cifs, sshfs, rclone mount) does leave the box.
+where=""; offsite_kind="remote"
+if [[ $has_remote -eq 1 ]]; then
+  where="$("$RCLONE_BIN" config dump 2>/dev/null | python3 -c '
+import json, sys
+try:
+    cfg = json.load(sys.stdin)
+except ValueError:
+    sys.exit(0)
+name, path = sys.argv[1], sys.argv[2]
+WRAP = ("alias", "crypt", "chunker", "compress", "hasher")
+for _ in range(10):
+    r = cfg.get(name)
+    if not isinstance(r, dict):
+        break
+    t = r.get("type", "")
+    if t == "local":
+        print(path or ".")
+        break
+    if t not in WRAP:
+        break
+    target = r.get("remote", "")
+    if ":" in target and not target.startswith("/"):
+        name, rest = target.split(":", 1)
+        path = (rest.rstrip("/") + "/" + path) if rest else path
+        continue
+    print(target.rstrip("/") + "/" + path)
+    break' "$RCLONE_REMOTE" "$RCLONE_PATH" 2>/dev/null)"
+  if [[ -n "$where" ]]; then
+    p="$where"; [[ "$p" == /* ]] || p="$HOME/$p"
+    while [[ ! -e "$p" && "$p" != / && "$p" != . ]]; do p="$(dirname "$p")"; done
+    fst="$(findmnt -n -o FSTYPE -T "$p" 2>/dev/null || stat -f -c %T "$p" 2>/dev/null)"
+    case "$fst" in
+      nfs*|cifs|smb*|ceph|glusterfs|fuse.sshfs|fuse.rclone|fuse.s3fs|*davfs*) offsite_kind="network" ;;
+      *) offsite_kind="local" ;;
+    esac
+  fi
+fi
+# Test setups (staging e2e) may stand in a local folder for the cloud, but must say
+# so: DASHI_BACKUP_OFFSITE_STUB=<why> or a deploy/offsite-stub file. Then the verdict
+# is «stub», never a green OK, and nobody gets a message. Ignored for a real remote.
+stub="${DASHI_BACKUP_OFFSITE_STUB:-}"
+[[ -z "$stub" && -s "$WORKSPACE/deploy/offsite-stub" ]] && stub="$(head -1 "$WORKSPACE/deploy/offsite-stub")"
+
+# Last upload attempt (agent-backup.sh): a failure newer than the newest copy means
+# copies stopped leaving even if the newest one is still younger than STALE_H.
+att_ok=""; att_ts=0; att_err=""
+if [[ -s "$STATE_DIR/last-attempt.json" ]]; then
+  IFS=$'\t' read -r att_ok att_ts att_err < <(python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+print("1" if d.get("ok") else "0", int(d.get("ts", 0)), (d.get("error") or "-").replace("\t", " "), sep="\t")' \
+    "$STATE_DIR/last-attempt.json" 2>/dev/null || printf 'x\t0\t-\n')
+fi
+
 age_h=-1
+[[ "$newest_ts" -gt 0 ]] && age_h=$(( (now - newest_ts) / 3600 ))
 if [[ $remote_ok -eq 0 ]]; then
   status="not_configured"
+elif [[ "$offsite_kind" == local && -n "$stub" ]]; then
+  status="stub"; reason="заглушка: $stub; remote ${RCLONE_REMOTE} ведёт в $where на этом же сервере"
+elif [[ "$offsite_kind" == local ]]; then
+  status="not_offsite"; reason="remote ${RCLONE_REMOTE} ведёт в $where на этом же сервере"
+elif [[ "$att_ok" == 0 && "$att_ts" -gt "$newest_ts" ]]; then
+  status="failing"; reason="последняя отправка $(( (now - att_ts) / 3600 )) ч назад не удалась: ${att_err/#-/без текста ошибки}"
 elif [[ "$newest_ts" -eq 0 ]]; then
   status="stale"; [[ -n "$reason" ]] || reason="в облаке нет ни одной копии"
 else
-  age_h=$(( (now - newest_ts) / 3600 ))
   if (( age_h >= STALE_H )); then status="stale"; else status="ok"; fi
 fi
 
@@ -120,9 +195,21 @@ if [[ "$status" == ok ]]; then
   [[ $DRY -eq 1 ]] && echo "ok: $newest_name, ${age_h} ч назад ($source_)"
   exit 0
 fi
+if [[ "$status" == stub ]]; then
+  # Declared test stand-in: not OK, not an alarm either — nobody is messaged.
+  log "STUB off-site: копии вне сервера НЕТ, это заглушка ($reason); свежая $newest_name, ${age_h} ч назад"
+  [[ $DRY -eq 1 ]] && echo "stub: $reason"
+  exit 0
+fi
 
 # ── not ok: tell the owner (and the extra recipients) ───────────────────────
 case "$status" in
+  not_offsite)
+    head="«облачная» копия бэкапа лежит на этом же сервере"
+    body="Remote ${RCLONE_REMOTE} ведёт в $where — это диск того же сервера, его смерть копия не переживёт. Нужен настоящий облачный remote (Google Drive): docs/07-backup-and-recovery.md, раздел «Google Drive». Или попроси меня: «подключи облако для бэкапа»." ;;
+  failing)
+    head="бэкап перестал уезжать в облако"
+    body="${reason^}. ${newest_name:+В облаке пока лежит копия ${age_h} ч назад ($newest_name), но новых нет. }Что смотреть: logs/backup.log (строки FAIL), проверка входа в облако: rclone lsd ${RCLONE_REMOTE}: — если «token expired/invalid_grant», вход в Google надо обновить." ;;
   not_configured)
     head="облачная копия бэкапа НЕ настроена"
     body="Бэкап лежит только на этом сервере и умрёт вместе с ним: восстановить агента будет не из чего. Подключить Google Drive — docs/07-backup-and-recovery.md, раздел «Google Drive» (10 минут, один раз). Или попроси меня: «подключи облако для бэкапа»." ;;

@@ -36,6 +36,9 @@ printf '#!/bin/sh\necho tick >> /home/agent/shop/logs/tick.log\n' > /home/agent/
 mkdir -p /home/agent/shop/logs; echo old > /home/agent/shop/logs/tick.log
 echo cache > /home/agent/.cache/x/blob
 chown -R agent:agent /home/agent
+printf '[Service]\nUser=agent\nExecStart=/home/agent/.local/bin/tick\n' > /etc/systemd/system/shop-web.service
+echo Asia/Yekaterinburg > /etc/timezone
+mkdir -p \$W/state/backup; echo '{"ts": 1, "method": "rclone", "file": "x.gpg"}' > \$W/state/backup/last-offsite.json; chown -R agent:agent \$W/state
 su - agent -c 'python3 -m venv /home/agent/shop/.venv && /home/agent/shop/.venv/bin/pip install -q six==1.16.0' >/dev/null 2>&1
 su - agent -c '(echo \"* * * * * /home/agent/.local/bin/tick >> /home/agent/shop/logs/cron.log 2>&1\") | crontab -'
 su - agent -c 'DASHI_AGENT=$AGENT DASHI_WORKSPACE=\$HOME/.claude-lab/$AGENT bash /opt/plugin/scripts/agent-backup.sh'
@@ -48,7 +51,14 @@ ok "A: бэкап снят ($(du -h "$WORK/arch.gpg" | cut -f1)), старый �
 
 # ── the new server ──────────────────────────────────────────────────────────
 docker cp "$WORK/arch.gpg" "$B:/root/$AGENT-20990101-0000.tar.gz.gpg" >/dev/null
-inB "printf '#!/bin/sh\necho stub installer \"\$@\" > /root/installer-called\n' > /opt/plugin/scripts/install-agent.sh"
+# The stub does what the real installer does to deploy/: its «first backup» run
+# rewrites the snapshots from the NEW box (found on Smith 17.10.2026: the agent's
+# own units were lost that way).
+inB "cat > /opt/plugin/scripts/install-agent.sh <<'EOS'
+#!/bin/sh
+echo stub installer \"\$@\" > /root/installer-called
+runuser -u agent -- env DASHI_AGENT=$AGENT DASHI_WORKSPACE=/home/agent/.claude-lab/$AGENT bash /opt/plugin/scripts/agent-backup.sh
+EOS"
 out="$(inB "apt-get update -qq >/dev/null; bash /opt/plugin/scripts/restore-agent.sh --name $AGENT \
   --archive /root/$AGENT-20990101-0000.tar.gz.gpg --pass '$PASS' --yes" 2>&1)"; rc=$?
 echo "$out" | tail -25
@@ -67,6 +77,11 @@ inB "su - agent -c '/home/agent/shop/.venv/bin/python -c \"import six; print(six
   && ok "venv пересобран тем же python, six==1.16.0 импортируется" || fail "venv не пересобран"
 inB "command -v jq >/dev/null" && ok "apt-пакет со старого сервера (jq) поставлен" || fail "jq не поставлен"
 inB "grep -q -- '--name $AGENT' /root/installer-called" && ok "установщик вызван" || fail "установщик не вызван"
+inB "grep -q /home/agent/.local/bin/tick /etc/systemd/system/shop-web.service" \
+  && ok "свой юнит агента вернулся, хоть установщик и переснял снимки" || fail "юнит shop-web не вернулся"
+grep -q 'Asia/Yekaterinburg' <<<"$out" && ok "restore знает пояс старого сервера" || fail "пояс старого сервера не прочитан"
+inB "test ! -e /home/agent/.claude-lab/$AGENT/state/backup/last-offsite.json && test -s /home/agent/.claude-lab/$AGENT/state/backup/last-offsite.json.old-server" \
+  && ok "журнал облака старого сервера отложен (сторож не скажет OK по чужим успехам)" || fail "журнал облака старого сервера остался"
 inB "stat -c %U /home/agent/shop/data/prices.csv | grep -qx agent" && ok "владелец файлов — agent" || fail "владелец не agent"
 
 # idempotent re-run: no re-extract, no failure

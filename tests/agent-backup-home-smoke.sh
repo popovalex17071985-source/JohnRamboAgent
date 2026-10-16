@@ -150,6 +150,7 @@ python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); assert m["format"]=
 D="$x/$WM/deploy"
 grep -q "mytool" "$D/crontab.txt" || fail "crontab не снят"
 [[ -f "$D/apt-manual.txt" ]] || fail "нет apt-manual.txt"
+[[ -s "$D/timezone.txt" ]] || fail "часовой пояс сервера не снят (deploy/timezone.txt)"
 [[ -f "$D/systemd-system/shop.service" ]] || fail "юнит, который запускает код из домашки, не снят"
 [[ -f "$D/systemd-system/foreign.service" ]] && fail "чужой юнит попал в снимок"
 [[ -f "$D/systemd-system/cron-canary-$AGENT.timer" ]] || fail "таймер своего сервиса не снят"
@@ -222,6 +223,56 @@ HOME="$H" DASHI_AGENT="$AGENT" DASHI_WORKSPACE="$WS" DASHI_CHANNEL_ENV="$box/cha
 st="$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d["status"],d["source"])' "$WS/state/backup/offsite-status.json")"
 [[ "$st" == "ok rclone" ]] || fail "rclone-листинг свежий, а статус: $st"
 ok "сторож: читает облако rclone, а не только свой файл"
+
+# remote that resolves to a folder on this same box is NOT off-site
+mkdir -p "$box/srv/offsite"
+shim_rclone() {  # shim_rclone <config dump json>
+  cat >"$SHIM/rclone" <<EOF
+#!/bin/sh
+case "\$1" in
+  listremotes) echo "gdrive:" ;;
+  lsjson) echo '[{"Name":"$AGENT-20990101-0340.tar.gz.gpg","ModTime":"$(date -u -d '@'$((now - 7200)) +%Y-%m-%dT%H:%M:%SZ)","IsDir":false}]' ;;
+  config) echo '$1' ;;
+esac
+EOF
+  chmod +x "$SHIM/rclone"
+}
+watch_r() {
+  HOME="$H" DASHI_AGENT="$AGENT" DASHI_WORKSPACE="$WS" DASHI_CHANNEL_ENV="$box/channel.env" \
+    RCLONE_BIN="$SHIM/rclone" DASHI_TG_DRYRUN_DIR="$TG" bash "$W" "$@"
+}
+status_of() { python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["status"])' "$WS/state/backup/offsite-status.json"; }
+shim_rclone '{"gdrive":{"type":"alias","remote":"'"$box"'/srv/offsite"}}'
+rm -rf "$TG"; watch_r >/dev/null
+[[ "$(status_of)" == not_offsite ]] || fail "alias на локальную папку, а статус: $(status_of)"
+grep -rq "этом же сервере" "$TG" || fail "alias на локальную папку: хозяину не ушло"
+ok "сторож: alias -> папка на этом же диске = НЕ off-site, хозяину сообщение"
+shim_rclone '{"gdrive":{"type":"local"}}'
+rm -rf "$TG"; watch_r >/dev/null
+[[ "$(status_of)" == not_offsite ]] || fail "remote типа local, а статус: $(status_of)"
+ok "сторож: remote типа local = НЕ off-site"
+shim_rclone '{"gdrive":{"type":"alias","remote":"'"$box"'/srv/offsite"}}'
+rm -rf "$TG"; fails_before="$(grep -c 'FAIL: off-site' "$WS/logs/backup-watch.log")"
+out="$(DASHI_BACKUP_OFFSITE_STUB="e2e Smith" watch_r --dry-run)"
+[[ "$(status_of)" == stub && "$out" == stub:* ]] || fail "заглушка объявлена, а статус: $(status_of) / $out"
+echo "e2e Smith" >"$WS/deploy/offsite-stub"; watch_r >/dev/null; rm -f "$WS/deploy/offsite-stub"
+[[ "$(status_of)" == stub ]] || fail "заглушка файлом deploy/offsite-stub не распознана: $(status_of)"
+[[ -z "$(ls "$TG"/*.call 2>/dev/null | xargs -r grep -l sendMessage)" ]] || fail "заглушка, а сторож написал"
+[[ "$(grep -c 'FAIL: off-site' "$WS/logs/backup-watch.log")" == "$fails_before" ]] || fail "заглушка дала FAIL-строку"
+grep -q 'STUB off-site' "$WS/logs/backup-watch.log" || fail "нет строки STUB в логе"
+ok "сторож: объявленная заглушка = «stub», не OK и не тревога, никому не пишет"
+
+# a real cloud with a fresh copy, but the LAST upload failed -> failing
+shim_rclone '{"gdrive":{"type":"drive","scope":"drive"}}'
+printf '{"ts": %s, "ok": false, "error": "mkdir /x: permission denied"}\n' "$((now - 600))" >"$WS/state/backup/last-attempt.json"
+rm -rf "$TG"; watch_r >/dev/null
+[[ "$(status_of)" == failing ]] || fail "последняя отправка упала, а статус: $(status_of)"
+grep -rq "permission denied" "$TG" || fail "failing: в сообщении нет текста ошибки"
+printf '{"ts": %s, "ok": true, "error": ""}\n' "$((now - 600))" >"$WS/state/backup/last-attempt.json"
+rm -rf "$TG"; watch_r >/dev/null
+[[ "$(status_of)" == ok ]] || fail "отправка удалась, облако настоящее, а статус: $(status_of)"
+rm -f "$WS/state/backup/last-attempt.json"
+ok "сторож: копия свежая, но последняя отправка упала -> «failing» с текстом ошибки"
 
 # ── 4. password hand-over ───────────────────────────────────────────────────
 # The watchdog above already retried the hand-over (password never delivered):

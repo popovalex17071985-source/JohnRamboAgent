@@ -60,6 +60,10 @@ done
 [[ -n "$AGENT_NAME" ]] || die "нужен --name <имя агента>"
 mkdir -p "$STATE_ROOT"; chmod 700 "$STATE_ROOT"
 STATE_ENV="$STATE_ROOT/$AGENT_NAME.env"
+# deploy/ snapshots of the OLD server, stashed right after unpacking: the installer's
+# first backup rewrites <workspace>/deploy from the NEW box (Smith e2e 16.10.2026:
+# the agent's own shop-web.service was lost that way). Root-only, holds channel.env.
+SNAP="$STATE_ROOT/$AGENT_NAME.deploy"
 
 home_of() { [[ "$1" == root ]] && echo /root || echo "/home/$1"; }
 # Old absolute path -> the same place on this box (another user = another home).
@@ -70,7 +74,7 @@ as_user() { local u="$1"; shift; if [[ "$u" == root ]]; then "$@"; else runuser 
 
 # ── step: system packages ───────────────────────────────────────────────────
 restore_apt() {
-  local list="$WORKSPACE/deploy/apt-manual.txt" pkg cand missing=() unavailable=() failed=()
+  local list="$SNAP/apt-manual.txt" pkg cand missing=() unavailable=() failed=()
   [[ -s "$list" ]] || { warn "нет списка пакетов apt в архиве (старый бэкап?) — пропускаю"; return 0; }
   say "Ставлю системные пакеты, которые стояли на старом сервере"
   export DEBIAN_FRONTEND=noninteractive
@@ -94,6 +98,30 @@ restore_apt() {
   return 0
 }
 
+# ── step: server timezone (cron lines are written in the OLD server's local time) ─
+restore_timezone() {
+  local want cur others
+  want="$(head -1 "$SNAP/timezone.txt" 2>/dev/null | tr -d '[:space:]')"
+  [[ -n "$want" ]] || return 0
+  cur="$(timedatectl show -p Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null)"
+  cur="${cur:-Etc/UTC}"
+  [[ "$cur" == "$want" ]] && { ok "часовой пояс как на старом сервере: $want"; return 0; }
+  # Another agent already lives here: its crons are in the current zone, don't move them.
+  others="$(find /etc/dashi-plugin -mindepth 1 -maxdepth 1 -type d ! -name "$AGENT_NAME" 2>/dev/null | head -1)"
+  if [[ -n "$others" && "$cur" != Etc/UTC && "$cur" != UTC ]]; then
+    warn "часовой пояс: старый сервер $want, здесь $cur и уже живёт другой агент — расписание агента сдвинется, проверь кроны"
+    return 0
+  fi
+  [[ -e "/usr/share/zoneinfo/$want" ]] || DEBIAN_FRONTEND=noninteractive apt-get install -y -qq tzdata >/dev/null 2>&1
+  if timedatectl set-timezone "$want" >/dev/null 2>&1 \
+     || { [[ -e "/usr/share/zoneinfo/$want" ]] && ln -sf "/usr/share/zoneinfo/$want" /etc/localtime && echo "$want" >/etc/timezone; }; then
+    systemctl restart cron >/dev/null 2>&1 || true
+    ok "часовой пояс сервера: $want (как на старом, кроны идут в то же время)"
+  else
+    warn "часовой пояс не выставлен: на старом был $want — sudo timedatectl set-timezone $want"
+  fi
+}
+
 # ── step: Python venvs (rebuilt with the SAME Python minor) ──────────────────
 python_for() {  # python_for 3.10 -> path to python3.10 or empty (tries apt once)
   local v="$1" py="python$1" cand
@@ -110,7 +138,7 @@ python_for() {  # python_for 3.10 -> path to python3.10 or empty (tries apt once
 }
 
 rebuild_envs() {
-  local snaps=("$WORKSPACE"/deploy/pyenvs/*.txt) s venv ver sys py owner req built=0 skipped=0
+  local snaps=("$SNAP"/pyenvs/*.txt) s venv ver sys py owner req built=0 skipped=0
   [[ -e "${snaps[0]}" ]] || { ok "venv в архиве не было"; return 0; }
   say "Пересобираю Python-окружения (venv): ${#snaps[@]} шт."
   for s in "${snaps[@]}"; do
@@ -145,13 +173,13 @@ rebuild_envs() {
 
 # ── step: node (after the installer: it brings node/npm) ─────────────────────
 rebuild_node() {
-  local f="$WORKSPACE/deploy/node-projects.txt" d owner tool
-  if [[ -s "$WORKSPACE/deploy/npm-global.txt" ]]; then
+  local f="$SNAP/node-projects.txt" d owner tool
+  if [[ -s "$SNAP/npm-global.txt" ]]; then
     if command -v npm >/dev/null 2>&1; then
-      xargs -a "$WORKSPACE/deploy/npm-global.txt" runuser -u "$SERVICE_USER" -- npm install -g --silent >/dev/null 2>&1 \
-        && ok "глобальные npm-пакеты агента поставлены" || warn "глобальные npm-пакеты не встали: $(tr '\n' ' ' <"$WORKSPACE/deploy/npm-global.txt")"
+      xargs -a "$SNAP/npm-global.txt" runuser -u "$SERVICE_USER" -- npm install -g --silent >/dev/null 2>&1 \
+        && ok "глобальные npm-пакеты агента поставлены" || warn "глобальные npm-пакеты не встали: $(tr '\n' ' ' <"$SNAP/npm-global.txt")"
     else
-      warn "npm нет — глобальные пакеты не поставлены: $(tr '\n' ' ' <"$WORKSPACE/deploy/npm-global.txt")"
+      warn "npm нет — глобальные пакеты не поставлены: $(tr '\n' ' ' <"$SNAP/npm-global.txt")"
     fi
   fi
   [[ -s "$f" ]] || return 0
@@ -170,7 +198,7 @@ rebuild_node() {
 
 # ── step: units of the agent from /etc/systemd/system ────────────────────────
 restore_units() {
-  local dir="$WORKSPACE/deploy/systemd-system" u n placed=0
+  local dir="$SNAP/systemd-system" u n placed=0
   [[ -d "$dir" ]] || return 0
   for u in "$dir"/*.service "$dir"/*.timer; do
     [[ -f "$u" ]] || continue
@@ -336,7 +364,16 @@ else
     fi
     ok "данные восстановлены в $WORKSPACE"
   fi
+  # The off-site journal tells about the OLD server's uploads: carried over, it made
+  # the watchdog say «OK» right after this box's first upload failed (Smith e2e).
+  for f in last-offsite.json last-attempt.json offsite-status.json; do
+    [[ -f "$WORKSPACE/state/backup/$f" ]] && mv -f "$WORKSPACE/state/backup/$f" "$WORKSPACE/state/backup/$f.old-server"
+  done
+  rm -rf "$SNAP"
   basename "$ARCHIVE" >"$DONE"
+fi
+if [[ ! -d "$SNAP" && -d "$WORKSPACE/deploy" ]]; then
+  cp -a "$WORKSPACE/deploy" "$SNAP" && chmod 700 "$SNAP"
 fi
 cat >"$STATE_ENV" <<EOF
 AGENT_NAME='$AGENT_NAME'
@@ -359,23 +396,24 @@ fi
 
 # Packages first: crontab, python, tools the agent's scripts call come from apt.
 restore_apt
+restore_timezone
 
 # ── 4. system config that lives outside home (snapshot in deploy/) ──────────
-if [[ -d "$WORKSPACE/deploy" ]]; then
+if [[ -d "$SNAP" ]]; then
   say "Возвращаю системный конфиг"
-  if [[ "$KIND" == claude && -f "$WORKSPACE/deploy/channel.env" ]]; then
+  if [[ "$KIND" == claude && -f "$SNAP/channel.env" ]]; then
     mkdir -p "/etc/dashi-plugin/$AGENT_NAME"
-    sed "s#$OLD_HOME/#$NEW_HOME/#g" "$WORKSPACE/deploy/channel.env" >"/etc/dashi-plugin/$AGENT_NAME/channel.env"
+    sed "s#$OLD_HOME/#$NEW_HOME/#g" "$SNAP/channel.env" >"/etc/dashi-plugin/$AGENT_NAME/channel.env"
     chown "root:$SERVICE_USER" "/etc/dashi-plugin/$AGENT_NAME/channel.env"; chmod 660 "/etc/dashi-plugin/$AGENT_NAME/channel.env"
     ok "channel.env возвращён (токен бота, доступ)"
   fi
-  for c in "$WORKSPACE/deploy/dashi-$AGENT_NAME"-*; do
+  for c in "$SNAP/dashi-$AGENT_NAME"-*; do
     [[ -f "$c" ]] || continue
     sed "s#$OLD_HOME/#$NEW_HOME/#g" "$c" >"/etc/cron.d/$(basename "$c")"; chmod 644 "/etc/cron.d/$(basename "$c")"
   done
-  if [[ -s "$WORKSPACE/deploy/crontab.txt" ]]; then
-    sed "s#$OLD_HOME/#$NEW_HOME/#g" "$WORKSPACE/deploy/crontab.txt" | crontab -u "$SERVICE_USER" - 2>/dev/null \
-      && ok "crontab агента восстановлен" || warn "crontab не встал: crontab -u $SERVICE_USER $WORKSPACE/deploy/crontab.txt"
+  if [[ -s "$SNAP/crontab.txt" ]]; then
+    sed "s#$OLD_HOME/#$NEW_HOME/#g" "$SNAP/crontab.txt" | crontab -u "$SERVICE_USER" - 2>/dev/null \
+      && ok "crontab агента восстановлен" || warn "crontab не встал: crontab -u $SERVICE_USER $SNAP/crontab.txt"
   fi
   # Log dirs: log CONTENTS are not in the archive, but a cron line appending into a
   # missing dir fails every run (Jarvis DR drill #6, 16.10.2026).
@@ -384,7 +422,7 @@ if [[ -d "$WORKSPACE/deploy" ]]; then
     [[ -n "$d" && ! -d "$d" ]] || continue
     mkdir -p "$d" && n=$((n + 1))
     [[ "$d" == "$NEW_HOME"/* && "$SERVICE_USER" != root ]] && chown -R "$SERVICE_USER:$SERVICE_USER" "$d"
-  done < <(cat "$WORKSPACE/deploy/crontab.txt" "$WORKSPACE"/deploy/dashi-"$AGENT_NAME"-* 2>/dev/null \
+  done < <(cat "$SNAP/crontab.txt" "$SNAP"/dashi-"$AGENT_NAME"-* 2>/dev/null \
              | sed "s#$OLD_HOME/#$NEW_HOME/#g" | bk_log_dirs_from_cron)
   mkdir -p "$WORKSPACE/logs"; [[ "$SERVICE_USER" != root ]] && chown "$SERVICE_USER:$SERVICE_USER" "$WORKSPACE/logs"
   ok "папки логов из расписания на месте (создано $n)"
@@ -394,8 +432,8 @@ fi
 if [[ -d "$WORKSPACE/extra" ]]; then
   say "В архиве были доп. пути вне домашки"
   warn "доп. пути лежат в $WORKSPACE/extra/<путь> — на место НЕ ставлю, это вручную (сначала diff -r)"
-  if [[ -f "$WORKSPACE/deploy/backup-extra-paths" ]]; then
-    sed 's/#.*//; /^[[:space:]]*$/d; s/^[[:space:]]*/      /' "$WORKSPACE/deploy/backup-extra-paths"
+  if [[ -f "$SNAP/backup-extra-paths" ]]; then
+    sed 's/#.*//; /^[[:space:]]*$/d; s/^[[:space:]]*/      /' "$SNAP/backup-extra-paths"
   else
     (cd "$WORKSPACE/extra" && find . -mindepth 1 -maxdepth 3 | sed 's|^\.|      |' | head -20)
   fi
@@ -403,7 +441,7 @@ if [[ -d "$WORKSPACE/extra" ]]; then
   while IFS= read -r l; do
     l="${l%%#*}"; l="${l#"${l%%[![:space:]]*}"}"; l="${l%"${l##*[![:space:]]}"}"
     [[ "$l" == /* && -e "$WORKSPACE/extra$l" ]] && { ex="$l"; break; }
-  done < <(cat "$WORKSPACE/deploy/backup-extra-paths" 2>/dev/null)
+  done < <(cat "$SNAP/backup-extra-paths" 2>/dev/null)
   echo "    Вернуть, например (сначала сравни: diff -r <из extra> <на месте>):"
   if [[ -d "$WORKSPACE/extra$ex" && -n "$ex" ]]; then
     echo "      sudo cp -a --backup=numbered \"$WORKSPACE/extra$ex/.\" \"$ex/\""
