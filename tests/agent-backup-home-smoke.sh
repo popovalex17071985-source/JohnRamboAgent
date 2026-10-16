@@ -86,6 +86,18 @@ echo 'print(1)' >"$EXT/run.py"
 echo x >"$EXT/__pycache__/run.cpython-310.pyc"
 echo unit >"$box/opt/units/a.service"; echo conf >"$box/opt/units/c.conf"
 echo sp >"$box/opt/dir with space/f.txt"
+PYV="$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
+US="$H/.local/lib/python$PYV/site-packages"
+mkdir -p "$US/fakepkg-1.2.3.dist-info" "$H/.local/lib/python3.99/site-packages/oldpkg-2.0.dist-info"
+printf 'Metadata-Version: 2.1\nName: fakepkg\nVersion: 1.2.3\n\nlong text\n' >"$US/fakepkg-1.2.3.dist-info/METADATA"
+echo 'x = 1' >"$US/fakepkg.py"
+printf 'Metadata-Version: 2.1\nName: oldpkg\nVersion: 2.0\n' \
+  >"$H/.local/lib/python3.99/site-packages/oldpkg-2.0.dist-info/METADATA"
+mkdir -p "$box/opt/repair-x/python/cpython-3.12-linux/bin"
+echo bin >"$box/opt/repair-x/python/cpython-3.12-linux/bin/python3"
+echo 'TELEGRAM_BOT_TOKEN=1:x' >"$box/opt/repair-x/.env"
+printf '[Service]\nUser=%s\nEnvironmentFile=%s\nEnvironmentFile=-%s\nExecStart=/x\n' \
+  "$(id -un)" "$box/opt/repair-x/.env" "$box/elsewhere/.env" >"$box/etc-systemd/claude-repair-x.service"
 printf '[Service]\nUser=nobody-else\nExecStart=%s/projects/shop/app.py\n' "$H" >"$box/etc-systemd/shop.service"
 printf '[Service]\nExecStart=/usr/bin/other\n' >"$box/etc-systemd/foreign.service"
 # a timer whose service carries the agent's name but no home path (cron-canary-<agent>)
@@ -99,6 +111,7 @@ cat >"$WS/deploy/backup-extra-paths" <<EOF
 $EXT
 $box/opt/units/*.service   # юниты
 $box/opt/dir with space
+$box/opt/repair-*
 $box/opt/missing
 relative/path
 EOF
@@ -120,6 +133,20 @@ echo "~/projects/shop/tmp   # своя строка хозяина" >>"$WS/deplo
 run_backup --init-excludes >/dev/null
 grep -q 'своя строка хозяина' "$WS/deploy/backup-exclude.txt" || fail "--init-excludes перетёр правку хозяина"
 ok "список исключений создаётся один раз и не перетирается"
+EF="$WS/deploy/backup-exclude.txt"
+sed -i '/\.local\/lib\/python3/d; /\/opt\/repair-/d' "$EF"          # a list from before
+run_backup --init-excludes >/dev/null
+[[ "$(grep -cxF '~/.local/lib/python3*' "$EF")" == 1 ]] || fail "новый шаблон ~/.local/lib/python3* не дописан в старый список"
+[[ "$(grep -cxF '/opt/repair-*/python' "$EF")" == 1 ]] || fail "новый шаблон /opt/repair-*/python не дописан"
+grep -q 'своя строка хозяина' "$EF" || fail "дописывание тронуло строку хозяина"
+grep -q '^# добавлено обновлением' "$EF" || fail "дописанные строки без пометки"
+run_backup --init-excludes >/dev/null
+[[ "$(grep -cxF '~/.local/lib/python3*' "$EF")" == 1 ]] || fail "повторный --init-excludes задвоил шаблон"
+sed -i 's#^~/.local/lib/python3\*$#\# ~/.local/lib/python3*   хочу пакеты в архиве#' "$EF"
+run_backup --init-excludes >/dev/null
+grep -qxF '~/.local/lib/python3*' "$EF" && fail "закомментированный хозяином шаблон вернули обратно"
+sed -i 's#^\# ~/.local/lib/python3\*   хочу пакеты в архиве$#~/.local/lib/python3*#' "$EF"
+ok "--init-excludes: в старый список дописаны новые шаблоны с пометкой, строки хозяина целы, без дублей, отказ хозяина уважается"
 
 pe="$(run_backup --print-excludes)"
 grep -qx "${H#/}/.cache" <<<"$pe" || fail "в исключениях нет ~/.cache: $pe"
@@ -160,13 +187,17 @@ hasnt "${EXT#/}/__pycache__"
 has "${box#/}/opt/units/a.service"
 hasnt "${box#/}/opt/units/c.conf"
 has "${box#/}/opt/dir with space/f.txt"
+hasnt "$HM/.local/lib/python$PYV"
+hasnt "$HM/.local/lib/python3.99"
+hasnt "${box#/}/opt/repair-x/python"
+has "${box#/}/opt/repair-x/.env"
 grep -q "extra: пропуск, нет такого пути/пустой глоб: $box/opt/missing" "$WS/logs/backup.log" || fail "нет строки про отсутствующий extra-путь"
 grep -q "extra: пропуск, путь не абсолютный: relative/path" "$WS/logs/backup.log" || fail "нет строки про относительный extra-путь"
 ok "архив: вся домашка + extra, мусор и логи отрезаны, пустые лог-папки остались"
 
 x="$box/x"; mkdir -p "$x"
 gpg --batch --quiet --passphrase-file "$WS/secrets/backup.pass" -d "$A" | tar xzf - -C "$x"
-python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); assert m["format"]==2, m; assert m["home"]==sys.argv[2], m; assert m["workspace"]==sys.argv[3], m; assert sys.argv[4] in m["extras"] and len(m["extras"])==3, m' \
+python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); assert m["format"]==2, m; assert m["home"]==sys.argv[2], m; assert m["workspace"]==sys.argv[3], m; assert sys.argv[4] in m["extras"] and len(m["extras"])==4, m' \
   "$x/DASHI-BACKUP.json" "$H" "$WS" "$EXT" || fail "манифест неверный: $(cat "$x/DASHI-BACKUP.json")"
 cmp -s "$box/opt/dir with space/f.txt" "$x/${box#/}/opt/dir with space/f.txt" || fail "extra-файл распаковался не байт в байт"
 ok "extra: глоб, пробел в пути, пропуски залогированы, содержимое байт в байт"
@@ -178,6 +209,13 @@ grep -q "mytool" "$D/crontab.txt" || fail "crontab не снят"
 [[ -f "$D/systemd-system/foreign.service" ]] && fail "чужой юнит попал в снимок"
 [[ -f "$D/systemd-system/cron-canary-$AGENT.timer" ]] || fail "таймер своего сервиса не снят"
 grep -qx "$H/projects/shop" "$D/node-projects.txt" || fail "проект с node_modules не записан"
+grep -qx 'fakepkg==1.2.3' "$D/pyuser/python$PYV.txt" 2>/dev/null || fail "pip --user: нет снимка пакетов python$PYV: $(ls "$D" | tr '\n' ' ')"
+[[ "$(bk_venv_field "$D/pyuser/python$PYV.txt" python)" == "$PYV" ]] || fail "pip --user: в снимке нет версии python"
+grep -qx 'oldpkg==2.0' "$D/pyuser/python3.99.txt" 2>/dev/null || fail "pip --user: python3.99 нет на сервере, а пакеты не сняты по dist-info"
+ok "pip --user: в архив не идёт, список пакетов + версия Python в deploy/pyuser (и без интерпретатора)"
+grep -q "читает $box/elsewhere/.env вне домашки" "$WS/logs/backup.log" || fail "нет WARN про env-файл вне extra-путей"
+grep -q "читает $box/opt/repair-x/.env" "$WS/logs/backup.log" && fail "ложный WARN: env-файл внутри extra-пути (глоб)"
+ok "WARN про env-файл юнита: только когда он не покрыт extra-путём (папка или глоб)"
 if [[ $VENV_OK -eq 1 ]]; then
   snap="$(ls "$D"/pyenvs/*.txt 2>/dev/null | head -1)"
   [[ -n "$snap" ]] || fail "нет снимка venv"

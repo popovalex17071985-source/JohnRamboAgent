@@ -99,6 +99,11 @@ $w/scratchpad/*
 ~/.claude/file-history
 # расшифровки сессий Claude (много места); память рядом с ними (memory/) остаётся
 ~/.claude/projects/*.jsonl
+# пакеты Python, поставленные pip install --user: в архив идёт их список
+# (deploy/pyuser), restore-agent.sh ставит их заново
+~/.local/lib/python3*
+# Python, который uv скачал ремонтнику: установщик ставит его заново
+/opt/repair-*/python
 
 # --- файлы из Telegram и временное агента ---
 $w/state/telegram/inbox
@@ -206,6 +211,34 @@ bk_tg_send_file() {  # bk_tg_send_file <token> <chat> <file> <caption> -> prints
 bk_json_str() {  # bk_json_str <text> -> "escaped"
   local s="${1//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\n'/\\n}"; s="${s//$'\t'/\\t}"
   printf '"%s"' "$s"
+}
+
+# Default patterns added AFTER lists were already created on live agents. A list is
+# never regenerated (the owner edits it), so these get appended once to old lists.
+# "pattern|why" -- why becomes the comment above the appended line.
+BK_ADDED_DEFAULTS=(
+  "~/.local/lib/python3*|пакеты pip install --user: в архив идёт их список (deploy/pyuser), восстановление ставит их заново (у Альберта было 1,3 ГБ)"
+  "/opt/repair-*/python|Python, который uv скачал ремонтнику: установщик ставит его заново"
+)
+
+# Append the added defaults an existing list lacks. A pattern present anywhere in
+# the file -- even commented out (the owner's opt-out) -- is left alone; owner
+# lines are never touched. Prints the appended patterns.
+bk_append_new_defaults() {  # bk_append_new_defaults <exclude file>
+  local f="$1" e pat why block=""
+  [[ -f "$f" ]] || return 0
+  for e in "${BK_ADDED_DEFAULTS[@]}"; do
+    pat="${e%%|*}"; why="${e#*|}"
+    grep -qF -- "$pat" "$f" && continue
+    block+="# $why"$'\n'"$pat"$'\n'
+    printf '%s\n' "$pat"
+  done
+  [[ -n "$block" ]] || return 0
+  {
+    printf '\n# добавлено обновлением плагина %s. Не нужно — закомментируй строку (#),\n' "$(date +%F)"
+    printf '# а не удаляй: удалённая вернётся при следующем бэкапе.\n'
+    printf '%s' "$block"
+  } >>"$f"
 }
 
 # A shell file that is `source`d later: every value quoted with %q, so a quote,

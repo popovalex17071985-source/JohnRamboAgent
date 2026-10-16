@@ -123,6 +123,38 @@ restore_timezone() {
 }
 
 # ── step: Python venvs (rebuilt with the SAME Python minor) ──────────────────
+# ── step: pip install --user packages (deploy/pyuser, not in the archive) ────
+restore_user_site() {
+  local snaps=("$SNAP"/pyuser/*.txt) s ver py req n done_=0
+  [[ -e "${snaps[0]}" ]] || return 0
+  say "Ставлю пакеты Python агента (pip --user): ${#snaps[@]} верси(и) Python"
+  for s in "${snaps[@]}"; do
+    ver="$(bk_venv_field "$s" python)"
+    [[ -n "$ver" ]] || { warn "снимок pip --user без версии Python: $s"; continue; }
+    req="$(mktemp)"; bk_freeze_filter <"$s" >"$req" 2>/dev/null; chmod 644 "$req"
+    n="$(grep -c . "$req")"
+    if [[ "$n" -eq 0 ]]; then rm -f "$req"; continue; fi
+    py="$(python_for "$ver")"
+    if [[ -z "$py" ]]; then
+      warn "pip --user для python$ver: нет python$ver на этом сервере ($n пакетов). Поставь python$ver, потом: bash $0 --name $AGENT_NAME --envs-only"
+      rm -f "$req"; continue
+    fi
+    # Ubuntu's python3 comes without pip; apt-manual usually brings python3-pip.
+    "$py" -m pip --version >/dev/null 2>&1 || apt-get install -y -qq python3-pip >/dev/null 2>&1 || true
+    # HOME of the agent: runuser keeps root's HOME, and --user would land in /root.
+    if as_user "$SERVICE_USER" env HOME="$NEW_HOME" "$py" -m pip install --user -q -r "$req" >/dev/null 2>"$req.err" \
+       || { grep -q externally-managed "$req.err" \
+            && as_user "$SERVICE_USER" env HOME="$NEW_HOME" "$py" -m pip install --user -q --break-system-packages \
+                 -r "$req" >/dev/null 2>"$req.err"; }; then
+      done_=$((done_ + 1)); ok "pip --user (python$ver): $n пакетов"
+    else
+      warn "pip --user (python$ver) не встал: $(grep -v '^[[:space:]]*$' "$req.err" | tail -2 | tr '\n' ' ' | cut -c1-200) -- список: $s"
+    fi
+    rm -f "$req" "$req.err"
+  done
+  return 0
+}
+
 python_for() {  # python_for 3.10 -> path to python3.10 or empty (tries apt once)
   local v="$1" py="python$1" cand
   if ! command -v "$py" >/dev/null 2>&1; then
@@ -245,7 +277,7 @@ if [[ $ENVS_ONLY -eq 1 ]]; then
   [[ -s "$STATE_ENV" ]] || die "нет $STATE_ENV — сначала полный restore"
   # shellcheck disable=SC1090
   source "$STATE_ENV"
-  rebuild_envs; rebuild_node; summary; exit 0
+  rebuild_envs; restore_user_site; rebuild_node; summary; exit 0
 fi
 
 [[ -n "$ARCHIVE" ]] || die "нужен --archive <локальный файл или remote:путь>"
@@ -447,6 +479,7 @@ fi
 
 # ── 5. Python environments (before the agent starts using them) ─────────────
 rebuild_envs
+restore_user_site
 
 # ── 6. the system part: the installer (idempotent, keeps restored data) ─────
 say "Доставляю систему через установщик (идемпотентно)"

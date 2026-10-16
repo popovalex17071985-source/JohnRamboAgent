@@ -13,6 +13,8 @@
 #   apt-manual.txt        пакеты, поставленные руками (apt-mark showmanual)
 #   pyenvs/*.txt          список пакетов каждого venv + версия Python: сами venv
 #                         в архив НЕ идут (непереносимы), их пересобирают
+#   pyuser/*.txt          пакеты pip install --user (~/.local/lib/python3.*) +
+#                         версия Python: сама папка в архив НЕ идёт
 #   systemd-system/       юниты из /etc/systemd/system, которые запускают код агента
 #   crontab.txt, channel.env, cron.d — как и раньше
 #   timezone.txt          часовой пояс сервера (кроны идут по местному времени)
@@ -25,7 +27,8 @@
 #
 # Режимы:
 #   agent-backup.sh                  ночной прогон (крон), всегда exit 0
-#   agent-backup.sh --init-excludes  создать deploy/backup-exclude.txt, если нет
+#   agent-backup.sh --init-excludes  создать deploy/backup-exclude.txt, если нет;
+#                                    в старый список дописать новые шаблоны по умолчанию
 #   agent-backup.sh --print-excludes итоговые шаблоны исключений (для проверки)
 #   agent-backup.sh --size-report    сколько весит что попадёт в архив, без архива
 set -uo pipefail
@@ -71,7 +74,13 @@ attempt() {  # attempt <1|0> [error]: the last backup/upload try, for the watchd
 
 # ── exclude list ────────────────────────────────────────────────────────────
 init_excludes() {
-  [[ -s "$EXCLUDE_FILE" ]] && return 0
+  local added
+  if [[ -s "$EXCLUDE_FILE" ]]; then
+    # The owner's list is never regenerated; defaults added later are appended once.
+    added="$(bk_append_new_defaults "$EXCLUDE_FILE")"
+    [[ -n "$added" ]] && log "в список исключений дописаны новые шаблоны по умолчанию: $(tr '\n' ' ' <<<"$added")"
+    return 0
+  fi
   bk_default_excludes "$AGENT_HOME" "$WORKSPACE" >"$EXCLUDE_FILE"
   log "создан список исключений по умолчанию: $EXCLUDE_FILE"
 }
@@ -212,6 +221,41 @@ for v in "${venvs[@]:-}"; do
   printf '# venv=%s python=%s system_site=%s\n%s\n' "$v" "$ver" "$sys_site" "$pkgs" >"deploy/pyenvs/$slug.txt"
 done
 
+# pip install --user packages (~/.local/lib/pythonX.Y): excluded like venvs (Albert
+# carried 1.3 GB of them into the cloud), their list goes to deploy/pyuser instead.
+# pip itself when it works for that Python; else the dist-info headers (the Python
+# may be gone, or its pip broken).
+rm -rf deploy/pyuser; mkdir -p deploy/pyuser
+for site in "$AGENT_HOME"/.local/lib/python3*/site-packages; do
+  [[ -d "$site" ]] || continue
+  ver="${site%/site-packages}"; ver="${ver##*/python}"
+  pkgs=""
+  if command -v "python$ver" >/dev/null 2>&1; then
+    pkgs="$(HOME="$AGENT_HOME" "python$ver" -m pip list --user --format=freeze --exclude-editable 2>/dev/null)" || pkgs=""
+  fi
+  if [[ -z "$pkgs" ]]; then
+    pkgs="$(for m in "$site"/*.dist-info/METADATA "$site"/*.egg-info/PKG-INFO; do
+              [[ -f "$m" ]] || continue
+              awk -F': ' '{sub(/\r$/, "")} /^$/ {exit} $1 == "Name" {n = $2} $1 == "Version" {v = $2}
+                          END {if (n != "" && v != "") print n "==" v}' "$m"
+            done | sort -fu)"
+  fi
+  [[ -n "$pkgs" ]] || continue
+  printf '# user-site python=%s\n%s\n' "$ver" "$pkgs" >"deploy/pyuser/python$ver.txt"
+done
+
+# Is this absolute path inside the archive's extra paths? A listed dir covers its
+# files and a glob covers what it matched (extra_paths holds the expanded paths);
+# an exact-line match missed /opt/repair-X/.env under a listed /opt/repair-X.
+covered_by_extras() {  # covered_by_extras </abs/path>
+  local m="${1#/}" r
+  for r in "${extra_paths[@]:-}"; do
+    [[ -n "$r" ]] || continue
+    [[ "$m" == "$r" || "$m" == "$r"/* ]] && return 0
+  done
+  return 1
+}
+
 # Units in /etc/systemd/system that belong to this agent: run as its user, point
 # into its home, or carry its name. Copies + which of them were enabled.
 rm -rf deploy/systemd-system; mkdir -p deploy/systemd-system
@@ -232,7 +276,7 @@ for u in "$SYSTEMD_DIR"/*.service "$SYSTEMD_DIR"/*.timer; do
   # Env files outside home are not in the archive unless listed in extra paths.
   grep -oE '^EnvironmentFile=-?/[^ ]+' "$u" | sed 's/^EnvironmentFile=-\{0,1\}//' | while IFS= read -r ef; do
     [[ "$ef" == "$AGENT_HOME"/* || "$ef" == "/etc/dashi-plugin/$AGENT/"* ]] && continue
-    grep -qxF "$ef" "$EXTRA_CONF" 2>/dev/null || log "WARN: юнит $n читает $ef вне домашки -- добавь путь в deploy/backup-extra-paths"
+    covered_by_extras "$ef" || log "WARN: юнит $n читает $ef вне домашки -- добавь путь в deploy/backup-extra-paths"
   done
 done
 
