@@ -214,8 +214,9 @@ for u in "$SYSTEMD_DIR"/*.service "$SYSTEMD_DIR"/*.timer; do
   [[ "$n" == dashi-"$AGENT"* || "$n" == *-"$AGENT".service ]] && mine=1
   [[ "$me" != root ]] && grep -qE "^User=$me[[:space:]]*$" "$u" && mine=1
   grep -qF "$AGENT_HOME/" "$u" && mine=1
-  # a timer belongs if its service does
-  [[ "$n" == *.timer && -f "${u%.timer}.service" ]] && grep -qF "$AGENT_HOME/" "${u%.timer}.service" && mine=1
+  # A timer belongs if its service was taken (services are walked first): the
+  # canary timer cron-canary-<agent>.timer carries neither a user nor a home path.
+  [[ "$n" == *.timer && -f "deploy/systemd-system/${n%.timer}.service" ]] && mine=1
   [[ $mine -eq 1 ]] || continue
   cp -f "$u" deploy/systemd-system/ 2>/dev/null || continue
   [[ "$(systemctl is-enabled "$n" 2>/dev/null)" == enabled ]] && echo "$n" >>deploy/systemd-system/enabled.txt

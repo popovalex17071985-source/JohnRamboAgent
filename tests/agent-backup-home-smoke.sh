@@ -78,6 +78,9 @@ echo 'print(1)' >"$EXT/run.py"
 echo x >"$EXT/__pycache__/run.cpython-310.pyc"
 printf '[Service]\nUser=nobody-else\nExecStart=%s/projects/shop/app.py\n' "$H" >"$box/etc-systemd/shop.service"
 printf '[Service]\nExecStart=/usr/bin/other\n' >"$box/etc-systemd/foreign.service"
+# a timer whose service carries the agent's name but no home path (cron-canary-<agent>)
+printf '[Service]\nExecStart=/usr/local/bin/canary\n' >"$box/etc-systemd/cron-canary-$AGENT.service"
+printf '[Timer]\nOnCalendar=minutely\n' >"$box/etc-systemd/cron-canary-$AGENT.timer"
 VENV_OK=0
 if python3 -m venv "$H/projects/shop/.venv" >/dev/null 2>&1 && [[ -x "$H/projects/shop/.venv/bin/pip" ]]; then
   VENV_OK=1
@@ -149,6 +152,7 @@ grep -q "mytool" "$D/crontab.txt" || fail "crontab не снят"
 [[ -f "$D/apt-manual.txt" ]] || fail "нет apt-manual.txt"
 [[ -f "$D/systemd-system/shop.service" ]] || fail "юнит, который запускает код из домашки, не снят"
 [[ -f "$D/systemd-system/foreign.service" ]] && fail "чужой юнит попал в снимок"
+[[ -f "$D/systemd-system/cron-canary-$AGENT.timer" ]] || fail "таймер своего сервиса не снят"
 grep -qx "$H/projects/shop" "$D/node-projects.txt" || fail "проект с node_modules не записан"
 if [[ $VENV_OK -eq 1 ]]; then
   snap="$(ls "$D"/pyenvs/*.txt 2>/dev/null | head -1)"
