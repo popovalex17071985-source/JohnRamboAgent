@@ -375,14 +375,7 @@ fi
 if [[ ! -d "$SNAP" && -d "$WORKSPACE/deploy" ]]; then
   cp -a "$WORKSPACE/deploy" "$SNAP" && chmod 700 "$SNAP"
 fi
-cat >"$STATE_ENV" <<EOF
-AGENT_NAME='$AGENT_NAME'
-SERVICE_USER='$SERVICE_USER'
-KIND='$KIND'
-OLD_HOME='$OLD_HOME'
-NEW_HOME='$NEW_HOME'
-WORKSPACE='$WORKSPACE'
-EOF
+bk_write_state_env "$STATE_ENV" AGENT_NAME SERVICE_USER KIND OLD_HOME NEW_HOME WORKSPACE
 
 # Backups before 12.10.2026 carry ov.conf without storage.workspace: image 0.4.21+
 # then starts on an empty base («memory is gone»). Pin it before the container starts.

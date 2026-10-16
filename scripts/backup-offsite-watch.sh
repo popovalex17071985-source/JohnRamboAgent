@@ -6,13 +6,15 @@
 # об этом сегодня, а не в день, когда сервер умер. Когда всё хорошо — молчит.
 #
 # Источник правды — листинг облака (rclone lsjson), а не наш собственный журнал;
-# журнал (state/backup/last-offsite.json, его пишет agent-backup.sh) нужен только
-# для запасного канала gws и когда облако не ответило.
+# журнал (state/backup/last-offsite.json, его пишет agent-backup.sh) засчитывается
+# только для запасного канала gws (такую копию rclone не видит).
 #
 # Плохо — это любое из:
 #   not_configured  облака нет вовсе;
 #   not_offsite     «облако» на самом деле папка на этом же сервере (remote типа
 #                   local или alias/crypt поверх локальной папки);
+#   unreachable     облако настроено, но не читается (истёк вход, нет сети) —
+#                   есть ли там копия, неизвестно;
 #   failing         последняя попытка отправки (state/backup/last-attempt.json)
 #                   провалилась позже последней копии в облаке;
 #   stale           новейшая копия старше 48 ч.
@@ -61,7 +63,7 @@ now=$(date +%s)
 
 # ── newest off-site copy ────────────────────────────────────────────────────
 status=""; source_="none"; newest_ts=0; newest_name=""; reason=""
-remote_ok=0; has_remote=0
+remote_ok=0; has_remote=0; unreachable=0
 if [[ -x "$RCLONE_BIN" ]] && "$RCLONE_BIN" listremotes 2>/dev/null | grep -q "^${RCLONE_REMOTE}:"; then
   remote_ok=1; has_remote=1
   if js="$("$RCLONE_BIN" lsjson --files-only --no-mimetype "${RCLONE_REMOTE}:${RCLONE_PATH}/" 2>"$STATE_DIR/.rclone.err")"; then
@@ -90,16 +92,20 @@ print(best[0], best[1] or "-")' "$AGENT" <<<"$js" 2>/dev/null || echo "0 -")
     [[ "$newest_name" == "-" ]] && newest_name=""
     source_="rclone"
   else
-    reason="облако не ответило: $(tail -1 "$STATE_DIR/.rclone.err" | cut -c1-160)"
+    # Expired Google login, revoked token, no network: the cloud cannot be read,
+    # so nothing proves a copy is there. Its own status -- never «OK» from the journal.
+    unreachable=1
+    reason="облако не ответило: $(grep -v '^[[:space:]]*$' "$STATE_DIR/.rclone.err" | tail -1 | cut -c1-200)"
   fi
 fi
-# Own journal: the only trace of the gws fallback, and a fallback when rclone failed.
-if [[ "$newest_ts" -eq 0 && -s "$STATE_DIR/last-offsite.json" ]]; then
-  read -r j_ts j_name < <(python3 -c '
+# Own journal: counts ONLY for the gws fallback (an upload rclone cannot list).
+# rclone uploads are proven by the listing above, not by our own word.
+if [[ $unreachable -eq 0 && -s "$STATE_DIR/last-offsite.json" ]]; then
+  read -r j_ts j_method j_name < <(python3 -c '
 import json, sys
 d = json.load(open(sys.argv[1]))
-print(int(d.get("ts", 0)), d.get("file") or "-")' "$STATE_DIR/last-offsite.json" 2>/dev/null || echo "0 -")
-  if [[ "${j_ts:-0}" -gt 0 ]]; then
+print(int(d.get("ts", 0)), d.get("method") or "-", d.get("file") or "-")' "$STATE_DIR/last-offsite.json" 2>/dev/null || echo "0 - -")
+  if [[ "$j_method" == gws && "${j_ts:-0}" -gt "$newest_ts" ]]; then
     newest_ts="$j_ts"; newest_name="${j_name/#-/}"; source_="journal"; remote_ok=1
   fi
 fi
@@ -171,6 +177,8 @@ elif [[ "$offsite_kind" == local && -n "$stub" ]]; then
   status="stub"; reason="заглушка: $stub; remote ${RCLONE_REMOTE} ведёт в $where на этом же сервере"
 elif [[ "$offsite_kind" == local ]]; then
   status="not_offsite"; reason="remote ${RCLONE_REMOTE} ведёт в $where на этом же сервере"
+elif [[ $unreachable -eq 1 ]]; then
+  status="unreachable"
 elif [[ "$att_ok" == 0 && "$att_ts" -gt "$newest_ts" ]]; then
   status="failing"; reason="последняя отправка $(( (now - att_ts) / 3600 )) ч назад не удалась: ${att_err/#-/без текста ошибки}"
 elif [[ "$newest_ts" -eq 0 ]]; then
@@ -207,6 +215,9 @@ case "$status" in
   not_offsite)
     head="«облачная» копия бэкапа лежит на этом же сервере"
     body="Remote ${RCLONE_REMOTE} ведёт в $where — это диск того же сервера, его смерть копия не переживёт. Нужен настоящий облачный remote (Google Drive): docs/07-backup-and-recovery.md, раздел «Google Drive». Или попроси меня: «подключи облако для бэкапа»." ;;
+  unreachable)
+    head="облако с бэкапами не отвечает — есть ли там свежая копия, неизвестно"
+    body="${reason^}. Самое частое: истёк вход в Google — проверка: rclone lsd ${RCLONE_REMOTE}: ; если «token expired/invalid_grant», вход надо обновить (docs/07-backup-and-recovery.md, раздел «Google Drive»)." ;;
   failing)
     head="бэкап перестал уезжать в облако"
     body="${reason^}. ${newest_name:+В облаке пока лежит копия ${age_h} ч назад ($newest_name), но новых нет. }Что смотреть: logs/backup.log (строки FAIL), проверка входа в облако: rclone lsd ${RCLONE_REMOTE}: — если «token expired/invalid_grant», вход в Google надо обновить." ;;

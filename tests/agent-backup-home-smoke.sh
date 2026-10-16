@@ -28,6 +28,14 @@ source "$L"
 [[ "$(bk_exclude_pattern '/opt/x/*' /home/a)" == "opt/x/*" ]] || fail "abs -> member"
 [[ "$(bk_exclude_pattern 'node_modules' /home/a)" == "node_modules" ]] || fail "bare name"
 [[ -z "$(bk_exclude_pattern '   # только комментарий' /home/a)" ]] || fail "comment line"
+se="$(mktemp)"
+( OLD_HOME="/home/o'brien"; WORKSPACE="/home/o'brien/.claude-lab/a b"; KIND='claude'
+  bk_write_state_env "$se" OLD_HOME WORKSPACE KIND ) || fail "bk_write_state_env упал"
+( source "$se"
+  [[ "$OLD_HOME" == "/home/o'brien" && "$WORKSPACE" == "/home/o'brien/.claude-lab/a b" && "$KIND" == claude ]] ) \
+  || fail "state env с кавычкой в пути не читается обратно: $(cat "$se")"
+rm -f "$se"
+ok "state env: кавычка и пробел в пути переживают source"
 for bad in '~' '~/' '/' '*' '/home/a' '~/*'; do
   if bk_exclude_pattern "$bad" /home/a >/dev/null; then fail "опасная строка принята: $bad"; fi
 done
@@ -58,7 +66,7 @@ mkdir -p "$WS/.claude/memory" "$WS/secrets" "$WS/logs" "$WS/state/telegram/inbox
          "$WS/.claude/dashi-plugin-claude-code/.git" "$WS/backups" \
          "$H/projects/shop/node_modules/m" "$H/projects/shop/logs" "$H/projects/shop/tmp" \
          "$H/.local/bin" "$H/.cache/pip" "$H/.claude/projects/p/memory" \
-         "$EXT/__pycache__" "$box/etc-systemd"
+         "$EXT/__pycache__" "$box/etc-systemd" "$box/opt/units" "$box/opt/dir with space"
 echo "# память" >"$WS/.claude/memory/MEMORY.md"
 echo smokepass >"$WS/secrets/backup.pass"
 echo "line" >"$WS/logs/cron-job.log"
@@ -76,6 +84,8 @@ echo '{"t":1}' >"$H/.claude/projects/p/s1.jsonl"
 echo "# auto memory" >"$H/.claude/projects/p/memory/MEMORY.md"
 echo 'print(1)' >"$EXT/run.py"
 echo x >"$EXT/__pycache__/run.cpython-310.pyc"
+echo unit >"$box/opt/units/a.service"; echo conf >"$box/opt/units/c.conf"
+echo sp >"$box/opt/dir with space/f.txt"
 printf '[Service]\nUser=nobody-else\nExecStart=%s/projects/shop/app.py\n' "$H" >"$box/etc-systemd/shop.service"
 printf '[Service]\nExecStart=/usr/bin/other\n' >"$box/etc-systemd/foreign.service"
 # a timer whose service carries the agent's name but no home path (cron-canary-<agent>)
@@ -85,7 +95,13 @@ VENV_OK=0
 if python3 -m venv "$H/projects/shop/.venv" >/dev/null 2>&1 && [[ -x "$H/projects/shop/.venv/bin/pip" ]]; then
   VENV_OK=1
 fi
-echo "$EXT" >"$WS/deploy/backup-extra-paths"
+cat >"$WS/deploy/backup-extra-paths" <<EOF
+$EXT
+$box/opt/units/*.service   # юниты
+$box/opt/dir with space
+$box/opt/missing
+relative/path
+EOF
 # Fake crontab/systemctl: the sandbox must not read the real user's schedule.
 printf '#!/bin/sh\n[ "$1" = -l ] && echo "*/5 * * * * %s/.local/bin/mytool >> %s/logs/cron-job.log 2>&1"\n' "$H" "$WS" >"$SHIM/crontab"
 printf '#!/bin/sh\nexit 1\n' >"$SHIM/systemctl"
@@ -141,12 +157,19 @@ hasnt "$WM/backups/"
 hasnt "$HM/projects/shop/.venv"
 has "${EXT#/}/run.py"
 hasnt "${EXT#/}/__pycache__"
+has "${box#/}/opt/units/a.service"
+hasnt "${box#/}/opt/units/c.conf"
+has "${box#/}/opt/dir with space/f.txt"
+grep -q "extra: пропуск, нет такого пути/пустой глоб: $box/opt/missing" "$WS/logs/backup.log" || fail "нет строки про отсутствующий extra-путь"
+grep -q "extra: пропуск, путь не абсолютный: relative/path" "$WS/logs/backup.log" || fail "нет строки про относительный extra-путь"
 ok "архив: вся домашка + extra, мусор и логи отрезаны, пустые лог-папки остались"
 
 x="$box/x"; mkdir -p "$x"
 gpg --batch --quiet --passphrase-file "$WS/secrets/backup.pass" -d "$A" | tar xzf - -C "$x"
-python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); assert m["format"]==2, m; assert m["home"]==sys.argv[2], m; assert m["workspace"]==sys.argv[3], m; assert m["extras"]==[sys.argv[4]], m' \
+python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); assert m["format"]==2, m; assert m["home"]==sys.argv[2], m; assert m["workspace"]==sys.argv[3], m; assert sys.argv[4] in m["extras"] and len(m["extras"])==3, m' \
   "$x/DASHI-BACKUP.json" "$H" "$WS" "$EXT" || fail "манифест неверный: $(cat "$x/DASHI-BACKUP.json")"
+cmp -s "$box/opt/dir with space/f.txt" "$x/${box#/}/opt/dir with space/f.txt" || fail "extra-файл распаковался не байт в байт"
+ok "extra: глоб, пробел в пути, пропуски залогированы, содержимое байт в байт"
 D="$x/$WM/deploy"
 grep -q "mytool" "$D/crontab.txt" || fail "crontab не снят"
 [[ -f "$D/apt-manual.txt" ]] || fail "нет apt-manual.txt"
@@ -175,6 +198,16 @@ A2="$(newest)"; [[ -n "$A2" ]] || fail "второй архив не созда�
 gpg --batch --quiet --passphrase-file "$WS/secrets/backup.pass" -d "$A2" | tar tzf - | grep -q 'tar.gz.gpg$' \
   && fail "архив попал внутрь архива"
 ok "повторный прогон: старые архивы внутрь не попадают"
+
+n_before="$(ls "$WS/backups/" | wc -l)"
+HOME="$H" PATH="$SHIM:$PATH" DASHI_AGENT="$AGENT" DASHI_WORKSPACE="$WS" DASHI_BACKUP_FREE_BYTES=1000 \
+  DASHI_SYSTEMD_DIR="$box/etc-systemd" RCLONE_BIN=/nonexistent/rclone bash "$S" >/dev/null
+[[ "$(ls "$WS/backups/" | wc -l)" == "$n_before" ]] || fail "мало места, а архив (частичный) всё равно записан"
+tail -3 "$WS/logs/backup.log" | grep -q "FAIL: мало места" || fail "мало места: нет понятной FAIL-строки: $(tail -2 "$WS/logs/backup.log")"
+python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["ok"] is False and "места" in d["error"], d' \
+  "$WS/state/backup/last-attempt.json" || fail "мало места: попытка не записана для сторожа"
+rm -f "$WS/state/backup/last-attempt.json"
+ok "мало места на диске: падает до архива, понятная FAIL-строка, попытка записана для сторожа"
 
 rep="$(run_backup --size-report)"
 grep -q "итого" <<<"$rep" || fail "--size-report без итога: $rep"
@@ -261,6 +294,29 @@ echo "e2e Smith" >"$WS/deploy/offsite-stub"; watch_r >/dev/null; rm -f "$WS/depl
 [[ "$(grep -c 'FAIL: off-site' "$WS/logs/backup-watch.log")" == "$fails_before" ]] || fail "заглушка дала FAIL-строку"
 grep -q 'STUB off-site' "$WS/logs/backup-watch.log" || fail "нет строки STUB в логе"
 ok "сторож: объявленная заглушка = «stub», не OK и не тревога, никому не пишет"
+
+# the cloud does not answer (expired login): its own status, not OK from the journal
+cat >"$SHIM/rclone" <<'EOF'
+#!/bin/sh
+case "$1" in
+  listremotes) echo "gdrive:" ;;
+  lsjson) echo "Failed to create file system: couldn't fetch token: invalid_grant" >&2; exit 1 ;;
+  config) echo '{"gdrive":{"type":"drive"}}' ;;
+esac
+EOF
+chmod +x "$SHIM/rclone"
+printf '{"ts": %s, "method": "rclone", "file": "x.gpg"}\n' "$((now - 3600))" >"$WS/state/backup/last-offsite.json"
+rm -rf "$TG"; watch_r >/dev/null
+[[ "$(status_of)" == unreachable ]] || fail "облако не ответило, а статус: $(status_of)"
+grep -rq "invalid_grant" "$TG" || fail "unreachable: в сообщении нет текста ошибки"
+ok "сторож: облако не отвечает (протух вход) -> «unreachable» с ошибкой, журнал не выдаёт OK"
+# the journal speaks only for the gws path: an rclone record without rclone is no proof
+rm -rf "$TG"
+HOME="$H" DASHI_AGENT="$AGENT" DASHI_WORKSPACE="$WS" DASHI_CHANNEL_ENV="$box/channel.env" \
+  RCLONE_BIN=/nonexistent/rclone DASHI_TG_DRYRUN_DIR="$TG" bash "$W" >/dev/null
+[[ "$(status_of)" == not_configured ]] || fail "журнал rclone без rclone дал статус: $(status_of)"
+rm -f "$WS/state/backup/last-offsite.json"
+ok "сторож: журнал засчитывается только для gws"
 
 # a real cloud with a fresh copy, but the LAST upload failed -> failing
 shim_rclone '{"gdrive":{"type":"drive","scope":"drive"}}'

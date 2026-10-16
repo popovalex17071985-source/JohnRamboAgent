@@ -64,6 +64,10 @@ esac
 mkdir -p "$BACKUP_DIR" "$(dirname "$LOG")" "$WORKSPACE/deploy" "$STATE_DIR"
 log() { echo "[$(date '+%F %T %Z')] $*" >>"$LOG"; }
 fail() { log "FAIL: $*"; exit 0; }   # exit 0: cron must never jam on an error
+attempt() {  # attempt <1|0> [error]: the last backup/upload try, for the watchdog's «failing»
+  printf '{"ts": %s, "ok": %s, "error": %s}\n' "$(date +%s)" "$([[ $1 == 1 ]] && echo true || echo false)" \
+    "$(bk_json_str "${2:-}")" >"$STATE_DIR/last-attempt.json"
+}
 
 # ── exclude list ────────────────────────────────────────────────────────────
 init_excludes() {
@@ -167,7 +171,8 @@ fi
 # fleet health summary and the agent's own failure watch read it.
 MAN_DIR=""; TAR_ERR=""
 on_exit() {
-  rm -rf "$MAN_DIR" "$TAR_ERR"
+  [[ -n "$MAN_DIR" ]] && rm -rf "$MAN_DIR"
+  [[ -n "$TAR_ERR" ]] && rm -f "$TAR_ERR"
   bash "$SCRIPT_DIR/backup-offsite-watch.sh" --status-only >/dev/null 2>&1 || true
 }
 trap on_exit EXIT
@@ -266,6 +271,21 @@ MAN_DIR="$(mktemp -d)"; TAR_ERR="$(mktemp)"
 cp -f "$MAN_DIR/DASHI-BACKUP.json" deploy/backup-manifest.json
 [[ ${#extra_paths[@]} -gt 0 ]] && log "extra: в архив идут ${#extra_paths[@]} путь(ей) вне домашки"
 
+# Disk pre-check: a full disk must not leave a half-written archive behind. The
+# estimate is the uncompressed size (tar into /dev/null reads no contents), an upper
+# bound for the archive; the first whole-home run can be 10x the old workspace-only one.
+est_b="$(tar -cvvf /dev/null --ignore-failed-read "${TAR_EXCL[@]}" -C / "$HOME_M" "${extra_paths[@]}" 2>/dev/null \
+  | awk '$1 !~ /^d/ {s += $3} END {printf "%.0f", s}')"
+free_b="${DASHI_BACKUP_FREE_BYTES:-$(df -PB1 "$BACKUP_DIR" 2>/dev/null | awk 'NR == 2 {print $4}')}"
+if [[ "$est_b" =~ ^[0-9]+$ && "$free_b" =~ ^[0-9]+$ ]]; then
+  need_b=$(( est_b + est_b / 10 + 100 * 1048576 ))
+  if (( free_b < need_b )); then
+    msg="мало места на диске: архиву нужно до $((need_b / 1048576)) МБ, свободно $((free_b / 1048576)) МБ в $BACKUP_DIR"
+    attempt 0 "$msg"
+    fail "$msg. Архив не писал, прошлые копии целы. Что тяжёлое: agent-backup.sh --size-report; лишнее -- в deploy/backup-exclude.txt"
+  fi
+fi
+
 # --ignore-failed-read: live dirs change under us, and the OpenViking container
 # leaves root-owned files in ~/.openviking; neither may cost the whole night.
 # Excludes come BEFORE -C: in GNU tar they apply to the names that follow them.
@@ -308,10 +328,6 @@ fi
 mapfile -t old < <(ls -1t "$BACKUP_DIR/$AGENT"-*.tar.gz.gpg 2>/dev/null | tail -n +$((RETAIN + 1)))
 for f in "${old[@]:-}"; do [[ -n "$f" ]] && rm -f "$f" && log "rotated: $f"; done
 
-attempt() {  # attempt <1|0> [error]: the last upload try, for the watchdog's «failing»
-  printf '{"ts": %s, "ok": %s, "error": %s}\n' "$(date +%s)" "$([[ $1 == 1 ]] && echo true || echo false)" \
-    "$(bk_json_str "${2:-}")" >"$STATE_DIR/last-attempt.json"
-}
 offsite_ok() {  # offsite_ok <method>: remember the last good copy for the watchdog
   attempt 1
   printf '{"ts": %s, "method": %s, "file": %s, "remote": %s}\n' "$(date +%s)" \

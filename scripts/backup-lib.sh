@@ -207,3 +207,10 @@ bk_json_str() {  # bk_json_str <text> -> "escaped"
   local s="${1//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\n'/\\n}"; s="${s//$'\t'/\\t}"
   printf '"%s"' "$s"
 }
+
+# A shell file that is `source`d later: every value quoted with %q, so a quote,
+# space or $ in a path cannot break it or run as code.
+bk_write_state_env() {  # bk_write_state_env <file> VAR...
+  local f="$1" v; shift
+  { for v in "$@"; do printf '%s=%q\n' "$v" "${!v-}"; done; } >"$f"
+}

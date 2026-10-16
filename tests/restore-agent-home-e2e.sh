@@ -38,6 +38,8 @@ echo cache > /home/agent/.cache/x/blob
 chown -R agent:agent /home/agent
 printf '[Service]\nUser=agent\nExecStart=/home/agent/.local/bin/tick\n' > /etc/systemd/system/shop-web.service
 echo Asia/Yekaterinburg > /etc/timezone
+mkdir -p '/opt/shop extra/conf' \$W/deploy; echo 'mode=prod' > '/opt/shop extra/conf/app.ini'
+echo '/opt/shop extra' > \$W/deploy/backup-extra-paths; chown -R agent:agent \$W/deploy
 mkdir -p \$W/state/backup; echo '{"ts": 1, "method": "rclone", "file": "x.gpg"}' > \$W/state/backup/last-offsite.json; chown -R agent:agent \$W/state
 su - agent -c 'python3 -m venv /home/agent/shop/.venv && /home/agent/shop/.venv/bin/pip install -q six==1.16.0' >/dev/null 2>&1
 su - agent -c '(echo \"* * * * * /home/agent/.local/bin/tick >> /home/agent/shop/logs/cron.log 2>&1\") | crontab -'
@@ -82,6 +84,16 @@ inB "grep -q /home/agent/.local/bin/tick /etc/systemd/system/shop-web.service" \
 grep -q 'Asia/Yekaterinburg' <<<"$out" && ok "restore знает пояс старого сервера" || fail "пояс старого сервера не прочитан"
 inB "test ! -e /home/agent/.claude-lab/$AGENT/state/backup/last-offsite.json && test -s /home/agent/.claude-lab/$AGENT/state/backup/last-offsite.json.old-server" \
   && ok "журнал облака старого сервера отложен (сторож не скажет OK по чужим успехам)" || fail "журнал облака старого сервера остался"
+# Extra paths outside home (guard of the former backup-extra-paths-smoke.sh): they
+# land in <workspace>/extra/, are NOT put in place, and the printed command returns them.
+inB "test -f '/home/agent/.claude-lab/$AGENT/extra/opt/shop extra/conf/app.ini' && test ! -e '/opt/shop extra'" \
+  && ok "путь вне домашки лежит в extra/, на место сам не встал" || fail "extra: $(inB 'ls -R /home/agent/.claude-lab/'$AGENT'/extra 2>&1 | head')"
+back="$(grep -o 'sudo cp -a --backup=numbered .*' <<<"$out" | head -1)"
+[[ -n "$back" ]] || fail "restore не напечатал команду возврата extra-пути"
+inB "${back#sudo }" && inB "grep -qx 'mode=prod' '/opt/shop extra/conf/app.ini'" \
+  && ok "напечатанная команда возвращает путь вне домашки на место" || fail "команда возврата не сработала: $back"
+inB "bash /opt/plugin/scripts/restore-agent.sh --name $AGENT --envs-only" >"$WORK/envs.log" 2>&1 \
+  && ok "--envs-only читает сохранённое состояние восстановления" || fail "--envs-only упал: $(tail -5 "$WORK/envs.log")"
 inB "stat -c %U /home/agent/shop/data/prices.csv | grep -qx agent" && ok "владелец файлов — agent" || fail "владелец не agent"
 
 # idempotent re-run: no re-extract, no failure
