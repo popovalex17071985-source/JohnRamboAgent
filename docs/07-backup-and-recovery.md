@@ -67,8 +67,10 @@ ssh root@АЙПИ
 **Шаг 3. Скачай код агента.** Скопируй строку целиком, вставь, Enter:
 ```
 K=КЛЮЧ_ДОСТУПА   # репозиторий закрытый: ключ только на чтение выдаёт хозяин репозитория
-git clone https://x-access-token:$K@github.com/popovalex17071985-source/JohnRamboAgent.git
+git clone https://x-access-token:$K@github.com/popovalex17071985-source/JohnRamboAgent.git dashi-plugin-claude-code
 ```
+> Папка должна называться `dashi-plugin-claude-code` — дальше команды обращаются
+> к ней по этому имени.
 
 **Шаг 4. Возьми бэкап.** Открой Google Drive в браузере, зайди в папку
 `dashi-<агент>-backups`, скачай **самый свежий** файл (имя вида
