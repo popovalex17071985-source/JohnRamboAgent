@@ -328,7 +328,7 @@ else
     # Old format carries long-term memory as .openviking/ inside the workspace.
     if [[ -d "$WORKSPACE/.openviking" ]]; then
       if command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' | grep -qx openviking; then
-        docker stop openviking >/dev/null
+        docker stop openviking >/dev/null && OV_WAS_UP=1
       fi
       [[ -e "$NEW_HOME/.openviking" ]] && mv "$NEW_HOME/.openviking" "$NEW_HOME/.openviking.pre-restore-$(date +%Y%m%d-%H%M)"
       mv "$WORKSPACE/.openviking" "$NEW_HOME/.openviking"
@@ -354,6 +354,8 @@ if [[ -f "$OV_FIX" && -s "$NEW_HOME/.openviking/ov.conf" ]]; then
   python3 "$OV_FIX" "$NEW_HOME/.openviking" | sed 's/^/    /'
   chown -R "$SERVICE_USER:$SERVICE_USER" "$NEW_HOME/.openviking" 2>/dev/null || true
 fi
+# The container stopped for the swap comes back only after ov.conf is pinned.
+[[ -n "${OV_WAS_UP:-}" ]] && docker start openviking >/dev/null
 
 # Packages first: crontab, python, tools the agent's scripts call come from apt.
 restore_apt
