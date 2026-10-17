@@ -296,6 +296,26 @@ class ApplyTest(unittest.TestCase):
         self.assertTrue(again["items"][0]["target"].endswith("/bin/c.py"))
         self.assertTrue(again["items"][0]["tweak"])
 
+    def test_apply_remembers_previous_version_for_rollback(self) -> None:
+        # `dashi-ctl rollback` returns to refs/dashi/pre-update: the planner path
+        # moves HEAD too, so it must record where it came from (like ctl update).
+        self.fx.standard_update()
+        head = self.fx.head()
+        self.fx.run("plan")
+        out = self.fx.run("apply", "all")
+        self.assertEqual(out["status"], "UPDATED")
+        self.assertNotEqual(self.fx.head(), head)
+        self.assertEqual(git(self.fx.repo, "rev-parse", "refs/dashi/pre-update"), head)
+
+    def test_failed_apply_does_not_move_rollback_point(self) -> None:
+        self.fx.standard_update()
+        self.fx.set_bun(1)
+        self.fx.run("plan")
+        self.assertEqual(self.fx.run("apply", "all")["status"], "ROLLBACK")
+        res = subprocess.run(["git", "-C", str(self.fx.repo), "rev-parse", "-q", "--verify",
+                              "refs/dashi/pre-update"], capture_output=True, env=GIT_ENV)
+        self.assertNotEqual(res.returncode, 0)
+
     def test_apply_one_kit_item_without_bridge_keeps_head(self) -> None:
         shas = self.fx.standard_update()
         head = self.fx.head()

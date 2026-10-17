@@ -62,6 +62,7 @@ CONSTITUTION = "agent-kit/core/constitution.md"
 KIT_TREE_ARGS = ("agent-kit/hooks/", "agent-kit/bin/", "agent-kit/agents/", CONSTITUTION)
 KIT_LOG_PATHS = ("agent-kit/hooks", "agent-kit/bin", "agent-kit/agents", CONSTITUTION)
 IGNORED_REPO_PATHS = frozenset({"plugin/bun.lock"})
+PREV_REF = "refs/dashi/pre-update"  # read by `dashi-ctl rollback` (install-agent.sh)
 NOTES_FILE = "update-notes.json"
 TRAILER = "Хозяину:"
 HIDE = "-"
@@ -1341,6 +1342,7 @@ def apply_bridge(ctx: Ctx, target: str, keep: list[str], carry: bool = True) -> 
         return BridgeOutcome(False, "не смог сделать резервную копию, поэтому ничего не трогал")
     ctx.git.close()
     blocked: list[str] = []
+    before = ctx.git.rev("HEAD")
     try:
         ctx.git.run("reset", "-q", "--hard", target)
         if carry and unc:
@@ -1360,7 +1362,20 @@ def apply_bridge(ctx: Ctx, target: str, keep: list[str], carry: bool = True) -> 
             return BridgeOutcome(False, blocked=blocked)
         return BridgeOutcome(False, "откатил всё как было")
     dropped = unc["replaced"] if unc and not carry else []
+    remember_previous(ctx, before)
     return BridgeOutcome(True, run_install_kit(ctx, keep), dropped=dropped)
+
+
+def remember_previous(ctx: Ctx, sha: str | None) -> None:
+    """Where `dashi-ctl rollback` goes back to: the version before this update
+    (same ref the ctl's own update writes). A failure only costs the rollback
+    point, never the update itself."""
+    if not sha:
+        return
+    try:
+        ctx.git.run("update-ref", "--create-reflog", "-m", "update", PREV_REF, sha)
+    except GitError as err:
+        log_update(ctx, f"rollback point not saved: {err}")
 
 
 def restore_repo(ctx: Ctx, bak: Path) -> None:

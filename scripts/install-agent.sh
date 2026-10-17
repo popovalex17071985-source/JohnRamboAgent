@@ -1093,6 +1093,38 @@ cat > "$CTL" <<EOF
 #!/usr/bin/env bash
 # Самообслуживание агента $AGENT_NAME. Принадлежит root, зовётся через sudo.
 set -euo pipefail
+g() { runuser -u $SERVICE_USER -- git -C $REPO_DIR "\$@"; }
+# Правки руками в коде плагина (bun.lock не в счёт) — до пяти имён через пробел.
+dirty() { g status --porcelain -- . ':!plugin/bun.lock' | awk 'NR<=5{print \$2}' | tr '\n' ' '; }
+# Версия, с которой код ушёл последним update/rollback, — туда возвращает
+# rollback. Отдельная ссылка в git: её не съест уборка git и не сдвинет fetch,
+# а для отката нужна только локальная история (сеть не нужна).
+PREV=refs/dashi/pre-update
+# Сдвинуть код на \$1: бэкап рядом (.bak), reset, bun install, комплект
+# дисциплины. Падение reset/bun = код возвращается из .bak, ненулевой код.
+switch_to() {
+  rm -rf $REPO_DIR.bak; cp -a $REPO_DIR $REPO_DIR.bak
+  if g reset -q --hard "\$1" \\
+     && runuser -u $SERVICE_USER -- bash -lc "cd '$PLUGIN_DIR' && ~/.bun/bin/bun install --silent"; then
+    # Комплект дисциплины лежит КОПИЯМИ в ~/.claude, а не читается из
+    # репозитория — без этого прогона новые гейты и реестры доезжают
+    # до кода, но не до агента. Скрипт идемпотентен и не трогает
+    # правки хозяина, поэтому гоняем на каждом движении кода.
+    # Пояс хозяина и settings.json — те же, что у установщика: иначе
+    # сводка съезжает на час сервера, а хуки регистрируются дважды.
+    KIT=$REPO_DIR/agent-kit/install-kit.sh
+    tz="\$(sed -n 's/^DASHI_OWNER_TZ=//p' $ENV_FILE | head -1)"
+    [[ -x "\$KIT" ]] && runuser -u $SERVICE_USER -- bash "\$KIT" \\
+      --claude-dir '$CLAUDE_DIR' --chat-id '$USER_ID' --agent '$AGENT_NAME' \\
+      --settings '/home/$SERVICE_USER/.claude/settings.json' --tz "\$tz" >/dev/null 2>&1 || true
+    return 0
+  fi
+  rm -rf $REPO_DIR; mv $REPO_DIR.bak $REPO_DIR; return 1
+}
+usage() {
+  echo "usage: dashi-ctl-$AGENT_NAME restart|status|logs [N]|fix-owner|vacuum|cleanup [--dry-run]|update-claude|check|update [force]|rollback [--to <sha|тег>]" >&2
+  exit 2
+}
 case "\${1:-}" in
   restart)       exec systemctl restart $UNIT ;;
   status)        exec systemctl status $UNIT --no-pager ;;
@@ -1109,31 +1141,45 @@ case "\${1:-}" in
                  # DIRTY <файлы> | UPTODATE | NOFETCH | UPDATED <n> <sha> | ROLLBACK.
                  # Бэкап рядом (.bak), падение reset/bun = откат на бэкап. Рестарт НЕ
                  # делает — его зовёт плагин отдельно, чтобы ответ успел уйти в чат.
-                 g() { runuser -u $SERVICE_USER -- git -C $REPO_DIR "\$@"; }
-                 dirty="\$(g status --porcelain -- . ':!plugin/bun.lock' | awk '{print \$2}' | head -5 | tr '\n' ' ')"
-                 if [[ -n "\$dirty" && "\${2:-}" != force ]]; then echo "DIRTY \$dirty"; exit 3; fi
+                 d="\$(dirty)"
+                 if [[ -n "\$d" && "\${2:-}" != force ]]; then echo "DIRTY \$d"; exit 3; fi
                  g fetch -q --depth 30 origin $BRANCH || { echo NOFETCH; exit 5; }
                  n="\$(g rev-list --count HEAD..FETCH_HEAD)"
                  [[ "\$n" == 0 ]] && { echo UPTODATE; exit 0; }
-                 rm -rf $REPO_DIR.bak; cp -a $REPO_DIR $REPO_DIR.bak
-                 if g reset -q --hard FETCH_HEAD \\
-                    && runuser -u $SERVICE_USER -- bash -lc "cd '$PLUGIN_DIR' && ~/.bun/bin/bun install --silent"; then
-                   # Комплект дисциплины лежит КОПИЯМИ в ~/.claude, а не читается из
-                   # репозитория — без этого прогона новые гейты и реестры доезжают
-                   # до кода, но не до агента. Скрипт идемпотентен и не трогает
-                   # правки хозяина, поэтому гоняем на каждом обновлении.
-                   # Пояс хозяина и settings.json — те же, что у установщика: иначе
-                   # сводка съезжает на час сервера, а хуки регистрируются дважды.
-                   KIT=$REPO_DIR/agent-kit/install-kit.sh
-                   tz="\$(sed -n 's/^DASHI_OWNER_TZ=//p' $ENV_FILE | head -1)"
-                   [[ -x "\$KIT" ]] && runuser -u $SERVICE_USER -- bash "\$KIT" \\
-                     --claude-dir '$CLAUDE_DIR' --chat-id '$USER_ID' --agent '$AGENT_NAME' \\
-                     --settings '/home/$SERVICE_USER/.claude/settings.json' --tz "\$tz" >/dev/null 2>&1 || true
-                   echo "UPDATED \$n \$(g rev-parse --short HEAD)"
-                 else
-                   rm -rf $REPO_DIR; mv $REPO_DIR.bak $REPO_DIR; echo ROLLBACK; exit 4
-                 fi ;;
-  *) echo "usage: dashi-ctl-$AGENT_NAME restart|status|logs [N]|fix-owner|vacuum|cleanup [--dry-run]|update-claude|check|update [force]" >&2; exit 2 ;;
+                 from="\$(g rev-parse HEAD)"
+                 switch_to FETCH_HEAD || { echo ROLLBACK; exit 4; }
+                 g update-ref --create-reflog -m update "\$PREV" "\$from" || echo "точка отката не сохранилась" >&2
+                 echo "UPDATED \$n \$(g rev-parse --short HEAD)" ;;
+  rollback)      # Обновление встало, но оказалось плохим: назад на версию до
+                 # последнего update (или --to <sha|тег>). Одно слово статуса в stdout:
+                 # DIRTY <файлы> | NOPREV | NOTFOUND <ref> | SAME <sha> |
+                 # ROLLEDBACK <было> <стало> | ROLLBACK (не встало — код как был).
+                 # Сеть не нужна. Рестарт НЕ делает — как и update.
+                 case "\${2:-}" in
+                   "")   ref=\$PREV ;;
+                   --to) ref="\${3:-}"
+                         [[ "\$ref" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}\$ && "\$ref" != *..* ]] || usage ;;
+                   *)    usage ;;
+                 esac
+                 d="\$(dirty)"
+                 [[ -z "\$d" ]] || { echo "DIRTY \$d"; exit 3; }
+                 to="\$(g rev-parse -q --verify "\$ref^{commit}" 2>/dev/null)" || to=""
+                 if [[ -z "\$to" && "\$ref" != "\$PREV" ]]; then
+                   # Клон неглубокий — тега локально может не быть; без remote молча мимо
+                   g fetch -q --depth 30 origin "+refs/tags/\$ref:refs/tags/\$ref" >/dev/null 2>&1 \\
+                     && to="\$(g rev-parse -q --verify "\$ref^{commit}" 2>/dev/null)" || to=""
+                 fi
+                 if [[ -z "\$to" ]]; then
+                   if [[ "\$ref" == "\$PREV" ]]; then echo NOPREV; else echo "NOTFOUND \$ref"; fi
+                   exit 6
+                 fi
+                 from="\$(g rev-parse HEAD)"
+                 [[ "\$to" != "\$from" ]] || { echo "SAME \$(g rev-parse --short HEAD)"; exit 0; }
+                 switch_to "\$to" || { echo ROLLBACK; exit 4; }
+                 g update-ref --create-reflog -m rollback "\$PREV" "\$from" || echo "точка отката не сохранилась" >&2
+                 echo "дальше: sudo /usr/local/bin/dashi-ctl-$AGENT_NAME restart (повторный rollback вернёт как было)" >&2
+                 echo "ROLLEDBACK \$(g rev-parse --short "\$from") \$(g rev-parse --short HEAD)" ;;
+  *) usage ;;
 esac
 EOF
 chmod 755 "$CTL"
@@ -1147,7 +1193,7 @@ $SERVICE_USER ALL=(root) NOPASSWD: $CTL
 EOF
 chmod 440 "$SUDOERS_FILE"
 if visudo -cf "$SUDOERS_FILE" >/dev/null 2>&1; then
-  ok "агент может сам: restart/status/логи/fix-owner/vacuum/update-claude/check/update"
+  ok "агент может сам: restart/status/логи/fix-owner/vacuum/update-claude/check/update/rollback"
 else
   rm -f "$SUDOERS_FILE"
   warn "sudoers не прошёл проверку visudo — пропускаю (агент не сможет сам перезапускаться)"

@@ -70,9 +70,33 @@ the bump.
    git tag vX.Y.Z && git push origin vX.Y.Z
    gh release create vX.Y.Z --title "vX.Y.Z" --notes "<changelog section>"
    ```
+   Or let `scripts/tag-release.sh` pick the number (see below).
 8. Fleet rollout (when the change should go live): restart the affected
    channel sessions — the dev-channel path loads code from the working tree,
    not from the version field.
+
+## A tag on every merge to main
+
+So an agent can be rolled back to a named version
+(`sudo dashi-ctl-<agent> rollback --to vX.Y.Z`, see
+[03-installation-linux.md](03-installation-linux.md)), every merge to `main`
+gets a tag. After the merge:
+
+```bash
+git fetch fork
+scripts/tag-release.sh --dry-run   # shows which tag it would create
+scripts/tag-release.sh             # creates it (locally only)
+git push fork vX.Y.Z               # pushing is separate; the script prints the command
+```
+
+Which number: if `.claude-plugin/plugin.json` at that commit carries a version
+newer than the latest tag, the tag is exactly that version (a regular release,
+steps above). Otherwise it is the next patch of the latest tag (`v1.3.0` ->
+`v1.3.1`): a merge without a version bump. `minor` / `major` / `X.Y.Z` as the
+first argument set the number explicitly; `--ref` picks another commit
+(default `fork/main` when present, else `origin/main`). A commit that already
+has a `vX.Y.Z` tag is left alone. Tags are annotated, the message is the commit
+subject.
 
 ## History note
 

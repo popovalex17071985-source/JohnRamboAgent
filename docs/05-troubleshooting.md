@@ -32,7 +32,7 @@
 
 Проблемы ниже описаны примерами **для Linux/systemd**. Если вы на macOS — везде где встретите `systemctl` / `journalctl` / `sudo -u <user>`, используйте эквиваленты.
 
-> **Имена.** Агент, поставленный установщиком `scripts/install-agent.sh` (основной путь на Linux): системный пользователь `agent`, сервис **`dashi-<agent>`**, конфиг `/etc/dashi-plugin/<agent>/channel.env`, держатель сессии `/usr/local/bin/dashi-run`, самообслуживание `sudo dashi-ctl-<agent> restart|status|logs|fix-owner|vacuum|update-claude|check|update`. Агент, собранный руками по [03-installation-linux.md](03-installation-linux.md): пользователь `agentctl`, сервис **`channel-<agent>`**. Tmux-сессия в обеих схемах называется `channel-<agent>`. Команды ниже даны в именах установщика; для ручной схемы подставьте `channel-<agent>` вместо `dashi-<agent>`. Разделы, относящиеся только к ручной схеме, помечены.
+> **Имена.** Агент, поставленный установщиком `scripts/install-agent.sh` (основной путь на Linux): системный пользователь `agent`, сервис **`dashi-<agent>`**, конфиг `/etc/dashi-plugin/<agent>/channel.env`, держатель сессии `/usr/local/bin/dashi-run`, самообслуживание `sudo dashi-ctl-<agent> restart|status|logs|fix-owner|vacuum|update-claude|check|update|rollback`. Агент, собранный руками по [03-installation-linux.md](03-installation-linux.md): пользователь `agentctl`, сервис **`channel-<agent>`**. Tmux-сессия в обеих схемах называется `channel-<agent>`. Команды ниже даны в именах установщика; для ручной схемы подставьте `channel-<agent>` вместо `dashi-<agent>`. Разделы, относящиеся только к ручной схеме, помечены.
 
 | Действие | Linux (systemd) | macOS (launchd) |
 |---|---|---|
