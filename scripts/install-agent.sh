@@ -134,17 +134,18 @@ ask() {  # ask VAR "приглашение" [обязательность]
 # бессмысленно: он знает свой город, а не «Asia/Yekaterinburg». Незнакомое
 # значение возвращаем как есть — ниже оно проверяется по /usr/share/zoneinfo.
 tz_from_city() {
+  # no [Пп]-style brackets: under LANG=C bash matches them per byte and Cyrillic never hits
   case "$1" in
-    [Мм]осква|[Мм]оскве|[Пп]итер|[Сс]анкт*|[Кк]азань|[Сс]очи|[Рр]остов*|[Вв]оронеж|[Нн]ижний*|moscow|Moscow|MSK|msk|spb) echo Europe/Moscow ;;
-    [Кк]алининград*)                                       echo Europe/Kaliningrad ;;
-    [Сс]амара|[Сс]амаре|[Ии]жевск|[Сс]аратов)              echo Europe/Samara ;;
-    [Пп]ермь|[Пп]ерми|[Ее]катеринбург*|[Ее]кб|[Уу]фа|[Чч]елябинск|[Тт]юмень|perm|Perm|ekb|EKB) echo Asia/Yekaterinburg ;;
-    [Оо]мск|[Оо]мске)                                      echo Asia/Omsk ;;
-    [Нн]овосибирск*|[Нн]овосиб|[Бб]арнаул|[Тт]омск|[Кк]емерово) echo Asia/Novosibirsk ;;
-    [Кк]расноярск*|[Аа]бакан)                              echo Asia/Krasnoyarsk ;;
-    [Ии]ркутск*|[Уу]лан-[Уу]дэ)                            echo Asia/Irkutsk ;;
-    [Яя]кутск*|[Чч]ита)                                    echo Asia/Yakutsk ;;
-    [Вв]ладивосток*|[Хх]абаровск)                          echo Asia/Vladivostok ;;
+    Москва|москва|Москве|москве|Питер|питер|Санкт*|санкт*|Казань|казань|Сочи|сочи|Ростов*|ростов*|Воронеж|воронеж|Нижний*|нижний*|moscow|Moscow|MSK|msk|spb) echo Europe/Moscow ;;
+    Калининград*|калининград*)                                       echo Europe/Kaliningrad ;;
+    Самара|самара|Самаре|самаре|Ижевск|ижевск|Саратов|саратов)              echo Europe/Samara ;;
+    Пермь|пермь|Перми|перми|Екатеринбург*|екатеринбург*|Екб|екб|Уфа|уфа|Челябинск|челябинск|Тюмень|тюмень|perm|Perm|ekb|EKB) echo Asia/Yekaterinburg ;;
+    Омск|омск|Омске|омске)                                      echo Asia/Omsk ;;
+    Новосибирск*|новосибирск*|Новосиб|новосиб|Барнаул|барнаул|Томск|томск|Кемерово|кемерово) echo Asia/Novosibirsk ;;
+    Красноярск*|красноярск*|Абакан|абакан)                              echo Asia/Krasnoyarsk ;;
+    Иркутск*|иркутск*|Улан-Удэ|Улан-удэ|улан-Удэ|улан-удэ)                            echo Asia/Irkutsk ;;
+    Якутск*|якутск*|Чита|чита)                                    echo Asia/Yakutsk ;;
+    Владивосток*|владивосток*|Хабаровск|хабаровск)                          echo Asia/Vladivostok ;;
     *) echo "$1" ;;
   esac
 }
