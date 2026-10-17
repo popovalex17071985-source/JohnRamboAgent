@@ -66,7 +66,8 @@ function runHook(chatId: string | undefined, stdin: string) {
   const env = { ...process.env }
   if (chatId === undefined) delete env.CHAT_ID
   else env.CHAT_ID = chatId
-  return spawnSync('bun', [HOOK], { input: stdin, encoding: 'utf8', env })
+  // process.execPath: a clean box may have bun only by full path, not in $PATH.
+  return spawnSync(process.execPath, [HOOK], { input: stdin, encoding: 'utf8', env })
 }
 
 describe('channel-reminder.ts — process contract', () => {
