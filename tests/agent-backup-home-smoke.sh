@@ -310,7 +310,7 @@ EOF
 }
 watch_r() {
   HOME="$H" DASHI_AGENT="$AGENT" DASHI_WORKSPACE="$WS" DASHI_CHANNEL_ENV="$box/channel.env" \
-    RCLONE_BIN="$SHIM/rclone" DASHI_TG_DRYRUN_DIR="$TG" bash "$W" "$@"
+    RCLONE_BIN="$SHIM/rclone" DASHI_TG_DRYRUN_DIR="$TG" DASHI_WATCH_RETRY_SLEEP=0 bash "$W" "$@"
 }
 status_of() { python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["status"])' "$WS/state/backup/offsite-status.json"; }
 shim_rclone '{"gdrive":{"type":"alias","remote":"'"$box"'/srv/offsite"}}'
@@ -348,6 +348,24 @@ rm -rf "$TG"; watch_r >/dev/null
 [[ "$(status_of)" == unreachable ]] || fail "облако не ответило, а статус: $(status_of)"
 grep -rq "invalid_grant" "$TG" || fail "unreachable: в сообщении нет текста ошибки"
 ok "сторож: облако не отвечает (протух вход) -> «unreachable» с ошибкой, журнал не выдаёт OK"
+
+# 17.10.2026: one Google «rateLimitExceeded» on the 11:20 check paged Gor's owner, though
+# the copy was there and the next listing worked. One refusal is not «unreachable»: ask again.
+cat >"$SHIM/rclone" <<EOF
+#!/bin/sh
+case "\$1" in
+  listremotes) echo "gdrive:" ;;
+  lsjson) if [ ! -f "$box/lsjson-once" ]; then : >"$box/lsjson-once"
+            echo "googleapi: Error 403: Quota exceeded, rateLimitExceeded" >&2; exit 1; fi
+          echo '[{"Name":"$AGENT-20990101-0340.tar.gz.gpg","ModTime":"$(date -u -d '@'$((now - 7200)) +%Y-%m-%dT%H:%M:%SZ)","IsDir":false}]' ;;
+  config) echo '{"gdrive":{"type":"drive","scope":"drive"}}' ;;
+esac
+EOF
+chmod +x "$SHIM/rclone"; rm -f "$box/lsjson-once" "$WS/state/backup/last-attempt.json"
+rm -rf "$TG"; watch_r >/dev/null
+[[ "$(status_of)" == ok ]] || fail "один отказ облака дал статус: $(status_of)"
+[[ -z "$(ls "$TG"/*.call 2>/dev/null | xargs -r grep -l sendMessage)" ]] || fail "один отказ облака, а сторож написал"
+ok "сторож: разовый отказ облака (rateLimitExceeded) переспрашивается, тревоги нет"
 # the journal speaks only for the gws path: an rclone record without rclone is no proof
 rm -rf "$TG"
 HOME="$H" DASHI_AGENT="$AGENT" DASHI_WORKSPACE="$WS" DASHI_CHANNEL_ENV="$box/channel.env" \
