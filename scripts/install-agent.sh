@@ -1146,7 +1146,7 @@ case "\${1:-}" in
                  [[ "\$n" == 0 ]] && { echo UPTODATE; exit 0; }
                  from="\$(g rev-parse HEAD)"
                  switch_to FETCH_HEAD || { echo ROLLBACK; exit 4; }
-                 g update-ref --create-reflog -m update \$PREV "\$from"
+                 g update-ref --create-reflog -m update "\$PREV" "\$from" || echo "точка отката не сохранилась" >&2
                  echo "UPDATED \$n \$(g rev-parse --short HEAD)" ;;
   rollback)      # Обновление встало, но оказалось плохим: назад на версию до
                  # последнего update (или --to <sha|тег>). Одно слово статуса в stdout:
@@ -1174,7 +1174,7 @@ case "\${1:-}" in
                  from="\$(g rev-parse HEAD)"
                  [[ "\$to" != "\$from" ]] || { echo "SAME \$(g rev-parse --short HEAD)"; exit 0; }
                  switch_to "\$to" || { echo ROLLBACK; exit 4; }
-                 g update-ref --create-reflog -m rollback \$PREV "\$from"
+                 g update-ref --create-reflog -m rollback "\$PREV" "\$from" || echo "точка отката не сохранилась" >&2
                  echo "дальше: sudo /usr/local/bin/dashi-ctl-$AGENT_NAME restart (повторный rollback вернёт как было)" >&2
                  echo "ROLLEDBACK \$(g rev-parse --short "\$from") \$(g rev-parse --short HEAD)" ;;
   *) usage ;;
