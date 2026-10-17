@@ -318,8 +318,9 @@ else
   skip "Node.js $(node -v)"
 fi
 # unzip нужен установщику Bun — без него тот падает уже после скачивания;
-# tmux держит интерактивную сессию Claude под systemd
-apt-get install -y -qq git unzip tmux curl jq python3
+# tmux держит интерактивную сессию Claude под systemd;
+# python3-yaml: хук мультичата без PyYAML запрещает все команды (fail-safe deny)
+apt-get install -y -qq git unzip tmux curl jq python3 python3-yaml
 
 # На 1 ГБ памяти сборка и Claude Code упираются в потолок и падают молча.
 # Ставим своп — дешевле, чем объяснять человеку OOM.
