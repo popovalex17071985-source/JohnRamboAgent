@@ -101,7 +101,7 @@ jobs:
           rc=0
           for t in tests/test_*.py; do
             echo "::group::$t"
-            if python3 -m unittest "$t"; then echo "PASS $t"; else echo "::error::FAIL $t"; rc=1; fi
+            if python3 -m unittest discover -s tests -p "$(basename "$t")"; then echo "PASS $t"; else echo "::error::FAIL $t"; rc=1; fi
             echo "::endgroup::"
           done
           exit $rc
