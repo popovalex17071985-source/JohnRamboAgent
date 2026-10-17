@@ -1,0 +1,107 @@
+# CI: every PR and every push to main gets a green/red check before merge.
+#
+# plugin  — bun install + typecheck + bun test in plugin/
+# scripts — offline shell smokes and python unittests for scripts/ under tests/
+#
+# Environment is pinned on purpose: the suites were checked on a clean
+# Ubuntu box (no ~/.claude, no tmux sessions, no git identity). What they
+# really need from the host is listed in the "host tools" step.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Bash case patterns with Cyrillic ([Пп]ермь) only match under a UTF-8
+  # locale; the runner default is C.UTF-8, stated here so it cannot drift.
+  LANG: C.UTF-8
+  LC_ALL: C.UTF-8
+  TZ: UTC
+
+jobs:
+  plugin:
+    name: plugin (typecheck + bun test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: plugin
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          # Same bun as on the agent boxes.
+          bun-version: 1.4.3
+
+      # The multichat hooks (src/chats/hooks/*.sh) parse policy.yaml with
+      # PyYAML and fail closed without it; their tests drive the real scripts.
+      - name: host tools
+        run: |
+          python3 -c 'import yaml' 2>/dev/null || {
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq python3-yaml
+          }
+          python3 -c 'import yaml; print("PyYAML", yaml.__version__)'
+
+      # bun.lock is not committed (plugin/.gitignore), so a frozen install is
+      # impossible; versions follow package.json ranges.
+      - name: bun install
+        run: bun install
+
+      - name: typecheck
+        run: bun run typecheck
+
+      - name: bun test
+        run: bun test
+
+  scripts:
+    name: scripts (shell smokes + python tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: host tools
+        run: |
+          missing=()
+          command -v gpg  >/dev/null || missing+=(gnupg)
+          command -v zstd >/dev/null || missing+=(zstd)
+          command -v jq   >/dev/null || missing+=(jq)
+          python3 -c 'import yaml' 2>/dev/null || missing+=(python3-yaml)
+          [ -e /usr/share/zoneinfo/Asia/Yekaterinburg ] || missing+=(tzdata)
+          if [ "${#missing[@]}" -gt 0 ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq "${missing[@]}"
+          fi
+
+      - name: shell smokes
+        run: |
+          set -euo pipefail
+          rc=0
+          for t in tests/*-smoke.sh; do
+            echo "::group::$t"
+            if bash "$t"; then echo "PASS $t"; else echo "::error::FAIL $t"; rc=1; fi
+            echo "::endgroup::"
+          done
+          exit $rc
+
+      - name: python tests
+        run: |
+          set -euo pipefail
+          rc=0
+          for t in tests/test_*.py; do
+            echo "::group::$t"
+            if python3 -m unittest discover -s tests -p "$(basename "$t")"; then echo "PASS $t"; else echo "::error::FAIL $t"; rc=1; fi
+            echo "::endgroup::"
+          done
+          exit $rc
