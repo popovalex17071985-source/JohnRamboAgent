@@ -577,7 +577,7 @@ describe('hook E2E dedup persistence (FIX 1)', () => {
   // route's accept. We resolve on the child's exit.
   function runHook(port: number, statePath: string, transcriptPath: string): Promise<{ code: number }> {
     return new Promise((resolve) => {
-      const child = spawn('bun', [HOOK], {
+      const child = spawn(process.execPath, [HOOK], {
         stdio: ['pipe', 'inherit', 'inherit'],
         env: {
           ...process.env,
@@ -1128,7 +1128,7 @@ describe('hook E2E: no leak after a stop hook or a task-notification', () => {
 
   function runHookWithStateDir(port: number, stateDir: string, transcriptPath: string): Promise<number> {
     return new Promise((resolve) => {
-      const child = spawn('bun', [HOOK], {
+      const child = spawn(process.execPath, [HOOK], {
         stdio: ['pipe', 'inherit', 'inherit'],
         env: {
           ...process.env,
