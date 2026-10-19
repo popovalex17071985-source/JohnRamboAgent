@@ -66,7 +66,18 @@ status=""; source_="none"; newest_ts=0; newest_name=""; reason=""
 remote_ok=0; has_remote=0; unreachable=0
 if [[ -x "$RCLONE_BIN" ]] && "$RCLONE_BIN" listremotes 2>/dev/null | grep -q "^${RCLONE_REMOTE}:"; then
   remote_ok=1; has_remote=1
-  if js="$("$RCLONE_BIN" lsjson --files-only --no-mimetype "${RCLONE_REMOTE}:${RCLONE_PATH}/" 2>"$STATE_DIR/.rclone.err")"; then
+  # One refusal is not «unreachable»: Google throttles (rateLimitExceeded) for a minute
+  # and the next listing works -- 17.10.2026 that paged Gor's owner for nothing.
+  list_remote() {
+    local try
+    for try in 1 2 3; do
+      "$RCLONE_BIN" lsjson --files-only --no-mimetype "${RCLONE_REMOTE}:${RCLONE_PATH}/" \
+        2>"$STATE_DIR/.rclone.err" && return 0
+      [[ $try -lt 3 ]] && sleep "$(( ${DASHI_WATCH_RETRY_SLEEP:-30} * try ))"
+    done
+    return 1
+  }
+  if js="$(list_remote)"; then
     read -r newest_ts newest_name < <(python3 -c '
 import json, re, sys
 from datetime import datetime, timedelta, timezone
