@@ -72,10 +72,11 @@ elif [ "$MEM_BUDGET_MB" -ge 1100 ]; then
   install -d -o "$OWNER" -g "$OWNER" "$WORKSPACE/scripts"
   install -o "$OWNER" -g "$OWNER" -m 755 "$KIT/embed-server.py" "$WORKSPACE/scripts/embed-server.py"
   # Там же не было pip (голая Ubuntu 22.04), а uv -- тоже нет: ставим pip из apt.
-  # apt-get update обязателен -- со старым индексом пакеты отдают 404.
+  # apt-get update обязателен -- со старым индексом пакеты отдают 404. Замок dpkg
+  # ждём до 5 минут: на свежем сервере его держит unattended-upgrades.
   if ! python3 -m pip --version >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
-    DEBIAN_FRONTEND=noninteractive apt-get update -q >/dev/null 2>&1 || true
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -q python3-pip >/dev/null 2>&1 \
+    DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 update -q >/dev/null 2>&1 || true
+    DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -q python3-pip >/dev/null 2>&1 \
       || say "pip из apt не встал"
   fi
   # Ставим с логом и второй попыткой: 20.09.2026 на Смите первый прогон pip
