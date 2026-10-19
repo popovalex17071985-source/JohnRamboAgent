@@ -29,6 +29,10 @@
 #   ... --yes                                # без вопросов (cloud-init, CI): необязательное пропускается
 #
 set -euo pipefail
+# A strict inherited umask (077/027) made npm install Claude Code into 700 dirs, so the
+# agent user could not run claude and the service never came up (Smith, 19.10.2026).
+# Shared tools must be world-readable; secrets get their own umask 077 below.
+umask 022
 
 NODE_MAJOR=22
 # Версии зашиты, чтобы «поставил вчера — работает, поставил сегодня — нет» не
@@ -75,6 +79,50 @@ gap()  { warn "$1"; GAPS+=("$1${2:+ | доделать: $2}"); }
 # Есть ли настоящий терминал. `-r /dev/tty` врёт: файл читаем всегда, а открыть
 # его без управляющего терминала (docker exec, CI, cloud-init) нельзя.
 have_tty() { { : </dev/tty; } 2>/dev/null; }
+# Свежий сервер: сразу после первой загрузки unattended-upgrades/apt-daily держат
+# замок dpkg, и apt-get падал мгновенно (Смит, 19.10.2026: docker.io не встал, а
+# руками чуть позже встал: у `apt` ожидание замка 120 с по умолчанию, у apt-get -- 0).
+# Все вызовы apt -- через apt_get: ждать замок до 5 минут. Замок списков
+# (/var/lib/apt/lists/lock, его держит apt-daily) DPkg::Lock::Timeout НЕ ждёт --
+# update на apt 2.4 падает сразу (проверено), поэтому update повторяем сами.
+# apt_quiet -- то же молча, но ответ apt идёт в журнал, а при сбое его хвост на
+# экран: раньше он уходил в /dev/null, и разобрать падение было нечем.
+APT_LOCK_TIMEOUT=300
+APT_RETRY_PAUSE=10
+APT_LOG="/var/log/dashi-install-apt.log"
+apt_get() {
+  local rc waited=0
+  while :; do
+    rc=0; apt-get -o DPkg::Lock::Timeout="$APT_LOCK_TIMEOUT" "$@" || rc=$?
+    [[ $rc -eq 0 || "${1:-}" != update ]] && return "$rc"
+    (( waited >= APT_LOCK_TIMEOUT )) && return "$rc"
+    warn "apt-get update не прошёл (код $rc) -- жду замок apt, повтор через $APT_RETRY_PAUSE с"
+    sleep "$APT_RETRY_PAUSE"; waited=$((waited + APT_RETRY_PAUSE))
+  done
+}
+apt_quiet() {
+  local rc=0 from
+  # На экран -- только ответ ЭТОГО вызова, не хвост прошлых из того же журнала
+  from=$(( $(stat -c %s "$APT_LOG" 2>/dev/null || echo 0) + 1 ))
+  apt_get "$@" >>"$APT_LOG" 2>&1 || rc=$?
+  if (( rc != 0 )); then
+    warn "apt-get $* -- код $rc; ответ apt (весь журнал: $APT_LOG):"
+    tail -c +"$from" "$APT_LOG" | tail -n 15 | sed 's/^/      /'
+  fi
+  return "$rc"
+}
+# Пароль бэкапа на экран -- только человеку у терминала: он тут же сохраняет его.
+# Неинтерактивный прогон (--yes, cloud-init, `> install.log`) печатал пароль прямо
+# в журнал открытым текстом. Там -- только где он лежит; хозяину он уходит в
+# Telegram файлом (backup-pass-send.sh ниже).
+show_backup_pass() {  # show_backup_pass PASS PASS_FILE
+  if [[ $ASSUME_YES -eq 0 ]] && [[ -t 1 ]]; then
+    printf '\n    \033[1;33mПАРОЛЬ ОТ БЭКАПА (сохрани отдельно от сервера!):\033[0m %s\n\n' "$1"
+    read -r -p "    Сохранил пароль? Enter для продолжения " _ </dev/tty || true
+  else
+    ok "пароль бэкапа создан и лежит в $2 -- в журнал не печатаю, придёт тебе в Telegram файлом"
+  fi
+}
 
 usage() {
   # Шапка файла до set -euo — целиком, чтобы новый флаг не выпадал из справки
@@ -306,14 +354,19 @@ fi
 # ─────────────────────────────────────────────────────────────────────────────
 say "Система и Claude Code"
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
+apt_get update -qq
 # curl ставим ПЕРВЫМ — он нужен уже для nodesource-скрипта ниже; на голой
 # машине без curl прогон падал bit «command not found» до установки Node.
-apt-get install -y -qq curl ca-certificates
+apt_get install -y -qq curl ca-certificates
 
 if ! command -v node >/dev/null || [[ "$(node -v | cut -c2- | cut -d. -f1)" -lt "$NODE_MAJOR" ]]; then
-  curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - >/dev/null
-  apt-get install -y -qq nodejs
+  # Скрипт nodesource зовёт apt-get сам -- ожидание замка передаём ему через
+  # APT_CONFIG (добавляется к /etc/apt/apt.conf.d, не заменяет его).
+  apt_conf="$(mktemp)"; printf 'DPkg::Lock::Timeout "%s";\n' "$APT_LOCK_TIMEOUT" > "$apt_conf"
+  curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | APT_CONFIG="$apt_conf" bash - >/dev/null \
+    || { rm -f "$apt_conf"; die "не подключился репозиторий Node.js (nodesource) — проверь сеть и повтори"; }
+  rm -f "$apt_conf"
+  apt_get install -y -qq nodejs
   ok "Node.js $(node -v)"
 else
   skip "Node.js $(node -v)"
@@ -321,7 +374,7 @@ fi
 # unzip нужен установщику Bun — без него тот падает уже после скачивания;
 # tmux держит интерактивную сессию Claude под systemd;
 # python3-yaml: хук мультичата без PyYAML запрещает все команды (fail-safe deny)
-apt-get install -y -qq git unzip tmux curl jq python3 python3-yaml
+apt_get install -y -qq git unzip tmux curl jq python3 python3-yaml
 
 # На 1 ГБ памяти сборка и Claude Code упираются в потолок и падают молча.
 # Ставим своп — дешевле, чем объяснять человеку OOM.
@@ -1278,8 +1331,7 @@ if [[ $setup_backup -eq 1 ]]; then
     BK_PASS="$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 24)"
     # Пароль через stdin, не в командной строке su — иначе он виден в ps любому
     printf '%s\n' "$BK_PASS" | su - "$SERVICE_USER" -c "umask 077; cat > '$PASS_FILE'"
-    printf '\n    \033[1;33mПАРОЛЬ ОТ БЭКАПА (сохрани отдельно от сервера!):\033[0m %s\n\n' "$BK_PASS"
-    [[ $ASSUME_YES -eq 0 ]] && read -r -p "    Сохранил пароль? Enter для продолжения " _ </dev/tty || true
+    show_backup_pass "$BK_PASS" "$PASS_FILE"
   else
     skip "пароль бэкапа уже есть ($PASS_FILE)"
   fi
@@ -1324,7 +1376,7 @@ EOF
   fi
   # rclone ставим ВСЕГДА: без него облачная копия невозможна в принципе, а
   # хозяин узнавал об этом уже после смерти сервера (Саня 27.08.2026).
-  command -v rclone >/dev/null 2>&1 || apt-get install -y -qq rclone >/dev/null 2>&1 || true
+  command -v rclone >/dev/null 2>&1 || apt_quiet install -y -qq rclone || true
   if as_agent "command -v rclone >/dev/null 2>&1 && rclone listremotes 2>/dev/null | grep -q ."; then
     ok "rclone-remote найден — копия уедет off-site автоматически"
   elif [[ $ASSUME_YES -eq 0 ]]; then
@@ -1621,8 +1673,8 @@ if [[ -z "$OPENAI_KEY" && ! -s "$OV_DIR/ov.conf" ]]; then
   fi
 else
   if ! command -v docker >/dev/null 2>&1; then
-    apt-get install -y -qq docker.io >/dev/null 2>&1 && systemctl enable --now docker >/dev/null 2>&1 \
-      || die "docker не встал — поставь руками (apt install docker.io) и повтори"
+    apt_quiet install -y -qq docker.io && systemctl enable --now docker >>"$APT_LOG" 2>&1 \
+      || die "docker не встал — поставь руками (apt install docker.io) и повтори (журнал: $APT_LOG)"
     ok "docker установлен"
   fi
   as_agent "mkdir -p '$OV_DIR/claude-code-memory-plugin'"
@@ -1820,7 +1872,7 @@ if [[ -z "$REPAIR_TOKEN" && ! -s "$R_DIR/.env" ]]; then
   skip "без ремонтника (повторный прогон с --repair-token TOKEN включит; токен = ещё один /newbot)"
 else
   if [[ ! -x "$R_DIR/venv/bin/claude-telegram-bot" ]]; then
-    apt-get install -y -qq git >/dev/null 2>&1 || true
+    apt_quiet install -y -qq git || true
     # Пакет живёт на GitHub (не в PyPI) и требует Python >=3.11, а на Ubuntu 22.04
     # системный 3.10 — uv приносит свой CPython и не трогает системный
     command -v uv >/dev/null 2>&1 \
