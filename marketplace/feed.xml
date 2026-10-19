@@ -126,7 +126,7 @@
         <AdType>Товар приобретен на продажу</AdType>
         <Case_Condition>Мелкие царапины</Case_Condition>
         <Screen_Condition>Без дефектов</Screen_Condition>
-      <ScreenCondition>1–2 мелкие царапины</ScreenCondition><CaseCondition>Мелкие царапины</CaseCondition><Devicework>Включается</Devicework><Akb>83</Akb><BoxSealed>Нет</BoxSealed></Ad>
+      <ScreenCondition>Без дефектов</ScreenCondition><CaseCondition>Мелкие царапины</CaseCondition><Devicework>Включается</Devicework><Akb>83</Akb><BoxSealed>Нет</BoxSealed></Ad>
 
       <Ad>
         <Id>1650144321</Id>
@@ -2079,7 +2079,7 @@
         <AdType>Товар приобретен на продажу</AdType>
         <Case_Condition>Мелкие царапины</Case_Condition>
         <Screen_Condition>Без дефектов</Screen_Condition>
-      <ScreenCondition>Без дефектов</ScreenCondition><CaseCondition>Вмятины или сколы</CaseCondition><Devicework>Включается</Devicework><Akb>100</Akb></Ad>
+      <ScreenCondition>Без дефектов</ScreenCondition><CaseCondition>Мелкие царапины</CaseCondition><Devicework>Включается</Devicework><Akb>100</Akb></Ad>
 
       <Ad>
         <Id>1938129441</Id>
@@ -2164,6 +2164,58 @@
         <Condition>Б/у</Condition>
         <AdType>Товар приобретен на продажу</AdType>
       </Ad>
+
+      <Ad>
+        <Id>1939322913</Id>
+        <DateBegin>2023-03-01</DateBegin>
+        <DateEnd>2033-03-31</DateEnd>
+        <ListingFee>Package</ListingFee>
+        <AdStatus>Free</AdStatus>
+        
+        <ManagerName>Тимофей</ManagerName>
+        <ContactPhone>+73422140020</ContactPhone>
+        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
+        <GoodsType>Смарт-часы и фитнес-браслеты</GoodsType>
+        <AdType>Товар приобретен на продажу</AdType>
+        <Category>Телефоны</Category>
+        <Title>Apple Watch Ultra 2 2024 49mm Black Ocean Band бу</Title>
+        <Description><![CDATA[<p>Watch Ultra 2 2024 49mm Black Ocean Band бу</p>
+<p>✅Хорошее состояние, технически исправен<br>✅Аккумулятор 98%<br>⚠️ Косметика: можно под микроскопом увидеть потертости на краске<br>✅Комплект: полный комплект<br>✅Гарантия 180 дней</p>
+<p>🔥 Более 100 единиц проверенной бу техники всегда в наличии</p>
+<p>👍🏼 Гарантия лучшей стоимости</p>
+<p>💰Возможна покупка в кредит и по банковской карте</p>
+<p>🔄 Сдайте своё старое устройство по программе TRADE IN и получите скидку до 70%</p>
+<p>🥇Работаем для Вас с 2008 года и дорожим своей репутацией</p>
+<p>☝🏼Вся Б/У техника является ОРИГИНАЛЬНОЙ, проверена по чек-листу из 27 пунктов</p>
+<p>Арт. 6fwmr</p>]]></Description>
+        <Price>34990</Price>
+        
+        <Model>Apple Watch Ultra</Model>
+        <Images>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/4361/3368767753/tempImageKoZxum.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/4369/3368767761/tempImageMad8UN.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/4377/3368767769/tempImagebqQXK6.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/4385/3368767777/tempImageYYEm4u.jpg"/>
+        </Images>
+        <Color>серый</Color>
+        <Category>Телефоны</Category>
+        
+        
+        <ProductType>Смарт-часы или браслет</ProductType>
+        <Condition>Б/у</Condition>
+        <AdType>Товар приобретен на продажу</AdType>
+        <Case_Condition>Без дефектов</Case_Condition>
+        <Screen_Condition>Без дефектов</Screen_Condition>
+        <Brand>Apple</Brand>
+        <ProductSubType>смарт-часы</ProductSubType>
+        <Gender>унисекс</Gender>
+        <StrapType>Полиуретановый</StrapType>
+        <AkbH>Больше 30 минут</AkbH>
+        <DeviceWork>Включается</DeviceWork>
+        <Akb>98</Akb>
+        <ScreenFlaws>Без дефектов</ScreenFlaws>
+        <CaseFlaws>Без дефектов</CaseFlaws>
+      <ScreenCondition>Без дефектов</ScreenCondition><CaseCondition>Без дефектов</CaseCondition><Devicework>Включается</Devicework><GoodsSubType>Смарт-часы</GoodsSubType></Ad>
 
 <Ad>
         <Id>426971203</Id>
@@ -3906,7 +3958,7 @@
         <Condition>новое</Condition>
         <MemorySize>256 ГБ</MemorySize>
         <AdType>Товар приобретен на продажу</AdType>
-      <Revalidate>2987347</Revalidate></Ad>
+      <Revalidate>2987353</Revalidate></Ad>
 <Ad>
         <Id>496127545</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4104,7 +4156,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2987347</Revalidate></Ad>
+      <Revalidate>2987353</Revalidate></Ad>
 <Ad>
         <Id>1640714561</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4254,7 +4306,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2987347</Revalidate></Ad>
+      <Revalidate>2987353</Revalidate></Ad>
 <Ad>
         <Id>1640726593</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4404,7 +4456,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2987347</Revalidate></Ad>
+      <Revalidate>2987353</Revalidate></Ad>
 <Ad>
         <Id>1640736641</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -5004,7 +5056,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2987347</Revalidate></Ad>
+      <Revalidate>2987353</Revalidate></Ad>
 <Ad>
         <Id>1642060329</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -5104,7 +5156,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2987347</Revalidate></Ad>
+      <Revalidate>2987353</Revalidate></Ad>
 <Ad>
         <Id>1642061641</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -5404,7 +5456,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2987347</Revalidate></Ad>
+      <Revalidate>2987353</Revalidate></Ad>
 <Ad>
         <Id>1645613473</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -5554,7 +5606,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2987347</Revalidate></Ad>
+      <Revalidate>2987353</Revalidate></Ad>
 <Ad>
         <Id>1645614297</Id>
         <DateBegin>2023-03-01</DateBegin>
