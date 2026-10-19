@@ -14,6 +14,10 @@ normally and the agent is woken by a cron line that outlives the session.
 
 Dedup: at most one alarm per DELAY_MIN window, keyed by the promise text, so a
 chain of turns about the same task does not pile up alarms.
+
+Skip: no alarm while a background helper (Agent with run_in_background) has not
+reported back -- its completion notification wakes the session by itself, and an
+alarm on top only adds an empty «ПРОДОЛЖАЙ» turn that leaks to the owner's chat.
 """
 from __future__ import annotations
 
@@ -104,6 +108,118 @@ def final_text(transcript_path: str) -> str:
     return ""
 
 
+def background_agent_in_turn(transcript_path: str) -> bool:
+    """True when the current turn launched a background helper (Agent, run_in_background).
+
+    Its completion notification wakes the session by itself, so an alarm on top
+    only produces a «ПРОДОЛЖАЙ» nudge with nothing to do -- and the nudge turn's
+    text then falls back to the owner's chat (12.10.2026, «Но написал же, почему так?»).
+    """
+    try:
+        with open(transcript_path, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            start = max(0, size - 2 * 1024 * 1024)
+            fh.seek(start)
+            buf = fh.read(size - start)
+    except OSError:
+        return False
+    lines = buf.decode("utf-8", errors="replace").split("\n")
+    if start > 0 and lines:
+        lines = lines[1:]
+    for raw in reversed([line for line in lines if line.strip()]):
+        try:
+            obj = json.loads(raw)
+        except ValueError:
+            continue
+        message = obj.get("message") if isinstance(obj, dict) else None
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        if message.get("role") == "user":
+            is_tool_result = isinstance(content, list) and any(
+                isinstance(b, dict) and b.get("type") == "tool_result" for b in content
+            )
+            if not is_tool_result:
+                return False  # reached the prompt that opened this turn
+            continue
+        if message.get("role") != "assistant" or not isinstance(content, list):
+            continue
+        for block in content:
+            if (
+                isinstance(block, dict)
+                and block.get("type") == "tool_use"
+                and block.get("name") == "Agent"
+                and isinstance(block.get("input"), dict)
+                and block["input"].get("run_in_background") is True
+            ):
+                return True
+    return False
+
+
+LAUNCH_RE = re.compile(r"Async agent launched successfully.*?agentId: (a[0-9a-f]+)", re.S)
+DONE_RE = re.compile(r"<task-notification>.*?<task-id>(a[0-9a-f]+)</task-id>", re.S)
+# A helper whose notification never landed (killed, lost across a compact) must not
+# silence alarms forever: launches older than this are ignored.
+PENDING_MAX_AGE = timedelta(hours=3)
+
+
+def _texts(content) -> list[str]:
+    """All text strings in a message content, including nested tool_result blocks."""
+    if isinstance(content, str):
+        return [content]
+    out = []
+    if isinstance(content, list):
+        for block in content:
+            if isinstance(block, dict):
+                if isinstance(block.get("text"), str):
+                    out.append(block["text"])
+                out.extend(_texts(block.get("content")))
+    return out
+
+
+def pending_background_agent(transcript_path: str) -> bool:
+    """True when a background helper launched earlier has not reported back yet.
+
+    Its completion notification wakes the session, so a promise «отчитаюсь по нему»
+    needs no alarm -- 12.10.2026 such an alarm fired twice, two turns after the
+    launch, and its nudge turns leaked to the owner's chat via the fallback.
+    """
+    try:
+        with open(transcript_path, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            start = max(0, size - 4 * 1024 * 1024)
+            fh.seek(start)
+            buf = fh.read(size - start)
+    except OSError:
+        return False
+    launched, done = set(), set()
+    for raw in buf.decode("utf-8", errors="replace").split("\n"):
+        if "agentId" not in raw and "task-notification" not in raw:
+            continue
+        try:
+            obj = json.loads(raw)
+        except ValueError:
+            continue
+        message = obj.get("message") if isinstance(obj, dict) else None
+        if not isinstance(message, dict) or message.get("role") != "user":
+            continue
+        fresh = True
+        stamp = obj.get("timestamp")
+        if isinstance(stamp, str):
+            try:
+                when = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+                fresh = datetime.now(ZoneInfo("UTC")) - when < PENDING_MAX_AGE
+            except (ValueError, TypeError):  # unparsable or naive stamp
+                pass
+        for text in _texts(message.get("content")):
+            if fresh:
+                launched.update(LAUNCH_RE.findall(text))
+            done.update(DONE_RE.findall(text))
+    return bool(launched - done)
+
+
 def promise_sentence(text: str) -> str | None:
     """The sentence carrying the commitment, trimmed for a pane message."""
     # A newline ENDS a sentence on its own: `(?<=\n)\s+` needed a second space
@@ -151,6 +267,9 @@ def main() -> int:
         return 0
     promise = promise_sentence(final_text(transcript))
     if promise is None:
+        return 0
+    if background_agent_in_turn(transcript) or pending_background_agent(transcript):
+        log(f"фоновый помощник сам разбудит, будильник не нужен: {promise[:60]}")
         return 0
     if recently_armed(promise):
         log(f"будильник уже стоит: {promise[:60]}")

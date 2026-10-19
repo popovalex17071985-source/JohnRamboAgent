@@ -52,6 +52,49 @@ def user(text: str) -> dict:
     return {"message": {"role": "user", "content": [{"type": "text", "text": text}]}}
 
 
+def agent_call(background: bool) -> dict:
+    """Assistant turn that starts a helper via the Agent tool."""
+    params = {"prompt": "x"}
+    if background:
+        params["run_in_background"] = True
+    return {
+        "message": {
+            "role": "assistant",
+            "content": [{"type": "tool_use", "name": "Agent", "input": params}],
+        }
+    }
+
+
+def tool_result(text: str) -> dict:
+    return {
+        "message": {
+            "role": "user",
+            "content": [{"type": "tool_result", "content": [{"type": "text", "text": text}]}],
+        }
+    }
+
+
+def launched(agent_id: str, **extra) -> dict:
+    """Tool result Claude Code writes when a background helper starts."""
+    return dict(
+        tool_result(f"Async agent launched successfully.\nagentId: {agent_id} (internal ID)"),
+        **extra,
+    )
+
+
+def finished(agent_id: str) -> dict:
+    """The completion notification that wakes the session."""
+    return {
+        "message": {
+            "role": "user",
+            "content": (
+                f"<task-notification>\n<task-id>{agent_id}</task-id>\n"
+                "<status>completed</status>"
+            ),
+        }
+    }
+
+
 class HookCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -235,6 +278,91 @@ class RecentlyArmedTest(HookCase):
         self.assertFalse(self.hook.recently_armed("Беру правку 4."))
 
 
+class BackgroundHelperTest(HookCase):
+    """12.10.2026: a promise backed by a background helper armed an alarm anyway.
+
+    The helper's completion notification wakes the session by itself; the alarm
+    only added an empty «ПРОДОЛЖАЙ» turn whose text leaked to the owner's chat.
+    """
+
+    def test_helper_launched_in_this_turn_is_seen(self):
+        path = transcript(
+            self.ws,
+            [
+                user("Делай"),
+                agent_call(background=True),
+                tool_result("launched"),
+                assistant("Результат проверю сам и отчитаюсь."),
+            ],
+        )
+
+        self.assertTrue(self.hook.background_agent_in_turn(path))
+
+    def test_foreground_helper_does_not_count(self):
+        path = transcript(
+            self.ws,
+            [
+                user("Делай"),
+                agent_call(background=False),
+                tool_result("done"),
+                assistant("Отчитаюсь по итогам."),
+            ],
+        )
+
+        self.assertFalse(self.hook.background_agent_in_turn(path))
+
+    def test_helper_from_an_earlier_turn_is_not_this_turn(self):
+        path = transcript(
+            self.ws,
+            [agent_call(background=True), user("другое"), assistant("Отчитаюсь.")],
+        )
+
+        self.assertFalse(self.hook.background_agent_in_turn(path))
+
+    def test_helper_launched_turns_ago_and_still_running_is_pending(self):
+        # 12.10.2026 19:43: the helper had started two turns earlier.
+        path = transcript(
+            self.ws, [launched("a1"), user("другое"), assistant("Отчитаюсь отдельно.")]
+        )
+
+        self.assertTrue(self.hook.pending_background_agent(path))
+
+    def test_helper_that_reported_back_is_not_pending(self):
+        path = transcript(
+            self.ws,
+            [launched("a1"), finished("a1"), user("другое"), assistant("Отчитаюсь отдельно.")],
+        )
+
+        self.assertFalse(self.hook.pending_background_agent(path))
+
+    def test_no_helpers_means_nothing_pending(self):
+        path = transcript(self.ws, [user("другое"), assistant("Отчитаюсь отдельно.")])
+
+        self.assertFalse(self.hook.pending_background_agent(path))
+
+    def test_stale_launch_without_a_notification_is_ignored(self):
+        path = transcript(self.ws, [launched("a9", timestamp="2026-01-01T00:00:00.000Z")])
+
+        self.assertFalse(self.hook.pending_background_agent(path))
+
+    def test_fresh_timestamped_launch_is_pending(self):
+        now = datetime.now(self.hook.ZoneInfo("UTC")).isoformat().replace("+00:00", "Z")
+        path = transcript(self.ws, [launched("a2", timestamp=now)])
+
+        self.assertTrue(self.hook.pending_background_agent(path))
+
+    def test_odd_timestamp_does_not_break_the_scan(self):
+        path = transcript(self.ws, [launched("a3", timestamp="2026-10-12T17:00:00")])
+
+        self.assertTrue(self.hook.pending_background_agent(path))
+
+    def test_missing_transcript_is_nothing_pending(self):
+        missing = str(self.ws / "нет.jsonl")
+
+        self.assertFalse(self.hook.background_agent_in_turn(missing))
+        self.assertFalse(self.hook.pending_background_agent(missing))
+
+
 class MainTest(HookCase):
     def run_hook(self, payload):
         calls = []
@@ -276,6 +404,27 @@ class MainTest(HookCase):
             (fire_at + timedelta(minutes=drift)).strftime("%d.%m %H:%M") for drift in (-1, 0, 1)
         }
         self.assertIn(calls[0][1], allowed)
+
+    def test_pending_background_helper_suppresses_the_alarm(self):
+        path = transcript(
+            self.ws, [launched("a1"), user("другое"), assistant("Вернусь с прогоном.")]
+        )
+
+        code, calls = self.run_hook({"transcript_path": path})
+
+        self.assertEqual(code, 0)
+        self.assertEqual(calls, [])
+        self.assertIn("фоновый помощник", self.hook.LOG_PATH.read_text(encoding="utf-8"))
+
+    def test_helper_that_reported_back_lets_the_alarm_arm(self):
+        path = transcript(
+            self.ws,
+            [launched("a1"), finished("a1"), user("дальше"), assistant("Вернусь с прогоном.")],
+        )
+
+        _, calls = self.run_hook({"transcript_path": path})
+
+        self.assertEqual(len(calls), 1)
 
     def test_report_without_a_promise_schedules_nothing(self):
         path = transcript(self.ws, [assistant("Готово. Тесты зелёные.")])
