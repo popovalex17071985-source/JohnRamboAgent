@@ -29,6 +29,10 @@
 #   ... --yes                                # без вопросов (cloud-init, CI): необязательное пропускается
 #
 set -euo pipefail
+# A strict inherited umask (077/027) made npm install Claude Code into 700 dirs, so the
+# agent user could not run claude and the service never came up (Smith, 19.10.2026).
+# Shared tools must be world-readable; secrets get their own umask 077 below.
+umask 022
 
 NODE_MAJOR=22
 # Версии зашиты, чтобы «поставил вчера — работает, поставил сегодня — нет» не

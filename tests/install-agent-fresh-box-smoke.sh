@@ -121,4 +121,9 @@ else
   echo "· script(1) нет -- ветку с терминалом пропускаю"
 fi
 
+# umask 022 right after `set -euo pipefail`, before anything installs (Smith 19.10: an
+# inherited 077 left Claude Code unreadable for the agent user).
+awk '/^set -euo pipefail/{if(!s)s=NR} /^umask 022$/{if(!u)u=NR} /^(apt_get|install_node|NODE_MAJOR)/{if(!f)f=NR} END{exit !(s && u && u>s && u<f)}' \
+  "$ROOT/scripts/install-agent.sh" || fail "нет umask 022 в начале установщика"
+
 echo "✓ install-agent fresh-box smoke ok"
