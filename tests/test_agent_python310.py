@@ -9,6 +9,7 @@ import ast
 import io
 import shutil
 import subprocess
+import sys
 import tokenize
 import unittest
 from pathlib import Path
@@ -61,6 +62,9 @@ class AgentSidePython310(unittest.TestCase):
                 failed.append(str(p.relative_to(ROOT)))
         self.assertEqual(failed, [])
 
+    # Before 3.12 an f-string is one STRING token, so the detector cannot see inside it;
+    # on those boxes test_parses_on_python310 is the real check (Smith, 19.10.2026).
+    @unittest.skipIf(sys.version_info < (3, 12), "f-string tokens exist only from 3.12")
     def test_detector_catches_the_10_10_form(self) -> None:
         src = "x = f\"{a}|{re.sub(r'\\\\d+', 'N', b)}\"\n"
         self.assertEqual(fstring_backslash_lines(src), [1])
