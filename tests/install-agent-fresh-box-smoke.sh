@@ -55,7 +55,9 @@ APT_LOG="$T/apt.log"
 # секунды, а не вешает CI на APT_LOCK_TIMEOUT.
 APT_LOCK_TIMEOUT=2; APT_RETRY_PAUSE=1
 PATH="$T/bin:$PATH"
+for i in $(seq 1 20); do echo "OLD-RUN-LINE $i"; done > "$APT_LOG"   # прошлые вызовы в журнале
 rc=0; out="$(apt_quiet install -y -qq docker.io 2>&1)" || rc=$?
+grep -q 'OLD-RUN-LINE' <<<"$out" && fail "при сбое на экран попал хвост прошлых вызовов apt: $out"
 (( rc == 100 )) || fail "apt_quiet проглотил код apt ($rc, ждал 100)"
 (( $(wc -l < "$T/args") == 1 )) || fail "install повторяется сам -- ждать должен apt, не цикл"
 grep -q -- "-o DPkg::Lock::Timeout=$APT_LOCK_TIMEOUT install -y -qq docker.io" "$T/args" \

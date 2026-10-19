@@ -97,11 +97,13 @@ apt_get() {
   done
 }
 apt_quiet() {
-  local rc=0
+  local rc=0 from
+  # На экран -- только ответ ЭТОГО вызова, не хвост прошлых из того же журнала
+  from=$(( $(stat -c %s "$APT_LOG" 2>/dev/null || echo 0) + 1 ))
   apt_get "$@" >>"$APT_LOG" 2>&1 || rc=$?
   if (( rc != 0 )); then
     warn "apt-get $* -- код $rc; ответ apt (весь журнал: $APT_LOG):"
-    tail -n 15 "$APT_LOG" | sed 's/^/      /'
+    tail -c +"$from" "$APT_LOG" | tail -n 15 | sed 's/^/      /'
   fi
   return "$rc"
 }
@@ -357,7 +359,8 @@ if ! command -v node >/dev/null || [[ "$(node -v | cut -c2- | cut -d. -f1)" -lt 
   # Скрипт nodesource зовёт apt-get сам -- ожидание замка передаём ему через
   # APT_CONFIG (добавляется к /etc/apt/apt.conf.d, не заменяет его).
   apt_conf="$(mktemp)"; printf 'DPkg::Lock::Timeout "%s";\n' "$APT_LOCK_TIMEOUT" > "$apt_conf"
-  curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | APT_CONFIG="$apt_conf" bash - >/dev/null
+  curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | APT_CONFIG="$apt_conf" bash - >/dev/null \
+    || { rm -f "$apt_conf"; die "не подключился репозиторий Node.js (nodesource) — проверь сеть и повтори"; }
   rm -f "$apt_conf"
   apt_get install -y -qq nodejs
   ok "Node.js $(node -v)"
