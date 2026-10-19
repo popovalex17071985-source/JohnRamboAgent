@@ -391,6 +391,15 @@ gws_upload() {
 if [[ -x "$RCLONE_BIN" ]] && "$RCLONE_BIN" listremotes 2>/dev/null | grep -q "^${RCLONE_REMOTE}:"; then
   # rclone's shared OAuth client splits Google's quota across everyone; a single
   # 403 rateLimitExceeded almost always passes on the 2nd-3rd try (Gor, 11.09.2026).
+  # Room first: the age rule below runs only after a successful upload, so a full
+  # Drive (403 storageQuotaExceeded) could never free itself -- the agent stayed
+  # without a fresh off-site copy for good (Albert, 17.10.2026). Only our own
+  # archives go; a remote that cannot report free space is left as it was.
+  if command -v python3 >/dev/null 2>&1; then
+    RCLONE_BIN="$RCLONE_BIN" python3 -I "$SCRIPT_DIR/backup-remote-prune.py" \
+      "${RCLONE_REMOTE}:${RCLONE_PATH}" "$AGENT" "$size_b" >>"$LOG" 2>&1 \
+      || log "WARN: место в облаке освободить не вышло, заливаю как есть"
+  fi
   ok=""
   for attempt in 1 2 3 4 5; do
     if "$RCLONE_BIN" copy "$ARCHIVE" "${RCLONE_REMOTE}:${RCLONE_PATH}/" 2>>"$LOG"; then

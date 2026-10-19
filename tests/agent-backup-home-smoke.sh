@@ -405,6 +405,44 @@ rm -rf "$TG"; pass_send >/dev/null
 pass_send --force >/dev/null; grep -rq sendDocument "$TG" || fail "--force не отправил заново"
 ok "пароль: файлом хозяину, отметка о доставке, повтор только с --force"
 
+# ── 4b. room in the cloud BEFORE the upload (Albert, 17.10.2026) ───────────
+# A full Drive failed the upload, and old copies were deleted only after a good one.
+FR="$box/fake-rclone"; FRLOG="$box/fake-rclone.log"
+cat >"$FR" <<EOF
+#!/bin/bash
+echo "\$*" >>"$FRLOG"
+case "\$1" in
+  listremotes) echo gdrive: ;;
+  about) [ -n "\${FAKE_ABOUT_FAIL:-}" ] && exit 1; echo '{"total": 100, "used": 100, "free": 0}' ;;
+  lsjson) echo '[{"Name":"$AGENT-20261001-0340.tar.gz.gpg","Size":10,"IsDir":false},
+                 {"Name":"$AGENT-20261002-0340.tar.gz.gpg","Size":10,"IsDir":false},
+                 {"Name":"$AGENT-20261003-0340.tar.gz.gpg","Size":10,"IsDir":false},
+                 {"Name":"owner-notes.txt","Size":10,"IsDir":false}]' ;;
+  deletefile|copy|delete) exit 0 ;;
+  *) exit 1 ;;
+esac
+EOF
+chmod +x "$FR"
+run_cloud() {
+  HOME="$H" PATH="$SHIM:$PATH" DASHI_AGENT="$AGENT" DASHI_WORKSPACE="$WS" \
+    DASHI_SYSTEMD_DIR="$box/etc-systemd" RCLONE_BIN="$FR" bash "$S" >/dev/null
+}
+: >"$FRLOG"; run_cloud
+first_line() { grep -n -m1 -E "$1" "$FRLOG" | cut -d: -f1; }
+d="$(first_line '^deletefile ')"; c="$(first_line '^copy ')"
+[[ -n "$d" && -n "$c" ]] || fail "полное облако: нет удаления или заливки: $(cat "$FRLOG")"
+(( d < c )) || fail "старые копии удаляются ПОСЛЕ заливки -- полное облако не освободится"
+grep '^deletefile ' "$FRLOG" | grep -vq -- '--drive-use-trash=false' && fail "удаление идёт в корзину"
+grep -q 'owner-notes.txt' <(grep '^deletefile ' "$FRLOG") && fail "удалён чужой файл в облаке"
+[[ "$(grep -c '^deletefile ' "$FRLOG")" == 1 ]] || fail "удалено не 1 копия (должно остаться 2): $(grep '^deletefile ' "$FRLOG")"
+grep -q "gdrive:dashi-$AGENT-backups/$AGENT-20261001-0340.tar.gz.gpg" "$FRLOG" || fail "удалена не самая старая копия"
+grep -q -- '^delete --drive-use-trash=false --min-age 7d' "$FRLOG" || fail "правило возраста после заливки пропало"
+ok "полное облако: до заливки удаляется самая старая своя копия (не меньше двух), чужое цело"
+: >"$FRLOG"; FAKE_ABOUT_FAIL=1 run_cloud
+grep -q '^deletefile ' "$FRLOG" && fail "облако не сказало про место, а копии удалены"
+grep -q '^copy ' "$FRLOG" || fail "облако не сказало про место -- заливка пропала"
+ok "облако без about: ничего не удаляем, заливаем как раньше"
+
 # ── 5. the installer wires all of it ────────────────────────────────────────
 I="$PLUGIN/scripts/install-agent.sh"
 grep -q 'backup-offsite-watch.sh' "$I" || fail "установщик не ставит сторожа облачной копии в крон"
