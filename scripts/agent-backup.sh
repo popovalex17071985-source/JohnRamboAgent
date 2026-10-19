@@ -396,7 +396,7 @@ if [[ -x "$RCLONE_BIN" ]] && "$RCLONE_BIN" listremotes 2>/dev/null | grep -q "^$
   # without a fresh off-site copy for good (Albert, 17.10.2026). Only our own
   # archives go; a remote that cannot report free space is left as it was.
   if command -v python3 >/dev/null 2>&1; then
-    RCLONE_BIN="$RCLONE_BIN" python3 "$SCRIPT_DIR/backup-remote-prune.py" \
+    RCLONE_BIN="$RCLONE_BIN" python3 -I "$SCRIPT_DIR/backup-remote-prune.py" \
       "${RCLONE_REMOTE}:${RCLONE_PATH}" "$AGENT" "$size_b" >>"$LOG" 2>&1 \
       || log "WARN: место в облаке освободить не вышло, заливаю как есть"
   fi
