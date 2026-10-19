@@ -298,18 +298,34 @@ def audit_model() -> list[dict]:
     return [{"job": "model", "verdict": "ок", "detail": f"{want}, ходов за 24ч: {seen.get(want, 0)}"}]
 
 
+# Ссылка на скрипт в памяти: bin/…, hooks/…, scripts/… -- от корня рабочей папки,
+# либо целиком от ~ или / (группа 1). Префикс берётся только с начала пути: в
+# «.claude/dashi-plugin-claude-code/agent-kit/bin/x.sh» кусок
+# «/dashi-plugin-claude-code/agent-kit/» -- середина относительного пути, а не
+# абсолютный путь, и такая ссылка по-прежнему ищется от корня.
+MEMORY_REF_RE = re.compile(
+    r"((?<![\w.~/-])(?:~|/)[\w.~/-]*/)?((?:bin|hooks|scripts)/[\w./-]+\.(?:py|js|sh|mjs|ts))")
+
+
 def audit_memory_refs() -> list[dict]:
     """Скрипты, на которые ссылается память, но которых нет на диске."""
     seen, out = set(), []
     for f in MEMORY_FILES:
         if not f.exists():
             continue
-        for m in re.finditer(r"`?((?:bin|hooks|scripts)/[\w./-]+\.(?:py|js|sh|mjs|ts))`?",
-                             f.read_text(errors="ignore")):
-            rel = m.group(1)
-            if rel in seen:
+        for m in MEMORY_REF_RE.finditer(f.read_text(errors="ignore")):
+            prefix, rel = m.group(1), m.group(2)
+            ref = (prefix or "") + rel
+            if ref in seen:
                 continue
-            seen.add(rel)
+            seen.add(ref)
+            # Путь от ~ или / -- скрипт другого проекта, проверяется как есть
+            # (15.10.2026: заметка про ~/dkpbu/scripts/backup.sh числилась
+            # пропавшей -- её искали в корне рабочей папки агента).
+            if prefix:
+                if not Path(ref).expanduser().exists():
+                    out.append({"ref": ref, "in": f.name, "verdict": "НЕТ ФАЙЛА"})
+                continue
             # Память ссылается и на скрипты комплекта агентов: они лежат в
             # репозитории плагина, а не в корне рабочей папки (13.09.2026 --
             # remind-at.sh и install-agent.sh два дня числились пропавшими).
