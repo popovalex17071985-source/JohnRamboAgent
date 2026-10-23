@@ -338,7 +338,9 @@ cat >"$SHIM/rclone" <<'EOF'
 #!/bin/sh
 case "$1" in
   listremotes) echo "gdrive:" ;;
-  lsjson) echo "Failed to create file system: couldn't fetch token: invalid_grant" >&2; exit 1 ;;
+  lsjson) printf '%s\n' "Failed to create file system: couldn't fetch token: 400 Bad Request" \
+           'Response: {' '  "error": "invalid_grant",' '  "error_description": "Token has been expired or revoked."' \
+           '}' >&2; exit 1 ;;
   config) echo '{"gdrive":{"type":"drive"}}' ;;
 esac
 EOF
@@ -347,6 +349,8 @@ printf '{"ts": %s, "method": "rclone", "file": "x.gpg"}\n' "$((now - 3600))" >"$
 rm -rf "$TG"; watch_r >/dev/null
 [[ "$(status_of)" == unreachable ]] || fail "облако не ответило, а статус: $(status_of)"
 grep -rq "invalid_grant" "$TG" || fail "unreachable: в сообщении нет текста ошибки"
+grep -q '"reason": "вход в Google истёк' "$WS/state/backup/offsite-status.json" \
+  || fail "unreachable: причина не названа (ошибка rclone кончается JSON, а не словами)"
 ok "сторож: облако не отвечает (протух вход) -> «unreachable» с ошибкой, журнал не выдаёт OK"
 
 # 17.10.2026: one Google «rateLimitExceeded» on the 11:20 check paged Gor's owner, though
