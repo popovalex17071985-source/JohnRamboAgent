@@ -106,7 +106,13 @@ print(best[0], best[1] or "-")' "$AGENT" <<<"$js" 2>/dev/null || echo "0 -")
     # Expired Google login, revoked token, no network: the cloud cannot be read,
     # so nothing proves a copy is there. Its own status -- never «OK» from the journal.
     unreachable=1
-    reason="облако не ответило: $(grep -v '^[[:space:]]*$' "$STATE_DIR/.rclone.err" | tail -1 | cut -c1-200)"
+    # rclone ends its error with Google's JSON body, so the last line can be a bare «}»
+    # (Albert 24.10.2026). Name a dead login plainly; otherwise take the last line with words.
+    if grep -q 'invalid_grant' "$STATE_DIR/.rclone.err"; then
+      reason="вход в Google истёк или отозван (invalid_grant) -- нужен rclone config reconnect"
+    else
+      reason="облако не ответило: $(grep '[[:alpha:]]' "$STATE_DIR/.rclone.err" | tail -1 | cut -c1-200)"
+    fi
   fi
 fi
 # Own journal: counts ONLY for the gws fallback (an upload rclone cannot list).
