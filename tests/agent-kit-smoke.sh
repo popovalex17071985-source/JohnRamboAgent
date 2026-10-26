@@ -27,6 +27,8 @@ mkdir -p "$T/.claude/core"
 # Память того, кто гоняет тест (~/.openviking), комплект трогать не должен:
 # шаг ov.conf смотрит в песочницу, где памяти нет.
 export KIT_OV_DIR="$T/no-openviking"
+# Сканер навыков ставится из сети -- его проверяет kit-skillspector-smoke.sh.
+export KIT_NO_SKILLSPECTOR=1
 # crontab — подменный: комплект пишет в крон, а тест не должен трогать живой
 # крон того, кто его гоняет (раньше спасало только то, что строки уже стояли)
 mkdir -p "$T/shim"; export CRONTAB_FILE="$T/crontab.txt"
@@ -110,6 +112,17 @@ PY
 echo "{\"transcript_path\":\"$J\",\"session_id\":\"s\"}" \
   | python3 "$H/stop-blocker-gate.py" | grep -q '"decision": "block"' \
   || fail "отказ без перебора не заблокирован"
+# 6b. «нет такого» хозяину без открытого источника не уходит (гейт ДО отправки)
+python3 -c "
+import json,sys;d=json.load(open('$T/.claude/settings.json'))
+sys.exit(0 if any(e.get('matcher')=='mcp__dashi-channel__reply' and any(h['command'].endswith('/reply-proxy-gate.py') for h in e['hooks'])
+                  for e in d['hooks'].get('PreToolUse',[])) else 1)" \
+  || fail "гейт источника не зарегистрирован на отправку хозяину"
+echo "{\"transcript_path\":\"$J\",\"tool_input\":{\"text\":\"у этой модели нет eSIM-версии\"}}" \
+  | python3 "$H/reply-proxy-gate.py" | grep -q '"permissionDecision": "deny"' \
+  || fail "«нет такого» без источника ушло хозяину"
+echo "{\"transcript_path\":\"$J\",\"tool_input\":{\"text\":\"гипотеза: нет eSIM-версии, проверяю\"}}" \
+  | python3 "$H/reply-proxy-gate.py" | grep -q deny && fail "помеченная гипотеза не пропущена"
 # 7. TDD-гейт: коммит кода без теста блокируется, с «Без теста: <причина>» -- нет
 python3 -c "
 import json,sys;d=json.load(open('$T/.claude/settings.json'))
@@ -126,6 +139,15 @@ tdd_hook() { python3 -c 'import json,sys;print(json.dumps({"tool_name":"Bash","t
 rc=0; tdd_hook 'git commit -m "код"' || rc=$?
 [[ $rc == 2 ]] || fail "коммит кода без теста прошёл TDD-гейт"
 tdd_hook $'git commit -m "код\n\nБез теста: разовый скрипт"' || fail "«Без теста:» не пропустил коммит"
+
+# 8. Помощник change-tour: разложен, read-only, без имени чужого хозяина;
+# правило «перед ценами/синком/массовой записью -- бриф хозяину» в конституции.
+CT="$T/.claude/agents/change-tour.md"
+[[ -s "$CT" ]] || fail "помощник change-tour не разложен"
+head -1 "$CT" | grep -qx -- "---" && grep -q "^name: change-tour$" "$CT" || fail "change-tour: битая шапка"
+grep -qE "^  - (Write|Edit)" "$CT" && fail "change-tour умеет писать, а должен только читать"
+grep -qiE "Саня|Сане|Sanya|InSales|Avito" "$CT" && fail "в change-tour осталось чужое имя/система"
+grep -q "change-tour" "$T/.claude/core/constitution.md" || fail "правило про change-tour не в конституции"
 
 # Самопроверки перенесённых скриптов
 python3 "$T/bin/promise-sweeper.py" --selfcheck >/dev/null || fail "будильник по срокам"
@@ -207,4 +229,4 @@ bash -n "$R" || fail "remind-at.sh не компилируется"
 grep -q "def _session" "$T/bin/promise-sweeper.py" \
   || fail "promise-sweeper всё ещё берёт имя панели из шаблона"
 
-echo "✓ agent-kit smoke ok ($n2 хуков, 7 гейтов сработали, утренние кроны без дублей, идемпотентно)"
+echo "✓ agent-kit smoke ok ($n2 хуков, 9 гейтов сработали, утренние кроны без дублей, идемпотентно)"

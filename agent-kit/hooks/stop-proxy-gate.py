@@ -34,7 +34,7 @@ from pathlib import Path
 
 import sys as _sys
 _sys.path.insert(0, str(Path(__file__).resolve().parent))
-from turnlib import is_prompt  # noqa: E402
+from turnlib import turn_entries  # noqa: E402
 
 REPLY_TOOL = "mcp__dashi-channel__reply"
 PROBE_TOOLS = {"Bash", "Read", "Grep", "Glob", "WebFetch", "WebSearch", "Task"}
@@ -43,8 +43,15 @@ PROBE_TOOLS = {"Bash", "Read", "Grep", "Glob", "WebFetch", "WebSearch", "Task"}
 NEGATIVE = re.compile(
     r"\bнет\s+(?:такого|таких|ни\s+одного|в\s+наличии|записей|данных|позиц)|"
     r"не\s+бывает|отсутству|ни\s+одного|нигде\s+не\s+|"
-    r"\b0\s+(?:из|шт|позиц|заказ)|нулево",
-    re.IGNORECASE,
+    r"\b0\s+(?:из|шт|позиц|заказ)|нулево|"
+    # 25.10.2026, координатор: все 8 ложных «нет» недели прошли мимо старого
+    # списка («у аксессуаров нет серийников», «по дням нет», «не считаются
+    # нигде», «ни разу не тестировали»). «Нет проблем», «пока нет»,
+    # «замечаний нет» -- не утверждение о данных, мимо.
+    r"ни\s+разу\s+не|не\s+[а-яё]+\s+нигде|\bне\s+(?:пришл|видно|возьм|считают|считает)|"
+    r"\bнет\s+(?!проблем|смысла|вопрос|времени|пока\b|замечан)[A-Za-zа-яё][\w-]{3,}|"
+    r"\b(?!или\b|проблем\b|пока\b|замечан)[а-яё]{3,}\s+нет(?=\s*[.,;!?)\n]|\s*$)",
+    re.IGNORECASE | re.MULTILINE,
 )
 # Деньги и метрики: число рядом с денежным/учётным словом.
 METRIC = re.compile(
@@ -53,24 +60,6 @@ METRIC = re.compile(
     r"[^\n]{0,40}?\d",
     re.IGNORECASE,
 )
-
-
-def turn_entries(transcript: Path) -> list[dict]:
-    """Записи транскрипта ПОСЛЕ последнего сообщения пользователя."""
-    rows = []
-    for line in transcript.read_text().splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            rows.append(json.loads(line))
-        except json.JSONDecodeError:
-            continue
-    start = 0
-    for i, e in enumerate(rows):
-        if is_prompt(e):          # см. turnlib: telegram-промпты помечены isMeta
-            start = i
-    return rows[start:]
 
 
 def scan(entries: list[dict]) -> tuple[str, int, str]:
@@ -114,6 +103,11 @@ _NUM = re.compile(r"\d[\d\s\u00a0.,]{2,}\d")
 # Предметное слово: латинская сущность (Dyson, trade59, AirPods) или имя с
 # заглавной. Служебные слова короче четырёх букв отсекаются длиной.
 _WORD = re.compile(r"[A-Za-z][A-Za-z0-9_.\-]{3,}|[А-ЯЁ][а-яё]{3,}")
+# Строчное русское слово -- по основе (первые 6 букв): «у аксессуаров нет
+# серийников» обязано засчитаться против «аксессуары: серийники не ведутся».
+# Без этого гейт до отправки слал «не тот источник» при открытом нужном.
+_STEM = re.compile(r"(?<![А-Яа-яЁё])[а-яё]{6,}")
+STEM_LEN = 6
 MIN_EVIDENCE = 50          # меньше -- открывали картинку или пустой вывод
 
 
@@ -142,6 +136,9 @@ def grounded(text: str, evidence: str, negative: bool) -> bool:
         low = evidence.lower()
         words = {w.lower() for w in _WORD.findall(text)}
         if words and any(w in low for w in words):
+            return True
+        stems = {w[:STEM_LEN] for w in _STEM.findall(text)}
+        if stems and any(st in low for st in stems):
             return True
         return False
     return not nums                                  # чисел нет -- судить не о чем

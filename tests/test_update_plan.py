@@ -107,7 +107,7 @@ class Fixture:
     # -- agent side --------------------------------------------------------
     def env(self) -> dict[str, str]:
         return {**GIT_ENV, "KIT_NO_CRON": "1", "KIT_NO_MEMORY": "1",
-                "DASHI_BUN": str(self.bun), **self.extra_env}
+                "KIT_NO_SKILLSPECTOR": "1", "DASHI_BUN": str(self.bun), **self.extra_env}
 
     def install(self) -> None:
         subprocess.run(

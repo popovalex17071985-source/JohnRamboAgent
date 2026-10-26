@@ -95,6 +95,8 @@ hooks = data.setdefault("hooks", {})
 WIRING = [
     ("PreToolUse",  "Bash",                 "block-dangerous.sh",        5),
     ("PreToolUse",  "Bash",                 "block-selfmatching-pgrep.sh", 5),
+    # Чужой навык/плагин = чужие инструкции с моими правами: сначала skillspector.
+    ("PreToolUse",  "Bash",                 "skill-install-gate.sh",     5),
     ("PreToolUse",  "Write|Edit|MultiEdit", "block-red-zone.sh",         5),
     ("PreToolUse",  "Bash|Write|Edit",      "block-masked-secret.sh",    5),
     ("PostToolUse", "Bash",                 "truncate-bash-output.sh",   5),
@@ -108,6 +110,9 @@ WIRING = [
     # Коммит кода без теста блокируется; выход -- строка «Без теста: <причина>».
     ("PreToolUse",  "Bash",                 "tdd-commit-gate.py",       10),
     ("PreToolUse",  "mcp__dashi-channel__reply", "owner-time-guard.sh",  5),
+    # «Нет такого» или цифра по деньгам без открытого источника не уходит хозяину:
+    # Stop-гейт ловит это уже после отправки, этот -- до.
+    ("PreToolUse",  "mcp__dashi-channel__reply", "reply-proxy-gate.py", 10),
     ("SessionStart", "",                   "session-start-hint.sh",     5),
     ("PreCompact",  "",                     "precompact-save.sh",       10),
     # Слив в долгую память: без него сервер OpenViking стоит, а писать в него нечем.
@@ -288,6 +293,85 @@ fi
 if [ "${KIT_NO_MEMORY:-0}" != "1" ] && [ -x "$KIT/scripts/setup-memory.sh" ]; then
   "$KIT/scripts/setup-memory.sh" --workspace "$WORKSPACE" --agent "$AGENT" \
     || echo "  ! долгая память не встала -- смотри вывод выше"
+fi
+
+# Сканер чужих навыков (skillspector): без него гейт skill-install-gate.sh
+# требует проверку, которую нечем сделать. Ставится один раз пользователю агента
+# в ~/.local/bin через uv. Коммит запинен -- ровно тот, что работает у
+# координатора (v2.12.0): сканер ставится мимо собственного гейта, поэтому
+# «свежий HEAD чужого репозитория» сюда не годится. Нет uv (свежая Ubuntu 22.04:
+# ни uv, ни pip, Python 3.10, а сканеру нужен 3.12 -- Smith 26.10.2026) --
+# качаем ОДИН бинарник uv из релиза astral-sh/uv запиненной версии и сверяем
+# sha256, вшитый ниже; скрипт-установщик не исполняем. uv сам принесёт Python
+# 3.12 под сканер. Любой сбой (сеть, сумма, архитектура) -- одна строка, комплект
+# не валится. Под root для чужого workspace не ставим: инструмент уехал бы в
+# /root, агенту недоступный.
+# KIT_NO_SKILLSPECTOR=1 -- пропуск (песочница, тесты).
+# Происхождение (проверено 26.10.2026 через GitHub API): github.com/NVIDIA/SkillSpector,
+# организация NVIDIA подтверждена GitHub (nvidia.com), Apache-2.0; d7338f5 --
+# подписанный merge PR #841 от 22.10.2026. Новый коммит -- только после такой же сверки.
+SKILLSPECTOR_SRC="git+https://github.com/NVIDIA/skillspector.git@d7338f58200a9ae2a24810cee08911ab68b107a7"
+# uv 0.11.23 (19.06.2026) -- та же версия, что ставит сканер у координатора.
+# Суммы сверены 26.10.2026 трижды: digest релиза в GitHub API, файл .sha256 из
+# релиза и sha256sum скачанного архива. Новая версия -- только с такой же сверкой.
+UV_VERSION="0.11.23"
+UV_SHA256_X86_64="e12c4cda2fe8c305510a78380a88f2c32a27e90cdcd123cefd2873388f0ebb5f"
+UV_SHA256_AARCH64="1873a77350f6621279ae1a0d2227f2bd8b67131598f14a7eb0ba2215d3da2c98"
+# KIT_UV_URL_BASE -- подмена источника для тестов (file://); сумма не подменяется.
+UV_URL_BASE="${KIT_UV_URL_BASE:-https://github.com/astral-sh/uv/releases/download/$UV_VERSION}"
+# Скачать проверенный uv в $1 (~/.local/bin). Сбой = строка на экран и код 1.
+fetch_uv() {
+  local bin_dir="$1" arch sha tmp tgz got
+  [ "$(uname -s 2>/dev/null)" = Linux ] || { echo "  ! uv не скачиваю: не Linux"; return 1; }
+  case "$(uname -m 2>/dev/null)" in
+    x86_64|amd64)  arch=x86_64;  sha="$UV_SHA256_X86_64" ;;
+    aarch64|arm64) arch=aarch64; sha="$UV_SHA256_AARCH64" ;;
+    *) echo "  ! uv не скачиваю: архитектура $(uname -m 2>/dev/null) не поддержана"; return 1 ;;
+  esac
+  for t in curl tar sha256sum; do
+    command -v "$t" >/dev/null 2>&1 || { echo "  ! uv не скачиваю: нет $t"; return 1; }
+  done
+  tmp="$(mktemp -d)" || return 1
+  tgz="$tmp/uv.tar.gz"
+  if ! curl -fsSL -m 120 -o "$tgz" "$UV_URL_BASE/uv-$arch-unknown-linux-gnu.tar.gz" 2>/dev/null; then
+    echo "  ! uv не скачался (сеть?)"; rm -rf "$tmp"; return 1
+  fi
+  got="$(sha256sum "$tgz" | cut -d' ' -f1)"
+  if [ "$got" != "$sha" ]; then
+    echo "  ! контрольная сумма uv не сошлась ($got) -- не ставлю"; rm -rf "$tmp"; return 1
+  fi
+  if ! tar -xzf "$tgz" -C "$tmp" "uv-$arch-unknown-linux-gnu/uv" 2>/dev/null \
+     || ! mkdir -p "$bin_dir" \
+     || ! cp "$tmp/uv-$arch-unknown-linux-gnu/uv" "$bin_dir/uv.new" \
+     || ! chmod 755 "$bin_dir/uv.new" || ! mv -f "$bin_dir/uv.new" "$bin_dir/uv"; then
+    echo "  ! uv не распаковался"; rm -rf "$tmp" "$bin_dir/uv.new"; return 1
+  fi
+  rm -rf "$tmp"
+  echo "  + uv $UV_VERSION поставлен в $bin_dir (sha256 сверен)"
+}
+SKS_HOME="${HOME:-$(getent passwd "$(id -un)" | cut -d: -f6 || true)}"
+if [ "${KIT_NO_SKILLSPECTOR:-0}" = "1" ]; then
+  :
+elif [ -z "$SKS_HOME" ]; then
+  echo "  ! сканер навыков не поставлен: не нашёл домашнюю папку пользователя"
+elif [[ "$(id -u)" -eq 0 && "$(stat -c %U "$WORKSPACE" 2>/dev/null || echo root)" != root ]]; then
+  echo "  = сканер навыков ставится из-под пользователя агента (/update), не от root -- пропускаю"
+elif command -v skillspector >/dev/null 2>&1 || [ -x "$SKS_HOME/.local/bin/skillspector" ]; then
+  :
+else
+  UV="$(command -v uv 2>/dev/null || true)"
+  if [ -z "$UV" ] && [ -x "$SKS_HOME/.local/bin/uv" ]; then UV="$SKS_HOME/.local/bin/uv"; fi
+  if [ -z "$UV" ] && fetch_uv "$SKS_HOME/.local/bin"; then UV="$SKS_HOME/.local/bin/uv"; fi
+  if [ -z "$UV" ]; then
+    echo "  ! сканер навыков не поставлен: нет uv -- повторится на следующем /update"
+  # --python 3.12: yara-python (a skillspector dep) ships linux wheels only up to
+  # cp313; uv's default managed Python is newer, so it builds from source and dies
+  # without a C compiler -- exactly the fresh-box case (Smith 26.10).
+  elif timeout 600 "$UV" tool install -q --python 3.12 "$SKILLSPECTOR_SRC" >/dev/null 2>&1; then
+    echo "  + сканер навыков skillspector поставлен (~/.local/bin)"
+  else
+    echo "  ! сканер навыков не поставился (сеть?) -- повторится на следующем /update"
+  fi
 fi
 
 echo "  комплект разложен в $CLAUDE_DIR"

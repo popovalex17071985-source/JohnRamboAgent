@@ -27,6 +27,11 @@ source exists, and shipping it before checking.
 Mechanism: `core/SOURCES.md` — the registry `domain → primary → how to read it →
 the proxy I mistake for it`. Any task touching a domain → open it FIRST.
 
+Gate: `hooks/reply-proxy-gate.py` — a reply to the owner that carries a negative
+claim ("no X", "never", "didn't arrive") or a money figure, with nothing related
+opened in THIS turn, is not sent. Open the source, then send. A genuine unknown
+goes out labelled «гипотеза, проверяю» — then it is not a claim.
+
 ## 2. A refusal is a hypothesis, not a verdict
 
 - **Before saying "can't / blocked by permissions / no data / waiting on you" — try
@@ -94,8 +99,15 @@ Mechanisms: `hooks/stop-closeout-gate.py`, `hooks/capture-open-threads.py`,
   code commit with no test in it or earlier on the branch is blocked. A genuine
   one-off (a throwaway script, a config) carries the line «Без теста: <reason>».
 
+- **A third-party skill or plugin is someone else's instructions running with my
+  permissions.** Before installing one: `skillspector scan <src> --no-llm --format
+  json --output <file>` (`~/.local/bin/skillspector` if not on PATH); read every
+  HIGH/CRITICAL snippet myself (most are false alarms); anything real goes to the
+  owner. Clean → rerun the install prefixed `SKILLSPECTOR_OK=1`.
+
 Mechanisms: `hooks/block-dangerous.sh`, `hooks/block-red-zone.sh`,
-`hooks/lesson-needs-mechanism.sh`, `hooks/tdd-commit-gate.py`.
+`hooks/lesson-needs-mechanism.sh`, `hooks/tdd-commit-gate.py`,
+`hooks/skill-install-gate.sh`.
 
 ## 6. Language and token economy
 
@@ -123,7 +135,13 @@ registries, checks the text being written, not the legacy file.
 - Bulk mechanical work (parsing, classification, reformatting) goes to the cheap
   model — don't burn the top model on grunt work.
 
-Agents: `agents/proxy-skeptic.md`, `agents/reviewer.md`, `agents/parser.md`.
+- **Before shipping a change to prices, a site/catalog sync or any bulk write**
+  → run the `change-tour` subagent on the diff and send the owner its brief
+  (what changes, what can break, how many records, how to roll back) BEFORE it
+  ships. The owner decides on the brief, not on the diff.
+
+Agents: `agents/proxy-skeptic.md`, `agents/reviewer.md`, `agents/parser.md`,
+`agents/change-tour.md`.
 
 ## Scheduled work: script + report, never typed into my session
 

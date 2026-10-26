@@ -12,11 +12,13 @@ Laid down by `install-kit.sh` (called automatically from `install-agent.sh`, ste
 | `block-dangerous.sh` | PreToolUse Bash | recursive deletes and destructive SQL run without a confirm |
 | `block-red-zone.sh` | PreToolUse Write/Edit | writing secrets to disk (`.env`, `*.key`, `*.pem`, `.ssh/`, any `secrets/`); silent edits to the constitution. One deliberate exception: plain files directly inside the agent's OWN `<workspace>/secrets/` are allowed — storing a key the owner hands over is the agent's job (the installer's CLAUDE.md template says so); nested paths, `..`, and secret-shaped names inside it stay blocked |
 | `block-selfmatching-pgrep.sh` | PreToolUse Bash | a `pgrep -f` waiter that matches its own command line and hangs forever |
+| `skill-install-gate.sh` | PreToolUse Bash | a third-party skill/plugin installed unscanned (`git clone`/`cp`/`tar` into a `skills/` or `plugins/` dir, `claude plugin install`) — denied until `skillspector scan` was read and the command carries `SKILLSPECTOR_OK=1`; the kit installs `skillspector` itself (`uv tool install` of a pinned commit; no uv → the pinned uv release binary, sha256-checked against the script; best-effort, `KIT_NO_SKILLSPECTOR=1` skips) |
 | `tdd-commit-gate.py` | PreToolUse Bash | a code commit with no test — in it, earlier on the branch, or (on the trunk) unpushed from the last 6 hours; escape: a message line «Без теста: <reason>» |
 | `truncate-bash-output.sh` | PostToolUse Bash | a huge log dumped into context, burning cache every turn after |
 | `lesson-needs-mechanism.sh` | PostToolUse Edit/Write | a lesson filed as a diary line and repeated the next week |
 | `cyrillic-guard.sh` | PostToolUse Edit/Write | non-English prose in files that reload every session — 2-3x the tokens |
 | `capture-open-threads.py` | Stop | "I'll come back with…" that never reaches the ledger |
+| `reply-proxy-gate.py` | PreToolUse reply | a «нет такого» or a money figure sent to the owner with nothing related opened in that turn — denied BEFORE it leaves (the Stop-time `stop-proxy-gate.py` only sees it after); a reply marked «гипотеза» passes |
 | `stop-closeout-gate.py` | Stop | work finished in the terminal and never reported to the owner |
 | `stop-blocker-gate.py` | Stop | handing the task back ("no access", "waiting on you") without an enumeration |
 | `bin/bg.sh` | wrapper | a long run whose failure is never reported — silence read as success |
@@ -30,6 +32,7 @@ Laid down by `install-kit.sh` (called automatically from `install-agent.sh`, ste
 | `core/SOURCES.md` | registry | not knowing a primary source exists, so a cache becomes the verdict |
 | `core/open-threads.md` | ledger | the single board: promises, projects, next steps |
 | `agents/{proxy-skeptic,reviewer,parser}.md` | subagents | shipping a number or a diagnosis with no independent check |
+| `agents/change-tour.md` | subagent | a price change, site sync or bulk write shipped with the owner never told, in plain words, what it changes, what can break and how to roll it back |
 | `docs/agent-self-audit.md` | task | the audit the agent runs on itself to find what is still missing |
 
 **What it never touches:** `core/rules.md` — the owner's own log of corrections.

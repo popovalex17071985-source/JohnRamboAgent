@@ -37,7 +37,8 @@ print(sum(len(e.get('hooks',[])) for a in h.values() for e in a))" 2>/dev/null)
 echo "=== 3. Ключевые сторожа именно этого агента ==="
 for h in promise-alarm.py stop-blocker-gate.py flush-to-openviking.sh ov-recall.py \
          ov-digest-capture.py session-state.py block-dangerous.sh tz-guard.sh \
-         block-masked-secret.sh precompact-save.sh tdd-commit-gate.py; do
+         block-masked-secret.sh precompact-save.sh tdd-commit-gate.py \
+         reply-proxy-gate.py skill-install-gate.sh; do
   check "[ -f '$CD/hooks/$h' ]" "хук $h на месте"
 done
 

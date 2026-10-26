@@ -13,7 +13,7 @@ fail() { echo "✗ $*"; exit 1; }
 printf 'owner tweak\n' > "$CD/hooks/tz-guard.sh"
 printf 'owner tweak\n' > "$WS/bin/tg-send.py"
 
-KIT_NO_CRON=1 KIT_NO_MEMORY=1 bash "$ROOT/agent-kit/install-kit.sh" \
+KIT_NO_CRON=1 KIT_NO_MEMORY=1 KIT_NO_SKILLSPECTOR=1 bash "$ROOT/agent-kit/install-kit.sh" \
   --claude-dir "$CD" --chat-id 42 --agent smoke --settings "$T/settings.json" --tz UTC \
   --keep "$CD/hooks/tz-guard.sh,$CD/agents/reviewer.md" > "$T/out.log" 2>&1 \
   || { cat "$T/out.log"; fail "install-kit --keep упал"; }
