@@ -106,5 +106,16 @@ class Hook(unittest.TestCase):
         self.assertEqual((res.returncode, res.stdout), (0, ""))
 
 
+class MissingSibling(unittest.TestCase):
+    def test_hook_without_stop_gate_allows_quietly(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            lone = Path(tmp) / "reply-proxy-gate.py"
+            lone.write_text(HOOK.read_text())
+            payload = {"tool_input": {"text": "у этой модели нет eSIM-версии"}}
+            res = subprocess.run([sys.executable, str(lone)], input=json.dumps(payload),
+                                 capture_output=True, text=True, timeout=30)
+        self.assertEqual((res.returncode, res.stdout, res.stderr), (0, "", ""))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -13,7 +13,9 @@ cmd=$(jq -r '.tool_input.command // ""' 2>/dev/null || true)
 # The escape counts only as an env prefix of a command: `SKILLSPECTOR_OK=1 git
 # clone ...`, also after `;`/`&&`/`|`. Inside a comment, an echo or a quoted
 # argument it is not the scan having been done.
-grep -qE '(^|[;&|(])[[:space:]]*SKILLSPECTOR_OK=1[[:space:]]' <<<"$cmd" && exit 0
+# A command must follow on the SAME line: `SKILLSPECTOR_OK=1 <newline> git clone`
+# is a bare assignment, then a clone without it.
+grep -qE '(^|[;&|(])[[:space:]]*SKILLSPECTOR_OK=1[[:space:]]+[^[:space:];&|]' <<<"$cmd" && exit 0
 
 dest='[^ ;&|]*\.(claude|agents|codex)/(skills|plugins)\b[^ ;&|]*'
 hit=0

@@ -23,16 +23,21 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-_spec = importlib.util.spec_from_file_location("stop_proxy_gate", HERE / "stop-proxy-gate.py")
-spg = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(spg)
+# Соседа нет или он битый (недоложенный комплект) -- гейт молчит, а не падает
+# на каждой отправке хозяину.
+try:
+    _spec = importlib.util.spec_from_file_location("stop_proxy_gate", HERE / "stop-proxy-gate.py")
+    spg = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(spg)
+except Exception:
+    spg = None
 
 UNVERIFIED = re.compile(r"гипотез|не\s+проверял|\[непроверено\]|\[unverified\]", re.I)
 
 
 def decide(text: str, entries: list[dict]) -> str | None:
     """Причина отказа для этого ответа или None."""
-    if not text or UNVERIFIED.search(text):
+    if spg is None or not text or UNVERIFIED.search(text):
         return None
     _, probes, evidence = spg.scan(entries)
     return spg.verdict(text, probes, evidence)
