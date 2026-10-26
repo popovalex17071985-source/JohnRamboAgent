@@ -34,7 +34,7 @@ from pathlib import Path
 
 import sys as _sys
 _sys.path.insert(0, str(Path(__file__).resolve().parent))
-from turnlib import is_prompt  # noqa: E402
+from turnlib import turn_entries  # noqa: E402
 
 REPLY_TOOL = "mcp__dashi-channel__reply"
 PROBE_TOOLS = {"Bash", "Read", "Grep", "Glob", "WebFetch", "WebSearch", "Task"}
@@ -53,24 +53,6 @@ METRIC = re.compile(
     r"[^\n]{0,40}?\d",
     re.IGNORECASE,
 )
-
-
-def turn_entries(transcript: Path) -> list[dict]:
-    """Записи транскрипта ПОСЛЕ последнего сообщения пользователя."""
-    rows = []
-    for line in transcript.read_text().splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            rows.append(json.loads(line))
-        except json.JSONDecodeError:
-            continue
-    start = 0
-    for i, e in enumerate(rows):
-        if is_prompt(e):          # см. turnlib: telegram-промпты помечены isMeta
-            start = i
-    return rows[start:]
 
 
 def scan(entries: list[dict]) -> tuple[str, int, str]:

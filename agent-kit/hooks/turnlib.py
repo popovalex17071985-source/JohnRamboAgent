@@ -10,8 +10,15 @@ type=="user" (их в 9 раз больше промптов) и isMeta у ни�
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
+
+# Хуки на каждой отправке и в конце хода читают только хвост транскрипта: у
+# координатора 19.10.2026 он дорос до 108 МБ, и чтение целиком брало ~0.9 ГБ
+# памяти на хук -- сервер на 8 ГБ ловил OOM. Самый длинный ход там был 5.7 МБ;
+# ход длиннее окна гейт видит как «весь хвост = ход» (промпт не найден -> с начала).
+TAIL_BYTES = 8 * 1024 * 1024
 
 # Хук-контекст и системные врезки приходят тем же type=="user", что и оператор.
 NOISE_RX = re.compile(
@@ -27,10 +34,37 @@ def is_prompt(e: dict) -> bool:
     return isinstance(c, str) and bool(c.strip()) and not NOISE_RX.match(c)
 
 
+def tail_lines(path: Path | str, max_bytes: int = TAIL_BYTES) -> list[str]:
+    """Последние целые строки файла из его хвостовых max_bytes байт.
+
+    Файл меньше окна читается целиком. Иначе первая (обрезанная) строка окна
+    отбрасывается; если срез пришёлся ровно на начало строки -- она остаётся.
+    Делим только по \\n (JSONL), а не splitlines(): U+2028/NEL внутри JSON-строки
+    не рвут запись.
+    """
+    lines = []
+    with open(path, "rb") as fh:
+        size = fh.seek(0, os.SEEK_END)
+        start = max(0, size - max_bytes)
+        if start > 0:
+            # Байт перед окном не \n -- окно начинается с хвоста чужой строки.
+            fh.seek(start - 1)
+            if fh.read(1) != b"\n":
+                fh.readline()
+        else:
+            fh.seek(0)
+        # Построчно, без общего буфера: пик памяти ~ размер окна, не x3-x4.
+        for raw in fh:
+            if raw.endswith(b"\n"):
+                raw = raw[:-1]
+            lines.append(raw.decode("utf-8", errors="replace"))
+    return lines
+
+
 def turn_entries(transcript: Path) -> list[dict]:
-    """Записи транскрипта ПОСЛЕ последнего сообщения пользователя."""
+    """Записи транскрипта ПОСЛЕ последнего сообщения пользователя (в хвосте)."""
     rows = []
-    for line in Path(transcript).read_text().splitlines():
+    for line in tail_lines(transcript):
         line = line.strip()
         if not line:
             continue
