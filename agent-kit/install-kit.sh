@@ -305,6 +305,8 @@ fi
 SKS_HOME="${HOME:-$(getent passwd "$(id -un)" | cut -d: -f6 || true)}"
 if [ "${KIT_NO_SKILLSPECTOR:-0}" = "1" ]; then
   :
+elif [ -z "$SKS_HOME" ]; then
+  echo "  ! сканер навыков не поставлен: не нашёл домашнюю папку пользователя"
 elif [[ "$(id -u)" -eq 0 && "$(stat -c %U "$WORKSPACE" 2>/dev/null || echo root)" != root ]]; then
   echo "  = сканер навыков ставится из-под пользователя агента (/update), не от root -- пропускаю"
 elif command -v skillspector >/dev/null 2>&1 || [ -x "$SKS_HOME/.local/bin/skillspector" ]; then

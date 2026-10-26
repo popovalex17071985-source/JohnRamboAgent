@@ -53,6 +53,12 @@ class Decide(unittest.TestCase):
         self.assertIsNone(rpg.decide("в Dyson снимке ни разу не встречается",
                                      probe("trade59-dyson-snapshot.json пуст")))
 
+    def test_lowercase_russian_claim_grounded_by_word_stem(self) -> None:
+        # The right source was opened; inflected forms differ («аксессуаров»/«аксессуары»).
+        self.assertIsNone(rpg.decide("у аксессуаров нет серийников",
+                                     probe("аксессуары: серийники не ведутся")))
+        self.assertIsNone(rpg.decide("оплата не пришла", probe("платёж 77: оплата ожидается")))
+
     def test_passes_when_marked_unverified(self) -> None:
         for t in ["гипотеза: у аксессуаров нет серийников, проверяю",
                   "оплата не пришла [unverified]", "не проверял, но по дням нет"]:
@@ -60,7 +66,8 @@ class Decide(unittest.TestCase):
 
     def test_plain_chat_passes(self) -> None:
         for t in ["Принял, делаю", "Нет проблем, сделаю", "Сделано. Коммит 4419554",
-                  "проблем нет.", "готово, коммит fc6ec9b, 3 файла", ""]:
+                  "проблем нет.", "готово, коммит fc6ec9b, 3 файла", "нет пока, не готово",
+                  "пока нет.", "замечаний нет.", "нет замечаний", ""]:
             self.assertIsNone(rpg.decide(t, []), t)
 
 
