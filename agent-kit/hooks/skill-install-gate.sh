@@ -10,26 +10,33 @@ set -euo pipefail
 # Broken input = no verdict (exit 0), never a failed hook on every Bash call.
 cmd=$(jq -r '.tool_input.command // ""' 2>/dev/null || true)
 
-# The escape counts only as an env prefix of a command: `SKILLSPECTOR_OK=1 git
-# clone ...`, also after `;`/`&&`/`|`. Inside a comment, an echo or a quoted
-# argument it is not the scan having been done.
-# A command must follow on the SAME line: `SKILLSPECTOR_OK=1 <newline> git clone`
-# is a bare assignment, then a clone without it.
-grep -qE '(^|[;&|(])[[:space:]]*SKILLSPECTOR_OK=1[[:space:]]+[^[:space:];&|]' <<<"$cmd" && exit 0
-
 dest='[^ ;&|]*\.(claude|agents|codex)/(skills|plugins)\b[^ ;&|]*'
+
+# Does one command segment drop files into a skills/plugins dir?
+is_install() {
+  # git [-C dir ...] clone <url> <skills-dir>
+  grep -qE "\bgit\b.*\sclone\b.*\s${dest}" <<<"$1" && return 0
+  # cp/mv/rsync/ln whose LAST argument is a skills dir (copying OUT of it is fine)
+  grep -qE "\b(cp|mv|rsync|ln)\b.*\s${dest}\s*\)?\s*$" <<<"$1" && return 0
+  # tar/unzip extracting into a skills dir
+  grep -qE "\b(tar|unzip)\b.*(-C|-d)\s*${dest}" <<<"$1" && return 0
+  # plugin / skill managers
+  grep -qE "\bclaude\s+plugins?\s+(install|add)\b|\bnpx\s+[^ ]*skills?\s+(add|install)\b" <<<"$1"
+}
+
+# Judged per segment (split on ; && || | & and newlines): the escape counts only
+# as the env prefix of THAT install -- `SKILLSPECTOR_OK=1 git clone ... skills/x`.
+# In a comment, an echo, an argument, alone on its line or in front of another
+# command (`SKILLSPECTOR_OK=1 echo x; git clone ...`) it is not the scan done.
 hit=0
-# git clone <url> <skills-dir>
-grep -qE "\bgit\s+clone\b.*\s${dest}" <<<"$cmd" && hit=1
-# cp/mv/rsync/ln whose LAST argument is a skills dir (copying OUT of it is fine)
-grep -qE "\b(cp|mv|rsync|ln)\b[^;&|]*\s${dest}\s*($|;|&&|\|\|)" <<<"$cmd" && hit=1
-# tar/unzip extracting into a skills dir
-grep -qE "\b(tar|unzip)\b[^;&|]*(-C|-d)\s*${dest}" <<<"$cmd" && hit=1
-# plugin / skill managers
-grep -qE "\bclaude\s+plugins?\s+(install|add)\b|\bnpx\s+[^ ]*skills?\s+(add|install)\b" <<<"$cmd" && hit=1
+while IFS= read -r seg; do
+  is_install "$seg" || continue
+  grep -qE '^[[:space:]]*\(?[[:space:]]*SKILLSPECTOR_OK=1[[:space:]]+[^[:space:]]' <<<"$seg" && continue
+  hit=1
+done < <(sed -E 's/&&|\|\||[;|&]/\n/g' <<<"$cmd")
 
 if [[ $hit == 1 ]]; then
-  jq -n --arg r "Установка навыка/плагина без проверки. Сначала: skillspector scan <источник> --no-llm --format json --output <файл> (нет в PATH -- ~/.local/bin/skillspector). HIGH/CRITICAL сниппеты прочитай сам (большинство ложные), реальное -- хозяину. Чисто -- повтори команду с префиксом SKILLSPECTOR_OK=1. Если строка составная, не выполнилась ни одна её часть." \
+  jq -n --arg r "Установка навыка/плагина без проверки. Сначала: skillspector scan <источник> --no-llm --format json --output <файл> (нет в PATH -- ~/.local/bin/skillspector). HIGH/CRITICAL сниппеты прочитай сам (большинство ложные), реальное -- хозяину. Чисто -- повтори команду: префикс SKILLSPECTOR_OK=1 перед КАЖДОЙ установкой в строке. Если строка составная, не выполнилась ни одна её часть." \
     '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'
 fi
 exit 0
