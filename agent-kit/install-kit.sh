@@ -364,7 +364,10 @@ else
   if [ -z "$UV" ] && fetch_uv "$SKS_HOME/.local/bin"; then UV="$SKS_HOME/.local/bin/uv"; fi
   if [ -z "$UV" ]; then
     echo "  ! сканер навыков не поставлен: нет uv -- повторится на следующем /update"
-  elif timeout 600 "$UV" tool install -q "$SKILLSPECTOR_SRC" >/dev/null 2>&1; then
+  # --python 3.12: yara-python (a skillspector dep) ships linux wheels only up to
+  # cp313; uv's default managed Python is newer, so it builds from source and dies
+  # without a C compiler -- exactly the fresh-box case (Smith 26.10).
+  elif timeout 600 "$UV" tool install -q --python 3.12 "$SKILLSPECTOR_SRC" >/dev/null 2>&1; then
     echo "  + сканер навыков skillspector поставлен (~/.local/bin)"
   else
     echo "  ! сканер навыков не поставился (сеть?) -- повторится на следующем /update"

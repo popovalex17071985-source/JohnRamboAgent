@@ -38,7 +38,7 @@ kit() { # name, PATH, extra env...
 # 1. uv present -> the scanner is installed from its repo, once.
 kit a "$T/fake:$T/sys" || { cat "$T/a.out"; fail "комплект упал с uv"; }
 # Pinned commit: the scanner is installed past its own gate, a moving HEAD won't do.
-grep -qxE -- "tool install -q git\+https://github.com/NVIDIA/skillspector\.git@[0-9a-f]{40}" "$UV_LOG" \
+grep -qxE -- "tool install -q --python 3\.12 git\+https://github.com/NVIDIA/skillspector\.git@[0-9a-f]{40}" "$UV_LOG" \
   || fail "uv не позван ставить skillspector: $(cat "$UV_LOG" 2>/dev/null)"
 grep -q "сканер навыков skillspector поставлен" "$T/a.out" || fail "нет строки об установке сканера"
 python3 -c "
