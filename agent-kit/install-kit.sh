@@ -297,11 +297,14 @@ fi
 
 # Сканер чужих навыков (skillspector): без него гейт skill-install-gate.sh
 # требует проверку, которую нечем сделать. Ставится один раз пользователю агента
-# в ~/.local/bin через uv; uv нет -- ставим его туда же официальным установщиком
-# (тем же, что берёт install-agent.sh для ремонтника). Всё best-effort: нет сети
-# или uv -- одна строка, комплект не валится. Под root для чужого workspace не
+# в ~/.local/bin через uv. Коммит запинен -- ровно тот, что работает у
+# координатора (v2.12.0): сканер ставится мимо собственного гейта, поэтому
+# «свежий HEAD чужого репозитория» сюда не годится. uv сами не качаем (это был
+# бы скачанный скрипт, исполненный без проверки): нет uv -- одна строка,
+# комплект не валится; так же при обрыве сети. Под root для чужого workspace не
 # ставим: инструмент уехал бы в /root, агенту недоступный.
-# KIT_NO_SKILLSPECTOR=1 -- пропуск (песочница, тесты без сети).
+# KIT_NO_SKILLSPECTOR=1 -- пропуск (песочница, тесты).
+SKILLSPECTOR_SRC="git+https://github.com/NVIDIA/skillspector.git@d7338f58200a9ae2a24810cee08911ab68b107a7"
 SKS_HOME="${HOME:-$(getent passwd "$(id -un)" | cut -d: -f6 || true)}"
 if [ "${KIT_NO_SKILLSPECTOR:-0}" = "1" ]; then
   :
@@ -314,14 +317,9 @@ elif command -v skillspector >/dev/null 2>&1 || [ -x "$SKS_HOME/.local/bin/skill
 else
   UV="$(command -v uv 2>/dev/null || true)"
   if [ -z "$UV" ] && [ -x "$SKS_HOME/.local/bin/uv" ]; then UV="$SKS_HOME/.local/bin/uv"; fi
-  if [ -z "$UV" ] && command -v curl >/dev/null 2>&1; then
-    curl -LsSf -m 60 https://astral.sh/uv/install.sh 2>/dev/null \
-      | env UV_INSTALL_DIR="$SKS_HOME/.local/bin" UV_NO_MODIFY_PATH=1 sh >/dev/null 2>&1 || true
-    if [ -x "$SKS_HOME/.local/bin/uv" ]; then UV="$SKS_HOME/.local/bin/uv"; fi
-  fi
   if [ -z "$UV" ]; then
-    echo "  ! сканер навыков не поставлен: нет uv (и не скачался) -- гейт установки навыков попросит его"
-  elif timeout 300 "$UV" tool install -q git+https://github.com/NVIDIA/skillspector.git >/dev/null 2>&1; then
+    echo "  ! сканер навыков не поставлен: нет uv (https://docs.astral.sh/uv/) -- гейт установки навыков попросит его"
+  elif timeout 300 "$UV" tool install -q "$SKILLSPECTOR_SRC" >/dev/null 2>&1; then
     echo "  + сканер навыков skillspector поставлен (~/.local/bin)"
   else
     echo "  ! сканер навыков не поставился (сеть?) -- повторится на следующем /update"

@@ -73,10 +73,10 @@ retroactively marks the state of `main` on 2026-06-14.
   Bash) denies dropping a third-party skill or plugin into a `skills/` or
   `plugins/` dir (`git clone`, `cp`/`mv`/`rsync`/`ln`, `tar -C`/`unzip -d`,
   `claude plugin install`, `npx skills add`) unless the command carries
-  `SKILLSPECTOR_OK=1`. `install-kit.sh` installs the scanner once
-  (`uv tool install git+https://github.com/NVIDIA/skillspector.git` into
-  `~/.local/bin`, bootstrapping uv there if missing); no uv or no network prints
-  one line and never fails the kit. `KIT_NO_SKILLSPECTOR=1` skips the step.
+  `SKILLSPECTOR_OK=1` as an env prefix (not inside a comment or an argument).
+  `install-kit.sh` installs the scanner once with `uv tool install`, pinned to
+  commit `d7338f5` (v2.12.0) into `~/.local/bin`; uv is not downloaded by the
+  kit. No uv or no network prints one line and never fails the kit. `KIT_NO_SKILLSPECTOR=1` skips the step.
 - **Kit `change-tour` subagent.** `agent-kit/agents/change-tour.md` reads a diff
   and the code around it and writes the owner a ≤10-line plain-language brief:
   what changes, what can break, how many records, how to roll back, verdict.

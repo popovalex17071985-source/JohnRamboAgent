@@ -9,7 +9,10 @@ set -euo pipefail
 
 cmd=$(jq -r '.tool_input.command // ""')
 
-grep -q 'SKILLSPECTOR_OK=1' <<<"$cmd" && exit 0
+# The escape counts only as an env prefix of a command: `SKILLSPECTOR_OK=1 git
+# clone ...`, also after `;`/`&&`/`|`. Inside a comment, an echo or a quoted
+# argument it is not the scan having been done.
+grep -qE '(^|[;&|(])[[:space:]]*SKILLSPECTOR_OK=1[[:space:]]' <<<"$cmd" && exit 0
 
 dest='[^ ;&|]*\.(claude|agents|codex)/(skills|plugins)\b[^ ;&|]*'
 hit=0

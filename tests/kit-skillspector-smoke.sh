@@ -37,7 +37,8 @@ kit() { # name, PATH, extra env...
 
 # 1. uv present -> the scanner is installed from its repo, once.
 kit a "$T/fake:$T/sys" || { cat "$T/a.out"; fail "комплект упал с uv"; }
-grep -qx -- "tool install -q git+https://github.com/NVIDIA/skillspector.git" "$UV_LOG" \
+# Pinned commit: the scanner is installed past its own gate, a moving HEAD won't do.
+grep -qxE -- "tool install -q git\+https://github.com/NVIDIA/skillspector\.git@[0-9a-f]{40}" "$UV_LOG" \
   || fail "uv не позван ставить skillspector: $(cat "$UV_LOG" 2>/dev/null)"
 grep -q "сканер навыков skillspector поставлен" "$T/a.out" || fail "нет строки об установке сканера"
 python3 -c "
@@ -51,9 +52,11 @@ sys.exit(0 if any(e.get('matcher')=='Bash' and any(h['command'].endswith('/skill
 kit a "$T/fake:$T/sys" || fail "повторный прогон упал"
 [ "$(wc -l < "$UV_LOG")" = 1 ] || fail "сканер ставится заново на каждом прогоне: $(cat "$UV_LOG")"
 
-# 3. No uv and no network -> one line, the kit still succeeds.
+# 3. No uv -> one line, the kit still succeeds and downloads no installer.
 rm -f "$T/fake/uv"; : > "$UV_LOG"
-kit b "$T/fake:$T/sys" || { cat "$T/b.out"; fail "без uv и сети комплект упал"; }
+printf '#!/bin/sh\necho curl >> "$UV_LOG"; exit 7\n' > "$T/fake/curl"
+kit b "$T/fake:$T/sys" || { cat "$T/b.out"; fail "без uv комплект упал"; }
+grep -q curl "$UV_LOG" && fail "без uv комплект полез качать установщик"
 grep -q "сканер навыков не поставлен" "$T/b.out" || fail "без uv нет понятной строки: $(tail -3 "$T/b.out")"
 
 # 4. uv that fails (network down mid-install) -> one line, the kit still succeeds.
