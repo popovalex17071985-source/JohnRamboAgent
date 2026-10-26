@@ -11,7 +11,7 @@ fail() { echo "✗ $*"; exit 1; }
 # A PATH with no real uv, curl or skillspector, whatever the host has installed.
 mkdir -p "$T/sys" "$T/fake"
 for tool in bash sh env sed mktemp cmp cat cp mkdir chmod dirname basename python3 date \
-            grep stat id getent cut rm timeout printf head tr; do
+            grep stat id getent cut rm timeout printf head tr uname tar sha256sum mv; do
   p="$(command -v "$tool" 2>/dev/null)" && ln -sf "$p" "$T/sys/$tool"
 done
 # Fake uv: logs its argv and "installs" the scanner where uv tool install puts it.
@@ -52,15 +52,39 @@ sys.exit(0 if any(e.get('matcher')=='Bash' and any(h['command'].endswith('/skill
 kit a "$T/fake:$T/sys" || fail "повторный прогон упал"
 [ "$(wc -l < "$UV_LOG")" = 1 ] || fail "сканер ставится заново на каждом прогоне: $(cat "$UV_LOG")"
 
-# 3. No uv -> one line, the kit still succeeds and downloads no installer.
+# 3. No uv, network down -> the pinned release is not fetched, one line, kit alive.
 rm -f "$T/fake/uv"; : > "$UV_LOG"
 printf '#!/bin/sh\necho curl >> "$UV_LOG"; exit 7\n' > "$T/fake/curl"
-kit b "$T/fake:$T/sys" || { cat "$T/b.out"; fail "без uv комплект упал"; }
-grep -q curl "$UV_LOG" && fail "без uv комплект полез качать установщик"
-grep -q "сканер навыков не поставлен" "$T/b.out" || fail "без uv нет понятной строки: $(tail -3 "$T/b.out")"
+kit b "$T/fake:$T/sys" || { cat "$T/b.out"; fail "без uv и сети комплект упал"; }
+grep -q curl "$UV_LOG" || fail "без uv комплект даже не попробовал скачать проверенный uv"
+grep -q "uv не скачался" "$T/b.out" || fail "без сети нет понятной строки: $(tail -3 "$T/b.out")"
+grep -q "сканер навыков не поставлен" "$T/b.out" || fail "без uv нет строки про сканер"
+[ ! -e "$T/b/home/.local/bin/uv" ] || fail "без сети uv откуда-то появился"
+
+# 3b. A tarball that is not the pinned release (checksum mismatch) -> nothing
+# installed, nothing executed, one line. Real curl over file://, no network.
+rm -f "$T/fake/curl"; ln -sf "$(command -v curl)" "$T/sys/curl"
+arch=$(uname -m); case "$arch" in amd64) arch=x86_64 ;; arm64) arch=aarch64 ;; esac
+mkdir -p "$T/rel/uv-$arch-unknown-linux-gnu"
+printf '#!/bin/sh\necho EXECUTED >> "%s"\n' "$UV_LOG" > "$T/rel/uv-$arch-unknown-linux-gnu/uv"
+chmod +x "$T/rel/uv-$arch-unknown-linux-gnu/uv"
+tar -czf "$T/rel/uv-$arch-unknown-linux-gnu.tar.gz" -C "$T/rel" "uv-$arch-unknown-linux-gnu"
+: > "$UV_LOG"
+kit m "$T/fake:$T/sys" KIT_UV_URL_BASE="file://$T/rel" || { cat "$T/m.out"; fail "чужой архив uv уронил комплект"; }
+grep -q "контрольная сумма uv не сошлась" "$T/m.out" || fail "подменённый uv без строки о сумме: $(tail -3 "$T/m.out")"
+[ ! -e "$T/m/home/.local/bin/uv" ] || fail "подменённый uv положен в ~/.local/bin"
+grep -q EXECUTED "$UV_LOG" && fail "подменённый uv был запущен"
+grep -q "сканер навыков не поставлен" "$T/m.out" || fail "после несошедшейся суммы нет строки про сканер"
+rm -f "$T/sys/curl"
+# The hardcoded sums are real sha256 and the installer is never piped into a shell.
+grep -qE '^UV_SHA256_X86_64="[0-9a-f]{64}"$' "$ROOT/agent-kit/install-kit.sh" \
+  && grep -qE '^UV_SHA256_AARCH64="[0-9a-f]{64}"$' "$ROOT/agent-kit/install-kit.sh" \
+  || fail "суммы uv не вшиты"
+grep -qE 'astral\.sh/uv/install|\|[[:space:]]*(env[^|]*[[:space:]])?(ba)?sh([[:space:]]|$)' "$ROOT/agent-kit/install-kit.sh" \
+  && fail "в комплекте снова скачанный скрипт отдаётся в shell"
 
 # 4. uv that fails (network down mid-install) -> one line, the kit still succeeds.
-cp "$T/fake/curl" "$T/fake/uv"; sed -i 's/exit 7/echo "$*" >> "$UV_LOG"; exit 1/' "$T/fake/uv"
+printf '#!/bin/sh\necho "$*" >> "$UV_LOG"; exit 1\n' > "$T/fake/uv"; chmod +x "$T/fake/uv"
 kit c "$T/fake:$T/sys" || { cat "$T/c.out"; fail "упавший uv уронил комплект"; }
 grep -q "сканер навыков не поставился" "$T/c.out" || fail "упавший uv без строки: $(tail -3 "$T/c.out")"
 

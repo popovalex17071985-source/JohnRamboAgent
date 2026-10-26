@@ -75,8 +75,11 @@ retroactively marks the state of `main` on 2026-06-14.
   `claude plugin install`, `npx skills add`) unless the command carries
   `SKILLSPECTOR_OK=1` as an env prefix (not inside a comment or an argument).
   `install-kit.sh` installs the scanner once with `uv tool install`, pinned to
-  commit `d7338f5` (v2.12.0) into `~/.local/bin`; uv is not downloaded by the
-  kit. No uv or no network prints one line and never fails the kit. `KIT_NO_SKILLSPECTOR=1` skips the step.
+  commit `d7338f5` (v2.12.0) into `~/.local/bin`. Without uv the kit fetches the
+  uv 0.11.23 release binary for the box's arch (x86_64/aarch64 Linux) and checks
+  it against a sha256 hardcoded in the script — no install script is run; uv then
+  brings its own Python for the scanner. Any failure prints one line and never
+  fails the kit. `KIT_NO_SKILLSPECTOR=1` skips the step.
 - **Kit `change-tour` subagent.** `agent-kit/agents/change-tour.md` reads a diff
   and the code around it and writes the owner a ≤10-line plain-language brief:
   what changes, what can break, how many records, how to roll back, verdict.
