@@ -7,7 +7,8 @@
 # the HIGH/CRITICAL snippets were read by hand and nothing real was found.
 set -euo pipefail
 
-cmd=$(jq -r '.tool_input.command // ""')
+# Broken input = no verdict (exit 0), never a failed hook on every Bash call.
+cmd=$(jq -r '.tool_input.command // ""' 2>/dev/null || true)
 
 # The escape counts only as an env prefix of a command: `SKILLSPECTOR_OK=1 git
 # clone ...`, also after `;`/`&&`/`|`. Inside a comment, an echo or a quoted

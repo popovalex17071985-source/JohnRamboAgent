@@ -34,6 +34,8 @@ check allow 'grep -rn foo .claude/skills/'
 check allow 'git clone https://github.com/x/y /tmp/y'
 check allow 'skillspector scan /tmp/y --no-llm --format json --output /tmp/y.json'
 check allow ''
+out=$(printf 'not json' | bash "$H"); rc=$?
+[[ $rc == 0 && -z "$out" ]] || { echo "✗ битый вход: код $rc, вывод «$out»"; fail=1; }
 # The deny reason must name the scanner and the escape, or the agent is stuck.
 r=$(jq -n '{tool_input:{command:"claude plugin install foo"}}' | bash "$H" \
   | jq -r '.hookSpecificOutput.permissionDecisionReason')

@@ -304,6 +304,9 @@ fi
 # комплект не валится; так же при обрыве сети. Под root для чужого workspace не
 # ставим: инструмент уехал бы в /root, агенту недоступный.
 # KIT_NO_SKILLSPECTOR=1 -- пропуск (песочница, тесты).
+# Происхождение (проверено 26.10.2026 через GitHub API): github.com/NVIDIA/SkillSpector,
+# организация NVIDIA подтверждена GitHub (nvidia.com), Apache-2.0; d7338f5 --
+# подписанный merge PR #841 от 22.10.2026. Новый коммит -- только после такой же сверки.
 SKILLSPECTOR_SRC="git+https://github.com/NVIDIA/skillspector.git@d7338f58200a9ae2a24810cee08911ab68b107a7"
 SKS_HOME="${HOME:-$(getent passwd "$(id -un)" | cut -d: -f6 || true)}"
 if [ "${KIT_NO_SKILLSPECTOR:-0}" = "1" ]; then
