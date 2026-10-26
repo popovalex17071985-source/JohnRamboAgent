@@ -62,6 +62,13 @@ retroactively marks the state of `main` on 2026-06-14.
 - **Effort in the status card (#104).** The model line reads
   `claude-opus-5-5 · effort: high`; the level comes from the transcript turn or
   the process `--effort` flag, omitted when unknown.
+- **Kit pre-send source gate.** `agent-kit/hooks/reply-proxy-gate.py` (PreToolUse
+  on the channel reply) denies a reply carrying a negative/absence claim or a
+  money figure when nothing related was opened in that turn — the same verdict as
+  the Stop-time `stop-proxy-gate.py`, applied before the message leaves. A reply
+  marked «гипотеза» / «не проверял» / `[unverified]` passes. The negative-claim
+  patterns are widened (the eight false «нет» of week 19-25.10.2026), and
+  `turnlib.turn_entries` reads only the last 8 MB of the transcript.
 
 ### Changed
 - **`scan` reports blobs of uncommitted files (#97)** and no longer counts old

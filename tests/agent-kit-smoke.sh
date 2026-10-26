@@ -110,6 +110,17 @@ PY
 echo "{\"transcript_path\":\"$J\",\"session_id\":\"s\"}" \
   | python3 "$H/stop-blocker-gate.py" | grep -q '"decision": "block"' \
   || fail "отказ без перебора не заблокирован"
+# 6b. «нет такого» хозяину без открытого источника не уходит (гейт ДО отправки)
+python3 -c "
+import json,sys;d=json.load(open('$T/.claude/settings.json'))
+sys.exit(0 if any(e.get('matcher')=='mcp__dashi-channel__reply' and any(h['command'].endswith('/reply-proxy-gate.py') for h in e['hooks'])
+                  for e in d['hooks'].get('PreToolUse',[])) else 1)" \
+  || fail "гейт источника не зарегистрирован на отправку хозяину"
+echo "{\"transcript_path\":\"$J\",\"tool_input\":{\"text\":\"у этой модели нет eSIM-версии\"}}" \
+  | python3 "$H/reply-proxy-gate.py" | grep -q '"permissionDecision": "deny"' \
+  || fail "«нет такого» без источника ушло хозяину"
+echo "{\"transcript_path\":\"$J\",\"tool_input\":{\"text\":\"гипотеза: нет eSIM-версии, проверяю\"}}" \
+  | python3 "$H/reply-proxy-gate.py" | grep -q deny && fail "помеченная гипотеза не пропущена"
 # 7. TDD-гейт: коммит кода без теста блокируется, с «Без теста: <причина>» -- нет
 python3 -c "
 import json,sys;d=json.load(open('$T/.claude/settings.json'))
@@ -207,4 +218,4 @@ bash -n "$R" || fail "remind-at.sh не компилируется"
 grep -q "def _session" "$T/bin/promise-sweeper.py" \
   || fail "promise-sweeper всё ещё берёт имя панели из шаблона"
 
-echo "✓ agent-kit smoke ok ($n2 хуков, 7 гейтов сработали, утренние кроны без дублей, идемпотентно)"
+echo "✓ agent-kit smoke ok ($n2 хуков, 8 гейтов сработали, утренние кроны без дублей, идемпотентно)"

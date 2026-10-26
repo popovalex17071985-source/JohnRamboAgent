@@ -108,6 +108,9 @@ WIRING = [
     # Коммит кода без теста блокируется; выход -- строка «Без теста: <причина>».
     ("PreToolUse",  "Bash",                 "tdd-commit-gate.py",       10),
     ("PreToolUse",  "mcp__dashi-channel__reply", "owner-time-guard.sh",  5),
+    # «Нет такого» или цифра по деньгам без открытого источника не уходит хозяину:
+    # Stop-гейт ловит это уже после отправки, этот -- до.
+    ("PreToolUse",  "mcp__dashi-channel__reply", "reply-proxy-gate.py", 10),
     ("SessionStart", "",                   "session-start-hint.sh",     5),
     ("PreCompact",  "",                     "precompact-save.sh",       10),
     # Слив в долгую память: без него сервер OpenViking стоит, а писать в него нечем.

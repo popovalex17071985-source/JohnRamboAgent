@@ -17,6 +17,7 @@ Laid down by `install-kit.sh` (called automatically from `install-agent.sh`, ste
 | `lesson-needs-mechanism.sh` | PostToolUse Edit/Write | a lesson filed as a diary line and repeated the next week |
 | `cyrillic-guard.sh` | PostToolUse Edit/Write | non-English prose in files that reload every session — 2-3x the tokens |
 | `capture-open-threads.py` | Stop | "I'll come back with…" that never reaches the ledger |
+| `reply-proxy-gate.py` | PreToolUse reply | a «нет такого» or a money figure sent to the owner with nothing related opened in that turn — denied BEFORE it leaves (the Stop-time `stop-proxy-gate.py` only sees it after); a reply marked «гипотеза» passes |
 | `stop-closeout-gate.py` | Stop | work finished in the terminal and never reported to the owner |
 | `stop-blocker-gate.py` | Stop | handing the task back ("no access", "waiting on you") without an enumeration |
 | `bin/bg.sh` | wrapper | a long run whose failure is never reported — silence read as success |

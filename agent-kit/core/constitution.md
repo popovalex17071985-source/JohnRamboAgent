@@ -27,6 +27,11 @@ source exists, and shipping it before checking.
 Mechanism: `core/SOURCES.md` — the registry `domain → primary → how to read it →
 the proxy I mistake for it`. Any task touching a domain → open it FIRST.
 
+Gate: `hooks/reply-proxy-gate.py` — a reply to the owner that carries a negative
+claim ("no X", "never", "didn't arrive") or a money figure, with nothing related
+opened in THIS turn, is not sent. Open the source, then send. A genuine unknown
+goes out labelled «гипотеза, проверяю» — then it is not a claim.
+
 ## 2. A refusal is a hypothesis, not a verdict
 
 - **Before saying "can't / blocked by permissions / no data / waiting on you" — try
