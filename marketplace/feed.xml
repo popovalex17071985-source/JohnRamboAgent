@@ -210,6 +210,40 @@
       <ScreenCondition>1–2 мелкие царапины</ScreenCondition><CaseCondition>Мелкие царапины</CaseCondition><Devicework>Включается</Devicework><Akb>83</Akb><BoxSealed>Нет</BoxSealed></Ad>
 
       <Ad>
+        <Id>1646875313</Id>
+        <DateBegin>2023-03-01</DateBegin>
+        <DateEnd>2033-03-31</DateEnd>
+        <ListingFee>Package</ListingFee>
+        <AdStatus>Free</AdStatus>
+        
+        <ManagerName>Тимофей</ManagerName>
+        <ContactPhone>+73422140020</ContactPhone>
+        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
+        <GoodsType>Стилусы</GoodsType>
+        <AdType>Товар приобретен на продажу</AdType>
+        <Category>Планшеты и электронные книги</Category>
+        <Title>Apple Pencil 2 бу</Title>
+        <Description><![CDATA[<p>Apple Pencil 2 бу</p>
+<p>✅Отличное состояние, полностью исправен<br>✅Гарантия от магазина 180 дней!</p>
+<p>👍🏼 ГАРАНТИЯ ЛУЧШЕЙ ЦЕНЫ!</p>
+<p>⬇️ СДЕЛАЕМ СКИДКУ НА ПРЕДЛОЖЕНИЯ КОНКУРЕНТА!</p>
+<p>🥇РАБОТАЕМ ДЛЯ ВАС С 2008 ГОДА И ОЧЕНЬ ДОРОЖИМ СВОЕЙ РЕПУТАЦИЕЙ!</p>
+<p>☝🏼Вся Б/У техника является, ОРИГИНАЛЬНОЙ, НЕ ВОССТАНОВЛЕННОЙ.<br><br>Арт. 4jkm9</p>]]></Description>
+        <Price>5490</Price>
+        
+        
+        <Images>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/5905/2536920849/IMG_3696.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/5897/2536920841/IMG_3695.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/5849/2536920793/IMG_3693.jpg"/>
+        </Images>
+        <Category>Планшеты и электронные книги</Category>
+        
+        <Condition>Б/у</Condition>
+        <AdType>Товар приобретен на продажу</AdType>
+      </Ad>
+
+      <Ad>
         <Id>1650144321</Id>
         <DateBegin>2023-03-01</DateBegin>
         <DateEnd>2033-03-31</DateEnd>
@@ -2515,40 +2549,6 @@
         <Akb>92</Akb>
       <ScreenCondition>Без дефектов</ScreenCondition><CaseCondition>Без дефектов</CaseCondition><Devicework>Включается</Devicework></Ad>
 
-      <Ad>
-        <Id>1646875313</Id>
-        <DateBegin>2023-03-01</DateBegin>
-        <DateEnd>2033-03-31</DateEnd>
-        <ListingFee>Package</ListingFee>
-        <AdStatus>Free</AdStatus>
-        
-        <ManagerName>Тимофей</ManagerName>
-        <ContactPhone>+73422140020</ContactPhone>
-        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
-        <GoodsType>Стилусы</GoodsType>
-        <AdType>Товар приобретен на продажу</AdType>
-        <Category>Планшеты и электронные книги</Category>
-        <Title>Apple Pencil 2 бу</Title>
-        <Description><![CDATA[<p>Apple Pencil 2 бу</p>
-<p>✅Отличное состояние, полностью исправен<br>✅Гарантия от магазина 180 дней!</p>
-<p>👍🏼 ГАРАНТИЯ ЛУЧШЕЙ ЦЕНЫ!</p>
-<p>⬇️ СДЕЛАЕМ СКИДКУ НА ПРЕДЛОЖЕНИЯ КОНКУРЕНТА!</p>
-<p>🥇РАБОТАЕМ ДЛЯ ВАС С 2008 ГОДА И ОЧЕНЬ ДОРОЖИМ СВОЕЙ РЕПУТАЦИЕЙ!</p>
-<p>☝🏼Вся Б/У техника является, ОРИГИНАЛЬНОЙ, НЕ ВОССТАНОВЛЕННОЙ.<br><br>Арт. 4jkm9</p>]]></Description>
-        <Price>5490</Price>
-        
-        
-        <Images>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/5905/2536920849/IMG_3696.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/5897/2536920841/IMG_3695.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/5849/2536920793/IMG_3693.jpg"/>
-        </Images>
-        <Category>Планшеты и электронные книги</Category>
-        
-        <Condition>Б/у</Condition>
-        <AdType>Товар приобретен на продажу</AdType>
-      </Ad>
-
 <Ad>
         <Id>426971203</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4290,7 +4290,7 @@
         <Condition>новое</Condition>
         <MemorySize>256 ГБ</MemorySize>
         <AdType>Товар приобретен на продажу</AdType>
-      <Revalidate>2988337</Revalidate></Ad>
+      <Revalidate>2988343</Revalidate></Ad>
 <Ad>
         <Id>496127545</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4488,7 +4488,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2988337</Revalidate></Ad>
+      <Revalidate>2988343</Revalidate></Ad>
 <Ad>
         <Id>1640714561</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4638,7 +4638,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2988337</Revalidate></Ad>
+      <Revalidate>2988343</Revalidate></Ad>
 <Ad>
         <Id>1640726593</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4788,7 +4788,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2988337</Revalidate></Ad>
+      <Revalidate>2988343</Revalidate></Ad>
 <Ad>
         <Id>1640736641</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -5022,7 +5022,7 @@
 <p><br><br>🌐 Еще больше классных предложений на сайте ipointperm</p>
 <p>*цены на всю технику указаны со скидкой за наличный расчёт</p>
 <p>*90% товаров, представленных на витрине Авито имеются в наличии, если какого-то товара нет сегодня - доставим в течение двух дней</p>]]></Description>
-        <Price>124490</Price>
+        <Price>123490</Price>
         
         <Model>iPhone 17 Pro Max</Model>
         <Images>
@@ -5388,7 +5388,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2988337</Revalidate></Ad>
+      <Revalidate>2988343</Revalidate></Ad>
 <Ad>
         <Id>1642060329</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -5488,7 +5488,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2988337</Revalidate></Ad>
+      <Revalidate>2988343</Revalidate></Ad>
 <Ad>
         <Id>1642061641</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -5788,7 +5788,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2988337</Revalidate></Ad>
+      <Revalidate>2988343</Revalidate></Ad>
 <Ad>
         <Id>1645613473</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -5938,7 +5938,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2988337</Revalidate></Ad>
+      <Revalidate>2988343</Revalidate></Ad>
 <Ad>
         <Id>1645614297</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -7692,7 +7692,7 @@
 <p><br><br>🌐 Еще больше классных предложений на сайте ipointperm</p>
 <p>*цены на всю технику указаны со скидкой за наличный расчёт</p>
 <p>*90% товаров, представленных на витрине Авито имеются в наличии, если какого-то товара нет сегодня - доставим в течение двух дней</p>]]></Description>
-        <Price>167490</Price>
+        <Price>154990</Price>
         
         <Model>iPhone 18 Pro Max</Model>
         <Images>
