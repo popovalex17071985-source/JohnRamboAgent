@@ -140,6 +140,15 @@ rc=0; tdd_hook 'git commit -m "код"' || rc=$?
 [[ $rc == 2 ]] || fail "коммит кода без теста прошёл TDD-гейт"
 tdd_hook $'git commit -m "код\n\nБез теста: разовый скрипт"' || fail "«Без теста:» не пропустил коммит"
 
+# 8. Помощник change-tour: разложен, read-only, без имени чужого хозяина;
+# правило «перед ценами/синком/массовой записью -- бриф хозяину» в конституции.
+CT="$T/.claude/agents/change-tour.md"
+[[ -s "$CT" ]] || fail "помощник change-tour не разложен"
+head -1 "$CT" | grep -qx -- "---" && grep -q "^name: change-tour$" "$CT" || fail "change-tour: битая шапка"
+grep -qE "^  - (Write|Edit)" "$CT" && fail "change-tour умеет писать, а должен только читать"
+grep -qiE "Саня|Сане|Sanya|InSales|Avito" "$CT" && fail "в change-tour осталось чужое имя/система"
+grep -q "change-tour" "$T/.claude/core/constitution.md" || fail "правило про change-tour не в конституции"
+
 # Самопроверки перенесённых скриптов
 python3 "$T/bin/promise-sweeper.py" --selfcheck >/dev/null || fail "будильник по срокам"
 python3 "$T/bin/open-threads-digest.py" --selfcheck >/dev/null || fail "утренняя сводка"
@@ -220,4 +229,4 @@ bash -n "$R" || fail "remind-at.sh не компилируется"
 grep -q "def _session" "$T/bin/promise-sweeper.py" \
   || fail "promise-sweeper всё ещё берёт имя панели из шаблона"
 
-echo "✓ agent-kit smoke ok ($n2 хуков, 8 гейтов сработали, утренние кроны без дублей, идемпотентно)"
+echo "✓ agent-kit smoke ok ($n2 хуков, 9 гейтов сработали, утренние кроны без дублей, идемпотентно)"

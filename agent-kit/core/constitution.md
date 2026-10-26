@@ -135,7 +135,13 @@ registries, checks the text being written, not the legacy file.
 - Bulk mechanical work (parsing, classification, reformatting) goes to the cheap
   model — don't burn the top model on grunt work.
 
-Agents: `agents/proxy-skeptic.md`, `agents/reviewer.md`, `agents/parser.md`.
+- **Before shipping a change to prices, a site/catalog sync or any bulk write**
+  → run the `change-tour` subagent on the diff and send the owner its brief
+  (what changes, what can break, how many records, how to roll back) BEFORE it
+  ships. The owner decides on the brief, not on the diff.
+
+Agents: `agents/proxy-skeptic.md`, `agents/reviewer.md`, `agents/parser.md`,
+`agents/change-tour.md`.
 
 ## Scheduled work: script + report, never typed into my session
 

@@ -32,6 +32,7 @@ Laid down by `install-kit.sh` (called automatically from `install-agent.sh`, ste
 | `core/SOURCES.md` | registry | not knowing a primary source exists, so a cache becomes the verdict |
 | `core/open-threads.md` | ledger | the single board: promises, projects, next steps |
 | `agents/{proxy-skeptic,reviewer,parser}.md` | subagents | shipping a number or a diagnosis with no independent check |
+| `agents/change-tour.md` | subagent | a price change, site sync or bulk write shipped with the owner never told, in plain words, what it changes, what can break and how to roll it back |
 | `docs/agent-self-audit.md` | task | the audit the agent runs on itself to find what is still missing |
 
 **What it never touches:** `core/rules.md` — the owner's own log of corrections.
