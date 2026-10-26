@@ -227,7 +227,7 @@ class InstallKitRunsFixTest(unittest.TestCase):
     def _kit(self, version: str | None = "v0.5.0", **extra: str) -> subprocess.CompletedProcess:
         if version is not None:
             self.health.write_text(json.dumps({"status": "ok", "version": version}))
-        env = {**os.environ, "KIT_NO_CRON": "1", "KIT_OV_DIR": str(self.ov),
+        env = {**os.environ, "KIT_NO_CRON": "1", "KIT_NO_SKILLSPECTOR": "1", "KIT_OV_DIR": str(self.ov),
                "KIT_OV_HEALTH_URL": self.health.as_uri(), **extra}
         env.pop("KIT_NO_MEMORY", None)
         if "KIT_NO_MEMORY" in extra:

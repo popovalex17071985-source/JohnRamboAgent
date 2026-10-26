@@ -27,6 +27,8 @@ mkdir -p "$T/.claude/core"
 # Память того, кто гоняет тест (~/.openviking), комплект трогать не должен:
 # шаг ov.conf смотрит в песочницу, где памяти нет.
 export KIT_OV_DIR="$T/no-openviking"
+# Сканер навыков ставится из сети -- его проверяет kit-skillspector-smoke.sh.
+export KIT_NO_SKILLSPECTOR=1
 # crontab — подменный: комплект пишет в крон, а тест не должен трогать живой
 # крон того, кто его гоняет (раньше спасало только то, что строки уже стояли)
 mkdir -p "$T/shim"; export CRONTAB_FILE="$T/crontab.txt"

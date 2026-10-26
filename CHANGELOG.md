@@ -69,6 +69,14 @@ retroactively marks the state of `main` on 2026-06-14.
   marked «гипотеза» / «не проверял» / `[unverified]` passes. The negative-claim
   patterns are widened (the eight false «нет» of week 19-25.10.2026), and
   `turnlib.turn_entries` reads only the last 8 MB of the transcript.
+- **Kit skill-install gate.** `agent-kit/hooks/skill-install-gate.sh` (PreToolUse
+  Bash) denies dropping a third-party skill or plugin into a `skills/` or
+  `plugins/` dir (`git clone`, `cp`/`mv`/`rsync`/`ln`, `tar -C`/`unzip -d`,
+  `claude plugin install`, `npx skills add`) unless the command carries
+  `SKILLSPECTOR_OK=1`. `install-kit.sh` installs the scanner once
+  (`uv tool install git+https://github.com/NVIDIA/skillspector.git` into
+  `~/.local/bin`, bootstrapping uv there if missing); no uv or no network prints
+  one line and never fails the kit. `KIT_NO_SKILLSPECTOR=1` skips the step.
 
 ### Changed
 - **`scan` reports blobs of uncommitted files (#97)** and no longer counts old

@@ -95,6 +95,8 @@ hooks = data.setdefault("hooks", {})
 WIRING = [
     ("PreToolUse",  "Bash",                 "block-dangerous.sh",        5),
     ("PreToolUse",  "Bash",                 "block-selfmatching-pgrep.sh", 5),
+    # Чужой навык/плагин = чужие инструкции с моими правами: сначала skillspector.
+    ("PreToolUse",  "Bash",                 "skill-install-gate.sh",     5),
     ("PreToolUse",  "Write|Edit|MultiEdit", "block-red-zone.sh",         5),
     ("PreToolUse",  "Bash|Write|Edit",      "block-masked-secret.sh",    5),
     ("PostToolUse", "Bash",                 "truncate-bash-output.sh",   5),
@@ -291,6 +293,37 @@ fi
 if [ "${KIT_NO_MEMORY:-0}" != "1" ] && [ -x "$KIT/scripts/setup-memory.sh" ]; then
   "$KIT/scripts/setup-memory.sh" --workspace "$WORKSPACE" --agent "$AGENT" \
     || echo "  ! долгая память не встала -- смотри вывод выше"
+fi
+
+# Сканер чужих навыков (skillspector): без него гейт skill-install-gate.sh
+# требует проверку, которую нечем сделать. Ставится один раз пользователю агента
+# в ~/.local/bin через uv; uv нет -- ставим его туда же официальным установщиком
+# (тем же, что берёт install-agent.sh для ремонтника). Всё best-effort: нет сети
+# или uv -- одна строка, комплект не валится. Под root для чужого workspace не
+# ставим: инструмент уехал бы в /root, агенту недоступный.
+# KIT_NO_SKILLSPECTOR=1 -- пропуск (песочница, тесты без сети).
+SKS_HOME="${HOME:-$(getent passwd "$(id -un)" | cut -d: -f6 || true)}"
+if [ "${KIT_NO_SKILLSPECTOR:-0}" = "1" ]; then
+  :
+elif [[ "$(id -u)" -eq 0 && "$(stat -c %U "$WORKSPACE" 2>/dev/null || echo root)" != root ]]; then
+  echo "  = сканер навыков ставится из-под пользователя агента (/update), не от root -- пропускаю"
+elif command -v skillspector >/dev/null 2>&1 || [ -x "$SKS_HOME/.local/bin/skillspector" ]; then
+  :
+else
+  UV="$(command -v uv 2>/dev/null || true)"
+  if [ -z "$UV" ] && [ -x "$SKS_HOME/.local/bin/uv" ]; then UV="$SKS_HOME/.local/bin/uv"; fi
+  if [ -z "$UV" ] && command -v curl >/dev/null 2>&1; then
+    curl -LsSf -m 60 https://astral.sh/uv/install.sh 2>/dev/null \
+      | env UV_INSTALL_DIR="$SKS_HOME/.local/bin" UV_NO_MODIFY_PATH=1 sh >/dev/null 2>&1 || true
+    if [ -x "$SKS_HOME/.local/bin/uv" ]; then UV="$SKS_HOME/.local/bin/uv"; fi
+  fi
+  if [ -z "$UV" ]; then
+    echo "  ! сканер навыков не поставлен: нет uv (и не скачался) -- гейт установки навыков попросит его"
+  elif timeout 300 "$UV" tool install -q git+https://github.com/NVIDIA/skillspector.git >/dev/null 2>&1; then
+    echo "  + сканер навыков skillspector поставлен (~/.local/bin)"
+  else
+    echo "  ! сканер навыков не поставился (сеть?) -- повторится на следующем /update"
+  fi
 fi
 
 echo "  комплект разложен в $CLAUDE_DIR"

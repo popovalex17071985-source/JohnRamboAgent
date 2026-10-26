@@ -99,8 +99,15 @@ Mechanisms: `hooks/stop-closeout-gate.py`, `hooks/capture-open-threads.py`,
   code commit with no test in it or earlier on the branch is blocked. A genuine
   one-off (a throwaway script, a config) carries the line «Без теста: <reason>».
 
+- **A third-party skill or plugin is someone else's instructions running with my
+  permissions.** Before installing one: `skillspector scan <src> --no-llm --format
+  json --output <file>` (`~/.local/bin/skillspector` if not on PATH); read every
+  HIGH/CRITICAL snippet myself (most are false alarms); anything real goes to the
+  owner. Clean → rerun the install prefixed `SKILLSPECTOR_OK=1`.
+
 Mechanisms: `hooks/block-dangerous.sh`, `hooks/block-red-zone.sh`,
-`hooks/lesson-needs-mechanism.sh`, `hooks/tdd-commit-gate.py`.
+`hooks/lesson-needs-mechanism.sh`, `hooks/tdd-commit-gate.py`,
+`hooks/skill-install-gate.sh`.
 
 ## 6. Language and token economy
 
