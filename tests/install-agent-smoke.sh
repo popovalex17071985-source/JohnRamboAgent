@@ -61,7 +61,7 @@ grep -qE 'read -r -p "\$__prompt" __val </dev/tty 2>/dev/null' "$S" \
   && fail "ask(): stderr read'а уведён в /dev/null — приглашение не видно" || true
 
 # 02.09.2026: диалог «Do you trust this folder?» с курсором на «No, exit» — слепой Enter выходил из Claude.
-grep -q 'grep -qE "❯ \*No, exit"' "$S" || fail "dashi-press-dialogs: нет обработки диалога с выделенным «No, exit»"
+grep -q 'grep -qE "❯ \*No, (exit|disable)"' "$S" || fail "dashi-press-dialogs: нет обработки диалога с выделенным «No, exit»"
 
 # 02.09.2026: Claude Code 2.1.258 не читал plugin/.mcp.json на живом прогоне — мост регистрируется в user-scope.
 grep -q 'claude mcp add -s user dashi-channel -- bun ./src/server.ts' "$S" || fail "нет регистрации моста через claude mcp add -s user"
@@ -110,7 +110,43 @@ run_press $' Security notes:\n 1. Claude can make mistakes.\n Press Enter to con
 [[ "$(head -1 "$pd/keys")" == Enter ]] || fail "сторож не жмёт Enter на экране «Security notes / Press Enter to continue»"
 run_press $'> Press Enter to continue -- это было в чате\n  ⏵⏵ bypass permissions on (shift+tab to cycle)'
 [[ ! -s "$pd/keys" ]] || fail "сторож жмёт Enter в живой ввод: «Press Enter to continue» в переписке над строкой статуса"
+run_press $'> поставь Dark mode и Enter to confirm\n  ⏵⏵ bypass permissions on (shift+tab to cycle)'
+[[ ! -s "$pd/keys" ]] || fail "сторож жмёт Enter в живой ввод: фраза старого диалога в переписке над строкой статуса"
+echo "✓ фразы диалогов в переписке сторож не трогает"
+# 30.10.2026, Жора вживую: диалог внешних импортов стоит на «No, disable» -- Enter отрезал бы правила.
+run_press $'  Allow external CLAUDE.md file imports?\n  ❯ No, disable external imports\n    Yes, allow external imports\n  Enter to confirm · Esc to cancel'
+[[ "$(head -2 "$pd/keys" | tr '\n' ' ')" == "Down Enter " ]] || fail "на «No, disable external imports» сторож жмёт не Down+Enter: $(tr '\n' ' ' <"$pd/keys")"
+echo "✓ внешние импорты правил сторож разрешает, а не отключает"
+run_press $'  Do you trust the files in this folder?\n  ❯ No, exit\n    Yes, proceed\n  Enter to confirm · Esc to cancel'
+[[ "$(head -2 "$pd/keys" | tr '\n' ' ')" == "Down Enter " ]] || fail "на «No, exit» сторож жмёт не Down+Enter -- Enter выбил бы Claude"
 rm -rf "$pd"
+
+# 30.10.2026, Жора: ~/.claude.json переписан задачей от root -- без онбординга, доверия
+# и моста. dashi-run возвращает их до старта; целый файл не трогает, битый -- тоже.
+rd="$(mktemp -d)"
+sed -n "/^cat > \/usr\/local\/bin\/dashi-run <<'EOF'/,/^EOF\$/p" "$S" \
+  | sed -n "/^python3 - \"\$PLUGIN\" <<'PY'/,/^PY\$/p" | sed '1d;$d' >"$rd/fix.py"
+[[ -s "$rd/fix.py" ]] || fail "не нашёл в dashi-run починку ~/.claude.json"
+echo '{"numStartups": 7}' >"$rd/.claude.json"
+HOME="$rd" python3 "$rd/fix.py" /srv/plugin 2>/dev/null
+python3 - "$rd/.claude.json" <<'PYT' || fail "dashi-run не вернул онбординг/доверие/мост в ~/.claude.json"
+import json, sys
+d = json.load(open(sys.argv[1]))
+p = d["projects"]["/srv/plugin"]
+assert d["hasCompletedOnboarding"] is True and d["numStartups"] == 7
+assert p["hasTrustDialogAccepted"] and p["hasClaudeMdExternalIncludesApproved"]
+assert d["mcpServers"]["dashi-channel"]["args"] == ["./src/server.ts"]
+PYT
+[[ -f "$rd/.claude.json.bak-dashi-run" ]] || fail "dashi-run правит ~/.claude.json без копии"
+rm "$rd/.claude.json.bak-dashi-run"; before="$(md5sum <"$rd/.claude.json")"
+HOME="$rd" python3 "$rd/fix.py" /srv/plugin 2>/dev/null
+[[ "$(md5sum <"$rd/.claude.json")" == "$before" && ! -e "$rd/.claude.json.bak-dashi-run" ]] \
+  || fail "dashi-run переписывает целый ~/.claude.json"
+echo '{"broken' >"$rd/.claude.json"
+HOME="$rd" python3 "$rd/fix.py" /srv/plugin 2>/dev/null && fail "dashi-run молчит о битом ~/.claude.json"
+[[ "$(cat "$rd/.claude.json")" == '{"broken' ]] || fail "dashi-run затёр битый ~/.claude.json"
+rm -rf "$rd"
+echo "✓ dashi-run возвращает онбординг, доверие и мост; целый и битый файл не трогает"
 echo "✓ экран «Security notes» сторож проходит Enter"
 grep -q 'tmux pipe-pane -o' "$S" || fail "экран сессии не пишется в файл -- падение снова будет немым"
 echo "✓ экран сессии пишется в лог"
