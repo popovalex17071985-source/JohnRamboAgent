@@ -1,5 +1,37 @@
 <?xml version="1.0" encoding="utf-8" ?><Ads crm_version="InSalesAvitoModule" formatVersion="3" target="Avito.ru">
       <Ad>
+        <Id>261514780</Id>
+        <DateBegin>2023-03-01</DateBegin>
+        <DateEnd>2033-03-31</DateEnd>
+        <ListingFee>Package</ListingFee>
+        <AdStatus>Free</AdStatus>
+        
+        <ManagerName>Тимофей</ManagerName>
+        <ContactPhone>+73422140020</ContactPhone>
+        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
+        <GoodsType>Клавиатуры и мыши</GoodsType>
+        <AdType>Товар приобретен на продажу</AdType>
+        <Category>Товары для компьютера</Category>
+        <Title>Apple Smart Keyboard iPad Pro 9.7</Title>
+        <Description><![CDATA[<p>Apple Smart Keyboard iPad Pro 9.7</p>
+<p>✅Отличное состояние.<br>✅Гарантия от магазина 180 дней!</p>
+<p>👍🏼 ГАРАНТИЯ ЛУЧШЕЙ ЦЕНЫ!</p>
+<p>⬇️ СДЕЛАЕМ СКИДКУ НА ПРЕДЛОЖЕНИЯ КОНКУРЕНТА!</p>
+<p>🥇РАБОТАЕМ ДЛЯ ВАС С 2008 ГОДА И ОЧЕНЬ ДОРОЖИМ СВОЕЙ РЕПУТАЦИЕЙ!</p>
+<p>☝🏼Вся Б/У техника является, ОРИГИНАЛЬНОЙ, НЕ ВОССТАНОВЛЕННОЙ.</p>]]></Description>
+        <Price>4990</Price>
+        
+        
+        <Images>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/3566/852356590/IMG_8450.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/3567/852356591/IMG_8451.jpg"/>
+        </Images>
+        <Category>Товары для компьютера</Category>
+        
+        <Condition>Б/у</Condition>
+      <GoodsSubType>Клавиатуры</GoodsSubType></Ad>
+
+      <Ad>
         <Id>478616198</Id>
         <DateBegin>2023-03-01</DateBegin>
         <DateEnd>2033-03-31</DateEnd>
@@ -2670,38 +2702,6 @@
         <Akb>93</Akb>
       <ScreenCondition>Без дефектов</ScreenCondition><CaseCondition>Мелкие царапины</CaseCondition><Devicework>Включается</Devicework></Ad>
 
-      <Ad>
-        <Id>261514780</Id>
-        <DateBegin>2023-03-01</DateBegin>
-        <DateEnd>2033-03-31</DateEnd>
-        <ListingFee>Package</ListingFee>
-        <AdStatus>Free</AdStatus>
-        
-        <ManagerName>Тимофей</ManagerName>
-        <ContactPhone>+73422140020</ContactPhone>
-        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
-        <GoodsType>Клавиатуры и мыши</GoodsType>
-        <AdType>Товар приобретен на продажу</AdType>
-        <Category>Товары для компьютера</Category>
-        <Title>Apple Smart Keyboard iPad Pro 9.7</Title>
-        <Description><![CDATA[<p>Apple Smart Keyboard iPad Pro 9.7</p>
-<p>✅Отличное состояние.<br>✅Гарантия от магазина 180 дней!</p>
-<p>👍🏼 ГАРАНТИЯ ЛУЧШЕЙ ЦЕНЫ!</p>
-<p>⬇️ СДЕЛАЕМ СКИДКУ НА ПРЕДЛОЖЕНИЯ КОНКУРЕНТА!</p>
-<p>🥇РАБОТАЕМ ДЛЯ ВАС С 2008 ГОДА И ОЧЕНЬ ДОРОЖИМ СВОЕЙ РЕПУТАЦИЕЙ!</p>
-<p>☝🏼Вся Б/У техника является, ОРИГИНАЛЬНОЙ, НЕ ВОССТАНОВЛЕННОЙ.</p>]]></Description>
-        <Price>4990</Price>
-        
-        
-        <Images>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/3566/852356590/IMG_8450.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/3567/852356591/IMG_8451.jpg"/>
-        </Images>
-        <Category>Товары для компьютера</Category>
-        
-        <Condition>Б/у</Condition>
-      <GoodsSubType>Клавиатуры</GoodsSubType></Ad>
-
 <Ad>
         <Id>426971203</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4443,7 +4443,7 @@
         <Condition>новое</Condition>
         <MemorySize>256 ГБ</MemorySize>
         <AdType>Товар приобретен на продажу</AdType>
-      <Revalidate>2988937</Revalidate></Ad>
+      <Revalidate>2988943</Revalidate></Ad>
 <Ad>
         <Id>496127545</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4641,7 +4641,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2988937</Revalidate></Ad>
+      <Revalidate>2988943</Revalidate></Ad>
 <Ad>
         <Id>1640714561</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4791,7 +4791,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2988937</Revalidate></Ad>
+      <Revalidate>2988943</Revalidate></Ad>
 <Ad>
         <Id>1640726593</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4941,7 +4941,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2988937</Revalidate></Ad>
+      <Revalidate>2988943</Revalidate></Ad>
 <Ad>
         <Id>1640736641</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -5541,7 +5541,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2988937</Revalidate></Ad>
+      <Revalidate>2988943</Revalidate></Ad>
 <Ad>
         <Id>1642060329</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -5641,7 +5641,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2988937</Revalidate></Ad>
+      <Revalidate>2988943</Revalidate></Ad>
 <Ad>
         <Id>1642061641</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -5941,7 +5941,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2988937</Revalidate></Ad>
+      <Revalidate>2988943</Revalidate></Ad>
 <Ad>
         <Id>1645613473</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -6091,7 +6091,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2988937</Revalidate></Ad>
+      <Revalidate>2988943</Revalidate></Ad>
 <Ad>
         <Id>1645614297</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -6995,7 +6995,7 @@
 <p><br><br>🌐 Еще больше классных предложений на сайте ipointperm</p>
 <p>*цены на всю технику указаны со скидкой за наличный расчёт</p>
 <p>*90% товаров, представленных на витрине Авито имеются в наличии, если какого-то товара нет сегодня - доставим в течение двух дней</p>]]></Description>
-        <Price>147490</Price>
+        <Price>144990</Price>
         
         <Model>iPhone 18 Pro</Model>
         <Images>
@@ -7245,7 +7245,7 @@
 <p><br><br>🌐 Еще больше классных предложений на сайте ipointperm</p>
 <p>*цены на всю технику указаны со скидкой за наличный расчёт</p>
 <p>*90% товаров, представленных на витрине Авито имеются в наличии, если какого-то товара нет сегодня - доставим в течение двух дней</p>]]></Description>
-        <Price>134990</Price>
+        <Price>133990</Price>
         
         <Model>iPhone 18 Pro</Model>
         <Images>
@@ -7595,7 +7595,7 @@
 <p><br><br>🌐 Еще больше классных предложений на сайте ipointperm</p>
 <p>*цены на всю технику указаны со скидкой за наличный расчёт</p>
 <p>*90% товаров, представленных на витрине Авито имеются в наличии, если какого-то товара нет сегодня - доставим в течение двух дней</p>]]></Description>
-        <Price>126990</Price>
+        <Price>126490</Price>
         
         <Model>iPhone 18 Pro Max</Model>
         <Images>
@@ -7995,7 +7995,7 @@
 <p><br><br>🌐 Еще больше классных предложений на сайте ipointperm</p>
 <p>*цены на всю технику указаны со скидкой за наличный расчёт</p>
 <p>*90% товаров, представленных на витрине Авито имеются в наличии, если какого-то товара нет сегодня - доставим в течение двух дней</p>]]></Description>
-        <Price>150490</Price>
+        <Price>148490</Price>
         
         <Model>iPhone 18 Pro Max</Model>
         <Images>
@@ -8095,7 +8095,7 @@
 <p><br><br>🌐 Еще больше классных предложений на сайте ipointperm</p>
 <p>*цены на всю технику указаны со скидкой за наличный расчёт</p>
 <p>*90% товаров, представленных на витрине Авито имеются в наличии, если какого-то товара нет сегодня - доставим в течение двух дней</p>]]></Description>
-        <Price>152990</Price>
+        <Price>150990</Price>
         
         <Model>iPhone 18 Pro Max</Model>
         <Images>
