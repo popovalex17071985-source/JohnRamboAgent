@@ -1011,7 +1011,7 @@ for _ in $(seq 1 40); do
   # на Смите). Любой диалог, где выделено «No, exit», — сначала Down, потом Enter.
   # 30.10.2026, агент Жора: «Allow external CLAUDE.md file imports?» стоит на «No, disable
   # external imports» — Enter молча отрезал бы агенту core/rules.md и USER.md. Туда же.
-  elif grep -qE "❯ *No, (exit|disable)" <<<"$screen"; then
+  elif grep -qE "❯ *No, (exit|disable external imports)" <<<"$screen"; then
     press Down
     sleep 1
     press Enter
@@ -1058,11 +1058,16 @@ tmux kill-session -t "$SESSION" 2>/dev/null || true
 # без моста: служба active, бот молчит. Возвращаем их до старта. Файл трогаем, только
 # если чего-то не хватает, и с копией. Claude пишет этот файл при выходе -- сначала
 # ждём, пока он завершится (не дольше 10 с: claude -p фоновых задач тоже в списке).
+# Доверие Claude ищет под корнем git (живой ~/.claude.json Жоры 30.10), а не под
+# папкой плагина: пишем в обе записи.
 for _ in $(seq 1 10); do pgrep -u "$(id -u)" -x claude >/dev/null || break; sleep 1; done
-python3 - "$PLUGIN" <<'PY' || echo "dashi-run: ~/.claude.json не проверен" >&2
-import json, os, shutil, sys
+pgrep -u "$(id -u)" -x claude >/dev/null \
+  && echo "dashi-run: ещё живы процессы claude -- при выходе могут переписать ~/.claude.json" >&2
+GIT_ROOT="$(git -C "$PLUGIN" rev-parse --show-toplevel 2>/dev/null || echo "$PLUGIN")"
+python3 -I - "$PLUGIN" "$GIT_ROOT" <<'PY' || echo "dashi-run: ~/.claude.json не проверен" >&2
+import json, os, shutil, sys, time
 path = os.path.expanduser("~/.claude.json")
-plugin = sys.argv[1]
+dirs = sorted(set(sys.argv[1:]))
 try:
     with open(path) as f:
         data = json.load(f)
@@ -1072,21 +1077,23 @@ except json.JSONDecodeError:
     sys.exit("dashi-run: ~/.claude.json битый -- не трогаю")
 trust = {"hasTrustDialogAccepted": True, "hasClaudeMdExternalIncludesApproved": True,
          "hasClaudeMdExternalIncludesWarningShown": True}
-project = data.setdefault("projects", {}).setdefault(plugin, {})
+projects = [data.setdefault("projects", {}).setdefault(d, {}) for d in dirs]
 servers = data.setdefault("mcpServers", {})
 missing = (not data.get("hasCompletedOnboarding")
-           or any(project.get(k) is not True for k in trust)
+           or any(pr.get(k) is not True for pr in projects for k in trust)
            or "dashi-channel" not in servers)
 if missing:
     if os.path.exists(path):
-        shutil.copy2(path, path + ".bak-dashi-run")
+        shutil.copy2(path, f"{path}.bak-dashi-run-{time.strftime('%Y%m%d-%H%M%S')}")
     data["hasCompletedOnboarding"] = True
-    project.update(trust)
+    for pr in projects:
+        pr.update(trust)
     servers.setdefault("dashi-channel",
                        {"type": "stdio", "command": "bun", "args": ["./src/server.ts"], "env": {}})
-    with open(path + ".tmp", "w") as f:
+    # 0600 с момента создания: в файле бывают ключи из mcpServers.*.env.
+    fd = os.open(path + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
         json.dump(data, f, indent=2)
-    os.chmod(path + ".tmp", 0o600)
     os.replace(path + ".tmp", path)
     print("dashi-run: вернул в ~/.claude.json онбординг, доверие к папке и мост", file=sys.stderr)
 PY
