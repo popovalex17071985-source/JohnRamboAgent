@@ -95,10 +95,22 @@ grep -q 'press "\$@" ) || true' <<<"$press_block" && fail "press() зовёт с
 echo "✓ один писатель на панель: нажатия сторожа под замком"
 # 30.10.2026, агент Жора: после рестарта Claude 2.1.308 встал на «Security notes …
 # Press Enter to continue» (онбординг сброшен) -- сторож этот экран не знал, бот молчал.
-enter_re="$(grep -oE 'elif grep -qE "[^"]*Syntax theme[^"]*"' <<<"$press_block" | sed -E 's/^elif grep -qE "//; s/"$//')"
-[[ -n "$enter_re" ]] || fail "не нашёл шаблон Enter-диалогов в стороже"
-security_screen=$' Security notes:\n 1. Claude can make mistakes.\n Press Enter to continue…'
-grep -qE "$enter_re" <<<"$security_screen" || fail "сторож не жмёт Enter на экране «Security notes / Press Enter to continue»"
+# Гоняем сам сторож с подменёнными tmux/sleep: экран диалога -> Enter, тот же текст
+# над строкой статуса (старая переписка) -> выход без нажатий.
+pd="$(mktemp -d)"
+sed -n "/^cat > \/usr\/local\/bin\/dashi-press-dialogs <<'EOF'/,/^EOF\$/p" "$S" | sed '1d;$d' >"$pd/press"
+cat >"$pd/tmux" <<'STUB'
+#!/usr/bin/env bash
+case "$1" in capture-pane) printf '%s\n' "$SCREEN" ;; send-keys) echo "${@: -1}" >>"$KEYS" ;; esac
+STUB
+printf '#!/bin/sh\n:\n' >"$pd/sleep"
+chmod +x "$pd/tmux" "$pd/sleep"
+run_press() { : >"$pd/keys"; SCREEN="$1" KEYS="$pd/keys" PATH="$pd:$PATH" bash "$pd/press" smoke-$$; }
+run_press $' Security notes:\n 1. Claude can make mistakes.\n Press Enter to continue…'
+[[ "$(head -1 "$pd/keys")" == Enter ]] || fail "сторож не жмёт Enter на экране «Security notes / Press Enter to continue»"
+run_press $'> Press Enter to continue -- это было в чате\n  ⏵⏵ bypass permissions on (shift+tab to cycle)'
+[[ ! -s "$pd/keys" ]] || fail "сторож жмёт Enter в живой ввод: «Press Enter to continue» в переписке над строкой статуса"
+rm -rf "$pd"
 echo "✓ экран «Security notes» сторож проходит Enter"
 grep -q 'tmux pipe-pane -o' "$S" || fail "экран сессии не пишется в файл -- падение снова будет немым"
 echo "✓ экран сессии пишется в лог"
