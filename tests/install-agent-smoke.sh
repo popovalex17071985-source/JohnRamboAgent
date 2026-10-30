@@ -93,6 +93,13 @@ sk="$(grep -c 'tmux send-keys' <<<"$press_block")"
 [[ "$sk" == 1 ]] || fail "в стороже $sk вызовов tmux send-keys, а должен быть ровно один -- внутри press()"
 grep -q 'press "\$@" ) || true' <<<"$press_block" && fail "press() зовёт сам себя: рекурсия вместо нажатия"
 echo "✓ один писатель на панель: нажатия сторожа под замком"
+# 30.10.2026, агент Жора: после рестарта Claude 2.1.308 встал на «Security notes …
+# Press Enter to continue» (онбординг сброшен) -- сторож этот экран не знал, бот молчал.
+enter_re="$(grep -oE 'elif grep -qE "[^"]*Syntax theme[^"]*"' <<<"$press_block" | sed -E 's/^elif grep -qE "//; s/"$//')"
+[[ -n "$enter_re" ]] || fail "не нашёл шаблон Enter-диалогов в стороже"
+security_screen=$' Security notes:\n 1. Claude can make mistakes.\n Press Enter to continue…'
+grep -qE "$enter_re" <<<"$security_screen" || fail "сторож не жмёт Enter на экране «Security notes / Press Enter to continue»"
+echo "✓ экран «Security notes» сторож проходит Enter"
 grep -q 'tmux pipe-pane -o' "$S" || fail "экран сессии не пишется в файл -- падение снова будет немым"
 echo "✓ экран сессии пишется в лог"
 

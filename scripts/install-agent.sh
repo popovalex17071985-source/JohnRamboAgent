@@ -1013,8 +1013,11 @@ for _ in $(seq 1 40); do
     sleep 1
     press Enter
   # Онбординг (выбор темы и пр.) раньше проходил человек при ручном логине;
-  # с годовым токеном логина нет — экраны всплывают при первом старте сервиса
-  elif grep -qE "development channels|Do you trust|Enter to confirm|Light mode|Dark mode|text style|Syntax theme" <<<"$screen"; then
+  # с годовым токеном логина нет — экраны всплывают при первом старте сервиса.
+  # 30.10.2026, агент Жора: ~/.claude.json пересоздался без hasCompletedOnboarding,
+  # Claude 2.1.308 после рестарта встал на «Security notes … Press Enter to continue»
+  # и бот молчал, пока кто-то не нажал Enter руками.
+  elif grep -qE "development channels|Do you trust|Enter to confirm|Light mode|Dark mode|text style|Syntax theme|Security notes|Press Enter to continue" <<<"$screen"; then
     press Enter
   elif grep -q "bypass permissions on" <<<"$screen"; then
     exit 0  # диалоги пройдены, Claude работает
