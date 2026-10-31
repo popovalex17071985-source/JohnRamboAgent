@@ -204,7 +204,7 @@ class WiringTest(unittest.TestCase):
 
     def test_prune_runs_before_upload(self) -> None:
         self.assertLess(self.src.index("backup-remote-prune.py"),
-                        self.src.index('"$RCLONE_BIN" copy "$ARCHIVE"'))
+                        self.src.index('"$RCLONE_BIN" copy --tpslimit 2 --drive-chunk-size 64M "$ARCHIVE"'))
 
     def test_prune_gets_our_agent_and_archive_size(self) -> None:
         call = self.src[self.src.index("backup-remote-prune.py"):]
@@ -214,7 +214,7 @@ class WiringTest(unittest.TestCase):
         self.assertIn('"${RCLONE_REMOTE}:${RCLONE_PATH}"', call)
 
     def test_age_rule_kept_after_upload(self) -> None:
-        after = self.src[self.src.index('"$RCLONE_BIN" copy "$ARCHIVE"'):]
+        after = self.src[self.src.index('"$RCLONE_BIN" copy --tpslimit 2 --drive-chunk-size 64M "$ARCHIVE"'):]
         self.assertIn('--drive-use-trash=false --min-age "${RETAIN}d"', after)
 
     def test_prune_ships_next_to_backup(self) -> None:

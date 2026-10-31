@@ -554,7 +554,7 @@ if [[ -d "$CLAUDE_DIR/dashi-plugin-claude-code/.git" ]]; then
     warn "в плагине есть локальные правки ($REPO_DIRTY) — обновление до $BRANCH пропускаю, чтобы их не стереть"
     warn "закоммить или откати их (git -C $CLAUDE_DIR/dashi-plugin-claude-code status) и запусти снова"
   else
-    as_agent "cd '$CLAUDE_DIR/dashi-plugin-claude-code' && git remote set-url origin '$REPO_URL' && git fetch --depth 1 origin '$BRANCH' && git reset --hard FETCH_HEAD" >/dev/null 2>&1 \
+    as_agent "cd '$CLAUDE_DIR/dashi-plugin-claude-code' && git remote set-url origin '$REPO_URL' && GIT_SSH_COMMAND='ssh -o BatchMode=yes' GIT_TERMINAL_PROMPT=0 timeout 300 git fetch --depth 1 origin '$BRANCH' && git reset --hard FETCH_HEAD" >/dev/null 2>&1 \
       && ok "плагин обновлён до свежего $BRANCH" \
       || warn "не смог обновить плагин (нет сети до GitHub?) — работаю на том, что есть"
   fi
