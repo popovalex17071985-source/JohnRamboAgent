@@ -206,6 +206,16 @@ grep -q 'REPO_URL="$CLONE_ORIGIN"; REPO_VIA_SSH=1; REPO_TOKEN=""' "$INST" \
   || fail "повторный прогон не оставляет рабочий SSH-origin клона"
 grep -q 'REPO_TOKEN_EXPLICIT="$REPO_TOKEN"' "$INST" || fail "явный --repo-token затирается SSH-путём"
 grep -q "BatchMode=yes" "$INST" || fail "проверка SSH может зависнуть на вопросе ssh"
+# 31.10.2026, Жупик: голый GIT_SSH_COMMAND перекрыл core.sshCommand -- git пошёл без ключа.
+eval "$(grep -m1 '^GIT_SSH_BATCH=' "$INST")"
+sd="$(mktemp -d)"; git init -q "$sd/r"
+printf '#!/bin/sh\necho "$@" >"%s/args"; exit 1\n' "$sd" >"$sd/ssh"; chmod +x "$sd/ssh"
+git -C "$sd/r" config core.sshCommand "$sd/ssh -i DEPLOYKEY"
+git -C "$sd/r" remote add origin git@github.com:x/y.git
+bash -c "cd '$sd/r' && $GIT_SSH_BATCH GIT_TERMINAL_PROMPT=0 timeout 30 git ls-remote --heads origin" >/dev/null 2>&1 || true
+grep -q -- '-i DEPLOYKEY -o BatchMode=yes' "$sd/args" 2>/dev/null \
+  || fail "SSH-проверка теряет ключ развёртывания клона: $(cat "$sd/args" 2>/dev/null)"
+rm -rf "$sd"
 grep -q -- '--repo)      REPO_URL="$2"; REPO_URL_GIVEN=1' "$INST" || fail "явный --repo не отключает SSH-origin клона"
 eval "$(sed -n '/^repo_auth_header()/p' "$INST")"
 [[ "$(repo_auth_header abc)" == "Authorization: Basic $(printf 'x-access-token:abc' | base64 -w0)" ]] \
