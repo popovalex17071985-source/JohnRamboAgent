@@ -204,6 +204,8 @@ grep -q 'secrets/repo-token' "$INST" || fail "ключ репозитория н
 # и set-url на https отрезал бы обновления.
 grep -q 'REPO_URL="$CLONE_ORIGIN"; REPO_VIA_SSH=1; REPO_TOKEN=""' "$INST" \
   || fail "повторный прогон не оставляет рабочий SSH-origin клона"
+grep -q 'REPO_TOKEN_EXPLICIT="$REPO_TOKEN"' "$INST" || fail "явный --repo-token затирается SSH-путём"
+grep -q "BatchMode=yes" "$INST" || fail "проверка SSH может зависнуть на вопросе ssh"
 grep -q -- '--repo)      REPO_URL="$2"; REPO_URL_GIVEN=1' "$INST" || fail "явный --repo не отключает SSH-origin клона"
 eval "$(sed -n '/^repo_auth_header()/p' "$INST")"
 [[ "$(repo_auth_header abc)" == "Authorization: Basic $(printf 'x-access-token:abc' | base64 -w0)" ]] \

@@ -409,7 +409,7 @@ if [[ -x "$RCLONE_BIN" ]] && "$RCLONE_BIN" listremotes 2>/dev/null | grep -q "^$
         "${RCLONE_REMOTE}:${RCLONE_PATH}/" 2>>"$LOG"; then
       ok=1; break
     fi
-    sleep $((attempt * 30))
+    (( attempt < 5 )) && sleep $((attempt * 30))
   done
   if [[ -n "$ok" ]]; then
     log "OK off-site: ${RCLONE_REMOTE}:${RCLONE_PATH}/$(basename "$ARCHIVE")"

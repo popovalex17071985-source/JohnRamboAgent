@@ -488,6 +488,7 @@ fi
 REPO_DIR="$CLAUDE_DIR/dashi-plugin-claude-code"
 REPO_TOKEN_FILE="$WORKSPACE/secrets/repo-token"
 REPO_TOKEN="${REPO_TOKEN:-${DASHI_REPO_TOKEN:-}}"
+REPO_TOKEN_EXPLICIT="$REPO_TOKEN"   # флаг/переменная, не файл из secrets/
 [[ -z "$REPO_TOKEN" && -s "$REPO_TOKEN_FILE" ]] && REPO_TOKEN="$(tr -d '[:space:]' < "$REPO_TOKEN_FILE")"
 REPO_HDR_KEY="http.https://github.com/.extraheader"
 repo_auth_header() { printf 'Authorization: Basic %s' "$(printf 'x-access-token:%s' "$1" | base64 -w0)"; }
@@ -512,10 +513,16 @@ save_repo_token() {  # кладёт ключ в клон: дальше обно�
 REPO_VIA_SSH=0
 if [[ "$REPO_URL_GIVEN" == 0 && -d "$REPO_DIR/.git" ]]; then
   CLONE_ORIGIN="$(as_agent "git -C '$REPO_DIR' remote get-url origin" 2>/dev/null || true)"
-  if [[ "$CLONE_ORIGIN" =~ ^(git@github\.com:|ssh://git@github\.com/)popovalex17071985-source/JohnRamboAgent(\.git)?$ ]] \
-     && as_agent "GIT_TERMINAL_PROMPT=0 timeout 60 git -C '$REPO_DIR' ls-remote --heads origin" >/dev/null 2>&1; then
+  # Явно переданный ключ -- решение человека: идём по нему, SSH не навязываем.
+  if [[ -z "$REPO_TOKEN_EXPLICIT" \
+        && "$CLONE_ORIGIN" =~ ^(git@github\.com:|ssh://git@github\.com/)popovalex17071985-source/JohnRamboAgent(\.git)?$ ]]; then
     REPO_URL="$CLONE_ORIGIN"; REPO_VIA_SSH=1; REPO_TOKEN=""
-    ok "репозиторий: агент ходит по SSH-ключу, токен не нужен"
+    if as_agent "GIT_SSH_COMMAND='ssh -o BatchMode=yes' GIT_TERMINAL_PROMPT=0 timeout 60 git -C '$REPO_DIR' ls-remote --heads origin" >/dev/null 2>&1; then
+      ok "репозиторий: агент ходит по SSH-ключу, токен не нужен"
+    else
+      # Сбой сети не повод переводить агента на https без ключа -- origin оставляем.
+      warn "GitHub по SSH сейчас не ответил -- origin агента оставляю как есть"
+    fi
   fi
 fi
 if [[ "$REPO_VIA_SSH" == 1 ]]; then
