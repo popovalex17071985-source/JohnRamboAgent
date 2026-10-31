@@ -46,6 +46,7 @@ BUN_VERSION="bun-v1.4.0"
 # (agent-kit/scripts/ov-conf-fix.py), иначе память «пропадает».
 OPENVIKING_IMAGE="ghcr.io/volcengine/openviking@sha256:c60a83cd79cfce80db5266acb8bdd0908eee8abe8ff559a5f786aa504c251ccf"
 REPO_URL="${DASHI_REPO_URL:-https://github.com/popovalex17071985-source/JohnRamboAgent.git}"
+REPO_URL_GIVEN=0; [[ -n "${DASHI_REPO_URL:-}" ]] && REPO_URL_GIVEN=1
 # Ветка, с которой агент обновляется (/update, советник, повторный прогон).
 # main = проверенное, раскатывается всем после обсуждения; staging-агенты
 # (Smith) сидят на feature-ветке и видят изменения первыми.
@@ -141,7 +142,7 @@ while [[ $# -gt 0 ]]; do
     --repair-token) REPAIR_TOKEN="$2"; shift 2 ;; # бот-ремонтник (страховка, ещё один /newbot)
     --user)      SERVICE_USER="$2"; USER_GIVEN=1; shift 2 ;;
     --webhook-port) WEBHOOK_PORT="$2"; PORT_GIVEN=1; shift 2 ;;   # порт приёмника хуков (по умолчанию 8089)
-    --repo)      REPO_URL="$2";   shift 2 ;;
+    --repo)      REPO_URL="$2"; REPO_URL_GIVEN=1; shift 2 ;;
     --repo-token) REPO_TOKEN="$2"; shift 2 ;;  # ключ к закрытому репозиторию; DASHI_REPO_TOKEN не светится в ps
     --branch)    BRANCH="$2";     shift 2 ;;   # main (по умолчанию) | feature-ветка для staging
     --tz)        OWNER_TZ="$2";   shift 2 ;;   # пояс ХОЗЯИНА: сводка приходит в 09:00 по нему
@@ -487,6 +488,7 @@ fi
 REPO_DIR="$CLAUDE_DIR/dashi-plugin-claude-code"
 REPO_TOKEN_FILE="$WORKSPACE/secrets/repo-token"
 REPO_TOKEN="${REPO_TOKEN:-${DASHI_REPO_TOKEN:-}}"
+REPO_TOKEN_EXPLICIT="$REPO_TOKEN"   # флаг/переменная, не файл из secrets/
 [[ -z "$REPO_TOKEN" && -s "$REPO_TOKEN_FILE" ]] && REPO_TOKEN="$(tr -d '[:space:]' < "$REPO_TOKEN_FILE")"
 REPO_HDR_KEY="http.https://github.com/.extraheader"
 repo_auth_header() { printf 'Authorization: Basic %s' "$(printf 'x-access-token:%s' "$1" | base64 -w0)"; }
@@ -505,7 +507,27 @@ save_repo_token() {  # кладёт ключ в клон: дальше обно�
   ( umask 077; printf '%s\n' "$REPO_TOKEN" > "$REPO_TOKEN_FILE" )
   chown "$SERVICE_USER:$SERVICE_USER" "$REPO_TOKEN_FILE"
 }
-if [[ -n "$REPO_TOKEN" ]]; then
+# Клон, который уже ходит по SSH (ключ развёртывания у агента, Жупик 31.10.2026),
+# оставляем на его origin: set-url на https без ключа отрезал бы ему обновления,
+# а протухший токен из secrets/ ронял повторный прогон, хотя git у агента живой.
+REPO_VIA_SSH=0
+if [[ "$REPO_URL_GIVEN" == 0 && -d "$REPO_DIR/.git" ]]; then
+  CLONE_ORIGIN="$(as_agent "git -C '$REPO_DIR' remote get-url origin" 2>/dev/null || true)"
+  # Явно переданный ключ -- решение человека: идём по нему, SSH не навязываем.
+  if [[ -z "$REPO_TOKEN_EXPLICIT" \
+        && "$CLONE_ORIGIN" =~ ^(git@github\.com:|ssh://git@github\.com/)popovalex17071985-source/JohnRamboAgent(\.git)?$ ]]; then
+    REPO_URL="$CLONE_ORIGIN"; REPO_VIA_SSH=1; REPO_TOKEN=""
+    if as_agent "GIT_SSH_COMMAND='ssh -o BatchMode=yes' GIT_TERMINAL_PROMPT=0 timeout 60 git -C '$REPO_DIR' ls-remote --heads origin" >/dev/null 2>&1; then
+      ok "репозиторий: агент ходит по SSH-ключу, токен не нужен"
+    else
+      # Сбой сети не повод переводить агента на https без ключа -- origin оставляем.
+      warn "GitHub по SSH сейчас не ответил -- origin агента оставляю как есть"
+    fi
+  fi
+fi
+if [[ "$REPO_VIA_SSH" == 1 ]]; then
+  :
+elif [[ -n "$REPO_TOKEN" ]]; then
   repo_reachable "$REPO_TOKEN" \
     || die "ключ к репозиторию не подошёл: GitHub не пускает с ним в $REPO_URL. Попроси у хозяина новый (только чтение, Contents: Read)"
   ok "ключ к репозиторию подошёл"
@@ -532,7 +554,7 @@ if [[ -d "$CLAUDE_DIR/dashi-plugin-claude-code/.git" ]]; then
     warn "в плагине есть локальные правки ($REPO_DIRTY) — обновление до $BRANCH пропускаю, чтобы их не стереть"
     warn "закоммить или откати их (git -C $CLAUDE_DIR/dashi-plugin-claude-code status) и запусти снова"
   else
-    as_agent "cd '$CLAUDE_DIR/dashi-plugin-claude-code' && git remote set-url origin '$REPO_URL' && git fetch --depth 1 origin '$BRANCH' && git reset --hard FETCH_HEAD" >/dev/null 2>&1 \
+    as_agent "cd '$CLAUDE_DIR/dashi-plugin-claude-code' && git remote set-url origin '$REPO_URL' && GIT_SSH_COMMAND='ssh -o BatchMode=yes' GIT_TERMINAL_PROMPT=0 timeout 300 git fetch --depth 1 origin '$BRANCH' && git reset --hard FETCH_HEAD" >/dev/null 2>&1 \
       && ok "плагин обновлён до свежего $BRANCH" \
       || warn "не смог обновить плагин (нет сети до GitHub?) — работаю на том, что есть"
   fi

@@ -400,12 +400,16 @@ if [[ -x "$RCLONE_BIN" ]] && "$RCLONE_BIN" listremotes 2>/dev/null | grep -q "^$
       "${RCLONE_REMOTE}:${RCLONE_PATH}" "$AGENT" "$size_b" >>"$LOG" 2>&1 \
       || log "WARN: место в облаке освободить не вышло, заливаю как есть"
   fi
+  # rclone's shared OAuth client splits Google's per-minute quota across everyone
+  # (Гор, 31.10.2026: 403 «Quota exceeded … Requests per minute» on every try).
+  # Fewer calls per second, bigger chunks, and pauses long enough for the minute to roll.
   ok=""
   for attempt in 1 2 3 4 5; do
-    if "$RCLONE_BIN" copy "$ARCHIVE" "${RCLONE_REMOTE}:${RCLONE_PATH}/" 2>>"$LOG"; then
+    if "$RCLONE_BIN" copy --tpslimit 2 --drive-chunk-size 64M "$ARCHIVE" \
+        "${RCLONE_REMOTE}:${RCLONE_PATH}/" 2>>"$LOG"; then
       ok=1; break
     fi
-    sleep $((attempt * 5))
+    (( attempt < 5 )) && sleep $((attempt * 30))
   done
   if [[ -n "$ok" ]]; then
     log "OK off-site: ${RCLONE_REMOTE}:${RCLONE_PATH}/$(basename "$ARCHIVE")"
