@@ -441,6 +441,9 @@ grep -q 'owner-notes.txt' <(grep '^deletefile ' "$FRLOG") && fail "удалён 
 [[ "$(grep -c '^deletefile ' "$FRLOG")" == 1 ]] || fail "удалено не 1 копия (должно остаться 2): $(grep '^deletefile ' "$FRLOG")"
 grep -q "gdrive:dashi-$AGENT-backups/$AGENT-20261001-0340.tar.gz.gpg" "$FRLOG" || fail "удалена не самая старая копия"
 grep -q -- '^delete --drive-use-trash=false --min-age 7d' "$FRLOG" || fail "правило возраста после заливки пропало"
+# 31.10.2026, Гор: общий OAuth-клиент rclone упирался в поминутную квоту Google на каждой попытке.
+grep '^copy ' "$FRLOG" | grep -q -- '--tpslimit 2 --drive-chunk-size 64M' \
+  || fail "заливка без --tpslimit: упрётся в поминутную квоту Google"
 ok "полное облако: до заливки удаляется самая старая своя копия (не меньше двух), чужое цело"
 : >"$FRLOG"; FAKE_ABOUT_FAIL=1 run_cloud
 grep -q '^deletefile ' "$FRLOG" && fail "облако не сказало про место, а копии удалены"
