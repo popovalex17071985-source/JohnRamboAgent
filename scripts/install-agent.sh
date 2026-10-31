@@ -1001,10 +1001,17 @@ press() {
 for _ in $(seq 1 40); do
   sleep 3
   screen="$(tmux capture-pane -pt "$SESSION" 2>/dev/null)" || exit 0
+  # Строка статуса = стартовые экраны пройдены, Claude в работе. Проверяем её ПЕРВОЙ:
+  # фразы диалогов («Dark mode», «Press Enter to continue»…) бывают и в старой
+  # переписке на экране, и тогда сторож жал Enter в живой ввод (ревью 30.10.2026).
+  if grep -q "bypass permissions on" <<<"$screen"; then
+    exit 0
   # 02.09.2026: Claude Code 2.1.25x спрашивает «Do you trust this folder?» с курсором на
   # «No, exit» — слепой Enter ВЫХОДИЛ из Claude, сервис крутился в рестартах (живой прогон
   # на Смите). Любой диалог, где выделено «No, exit», — сначала Down, потом Enter.
-  if grep -qE "❯ *No, exit" <<<"$screen"; then
+  # 30.10.2026, агент Жора: «Allow external CLAUDE.md file imports?» стоит на «No, disable
+  # external imports» — Enter молча отрезал бы агенту core/rules.md и USER.md. Туда же.
+  elif grep -qE "❯ *No, (exit|disable external imports)" <<<"$screen"; then
     press Down
     sleep 1
     press Enter
@@ -1013,11 +1020,12 @@ for _ in $(seq 1 40); do
     sleep 1
     press Enter
   # Онбординг (выбор темы и пр.) раньше проходил человек при ручном логине;
-  # с годовым токеном логина нет — экраны всплывают при первом старте сервиса
-  elif grep -qE "development channels|Do you trust|Enter to confirm|Light mode|Dark mode|text style|Syntax theme" <<<"$screen"; then
+  # с годовым токеном логина нет — экраны всплывают при первом старте сервиса.
+  # 30.10.2026, агент Жора: ~/.claude.json пересоздался без hasCompletedOnboarding,
+  # Claude 2.1.308 после рестарта встал на «Security notes … Press Enter to continue»
+  # и бот молчал, пока кто-то не нажал Enter руками.
+  elif grep -qE "development channels|Do you trust|Enter to confirm|Light mode|Dark mode|text style|Syntax theme|Press Enter to continue" <<<"$screen"; then
     press Enter
-  elif grep -q "bypass permissions on" <<<"$screen"; then
-    exit 0  # диалоги пройдены, Claude работает
   fi
 done
 exit 0
@@ -1044,6 +1052,51 @@ SESSION="${1:?usage: dashi-run <tmux-session> <plugin-dir> [webhook-port]}"
 PLUGIN="${2:?usage: dashi-run <tmux-session> <plugin-dir> [webhook-port]}"
 PORT="${3:-${TELEGRAM_WEBHOOK_PORT:-8089}}"
 tmux kill-session -t "$SESSION" 2>/dev/null || true
+# 30.10.2026, агент Жора: задача от root переписала ~/.claude.json, и пропали три вещи:
+# онбординг, доверие к папке плагина (с одобрением внешних импортов правил) и мост
+# dashi-channel в user-scope. Claude встал на стартовых экранах, а пройдя их, поднялся
+# без моста: служба active, бот молчит. Возвращаем их до старта. Файл трогаем, только
+# если чего-то не хватает, и с копией. Claude пишет этот файл при выходе -- сначала
+# ждём, пока он завершится (не дольше 10 с: claude -p фоновых задач тоже в списке).
+# Доверие Claude ищет под корнем git (живой ~/.claude.json Жоры 30.10), а не под
+# папкой плагина: пишем в обе записи.
+for _ in $(seq 1 10); do pgrep -u "$(id -u)" -x claude >/dev/null || break; sleep 1; done
+pgrep -u "$(id -u)" -x claude >/dev/null \
+  && echo "dashi-run: ещё живы процессы claude -- при выходе могут переписать ~/.claude.json" >&2
+GIT_ROOT="$(git -C "$PLUGIN" rev-parse --show-toplevel 2>/dev/null || echo "$PLUGIN")"
+python3 -I - "$PLUGIN" "$GIT_ROOT" <<'PY' || echo "dashi-run: ~/.claude.json не проверен" >&2
+import json, os, shutil, sys, time
+path = os.path.expanduser("~/.claude.json")
+dirs = sorted(set(sys.argv[1:]))
+try:
+    with open(path) as f:
+        data = json.load(f)
+except FileNotFoundError:
+    data = {}
+except json.JSONDecodeError:
+    sys.exit("dashi-run: ~/.claude.json битый -- не трогаю")
+trust = {"hasTrustDialogAccepted": True, "hasClaudeMdExternalIncludesApproved": True,
+         "hasClaudeMdExternalIncludesWarningShown": True}
+projects = [data.setdefault("projects", {}).setdefault(d, {}) for d in dirs]
+servers = data.setdefault("mcpServers", {})
+missing = (not data.get("hasCompletedOnboarding")
+           or any(pr.get(k) is not True for pr in projects for k in trust)
+           or "dashi-channel" not in servers)
+if missing:
+    if os.path.exists(path):
+        shutil.copy2(path, f"{path}.bak-dashi-run-{time.strftime('%Y%m%d-%H%M%S')}")
+    data["hasCompletedOnboarding"] = True
+    for pr in projects:
+        pr.update(trust)
+    servers.setdefault("dashi-channel",
+                       {"type": "stdio", "command": "bun", "args": ["./src/server.ts"], "env": {}})
+    # 0600 с момента создания: в файле бывают ключи из mcpServers.*.env.
+    fd = os.open(path + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(data, f, indent=2)
+    os.replace(path + ".tmp", path)
+    print("dashi-run: вернул в ~/.claude.json онбординг, доверие к папке и мост", file=sys.stderr)
+PY
 tmux new-session -d -s "$SESSION" \
   "/bin/bash -lc 'cd $PLUGIN && exec claude ${DASHI_MODEL:+--model $DASHI_MODEL} --dangerously-skip-permissions --dangerously-load-development-channels server:dashi-channel'"
 sleep 3
