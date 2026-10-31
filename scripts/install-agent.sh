@@ -511,13 +511,16 @@ save_repo_token() {  # кладёт ключ в клон: дальше обно�
 # оставляем на его origin: set-url на https без ключа отрезал бы ему обновления,
 # а протухший токен из secrets/ ронял повторный прогон, хотя git у агента живой.
 REPO_VIA_SSH=0
+# ssh без вопросов, но с ключом развёртывания клона: голый GIT_SSH_COMMAND перекрывает
+# core.sshCommand, и git шёл без ключа (Жупик 31.10.2026: «GitHub по SSH не ответил»).
+GIT_SSH_BATCH='GIT_SSH_COMMAND="$(git config core.sshCommand || echo ssh) -o BatchMode=yes"'
 if [[ "$REPO_URL_GIVEN" == 0 && -d "$REPO_DIR/.git" ]]; then
   CLONE_ORIGIN="$(as_agent "git -C '$REPO_DIR' remote get-url origin" 2>/dev/null || true)"
   # Явно переданный ключ -- решение человека: идём по нему, SSH не навязываем.
   if [[ -z "$REPO_TOKEN_EXPLICIT" \
         && "$CLONE_ORIGIN" =~ ^(git@github\.com:|ssh://git@github\.com/)popovalex17071985-source/JohnRamboAgent(\.git)?$ ]]; then
     REPO_URL="$CLONE_ORIGIN"; REPO_VIA_SSH=1; REPO_TOKEN=""
-    if as_agent "GIT_SSH_COMMAND='ssh -o BatchMode=yes' GIT_TERMINAL_PROMPT=0 timeout 60 git -C '$REPO_DIR' ls-remote --heads origin" >/dev/null 2>&1; then
+    if as_agent "cd '$REPO_DIR' && $GIT_SSH_BATCH GIT_TERMINAL_PROMPT=0 timeout 60 git ls-remote --heads origin" >/dev/null 2>&1; then
       ok "репозиторий: агент ходит по SSH-ключу, токен не нужен"
     else
       # Сбой сети не повод переводить агента на https без ключа -- origin оставляем.
@@ -554,7 +557,7 @@ if [[ -d "$CLAUDE_DIR/dashi-plugin-claude-code/.git" ]]; then
     warn "в плагине есть локальные правки ($REPO_DIRTY) — обновление до $BRANCH пропускаю, чтобы их не стереть"
     warn "закоммить или откати их (git -C $CLAUDE_DIR/dashi-plugin-claude-code status) и запусти снова"
   else
-    as_agent "cd '$CLAUDE_DIR/dashi-plugin-claude-code' && git remote set-url origin '$REPO_URL' && GIT_SSH_COMMAND='ssh -o BatchMode=yes' GIT_TERMINAL_PROMPT=0 timeout 300 git fetch --depth 1 origin '$BRANCH' && git reset --hard FETCH_HEAD" >/dev/null 2>&1 \
+    as_agent "cd '$CLAUDE_DIR/dashi-plugin-claude-code' && git remote set-url origin '$REPO_URL' && $GIT_SSH_BATCH GIT_TERMINAL_PROMPT=0 timeout 300 git fetch --depth 1 origin '$BRANCH' && git reset --hard FETCH_HEAD" >/dev/null 2>&1 \
       && ok "плагин обновлён до свежего $BRANCH" \
       || warn "не смог обновить плагин (нет сети до GitHub?) — работаю на том, что есть"
   fi
