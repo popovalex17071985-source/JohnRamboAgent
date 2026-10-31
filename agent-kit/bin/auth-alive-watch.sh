@@ -73,7 +73,8 @@ if [ "$RC" -ne 0 ] && grep -qiE "hit your .*limit|usage limit|rate.?limit|\b429\
 fi
 if [ "$RC" -eq 0 ]; then
   # Recovered after a failure -- say so once, then stay quiet.
-  if [ "$(cat "$STATE" 2>/dev/null)" = "fail" ]; then
+  PREV="$(cat "$STATE" 2>/dev/null)"
+  if [ "$PREV" = "fail" ] || [ "$PREV" = "verify" ]; then
     notify "Вход в Claude снова работает -- фоновые задачи поехали."
     echo "$(date -Is) вход восстановлен" >> "$LOG"
   fi
@@ -81,7 +82,25 @@ if [ "$RC" -eq 0 ]; then
   exit 0
 fi
 
-echo "$(date -Is) пробный вызов не прошёл" >> "$LOG"
+# Anthropic put the account on verification: «Your account can't receive replies
+# from Claude right now ... Verification Portal». The login is fine, a re-login
+# changes nothing -- the account owner has to pass the check. Calling it an
+# expired login sent the owner chasing /login (Lena's «Жупик», 31.10.2026).
+# The portal link carries the org id -- keep it out of the log and the chat.
+if grep -qiE "can.t receive replies|verification portal|portal\.anthropic\.com/verify" <<<"$OUT"; then
+  echo "$(date -Is) аккаунт на проверке Anthropic (Verification Portal) -- перелогин не поможет" >> "$LOG"
+  if [ "$(cat "$STATE" 2>/dev/null)" != "verify" ]; then
+    notify "Anthropic поставил мой аккаунт на проверку: Claude не отвечает ни в чате, ни по расписанию. Перелогин не поможет -- хозяину аккаунта нужно пройти проверку на portal.anthropic.com/verify под своим логином."
+  fi
+  echo verify > "$STATE"
+  exit 0
+fi
+
+# A bare «не прошёл» left nobody able to tell why from the log. Keep a short
+# reason, but never a token or a URL query string (they carry ids and keys).
+REASON="$(tr '\n\r\t' '   ' <<<"$OUT" \
+  | sed -E 's/\?[^[:space:]]*//g; s/sk-ant-[A-Za-z0-9_-]+/[token]/g; s/[A-Za-z0-9_+\/=-]{24,}/[token]/g; s/  +/ /g; s/^ //; s/ $//')"
+echo "$(date -Is) пробный вызов не прошёл: ${REASON:0:120}" >> "$LOG"
 # One message per outage, not one per probe.
 if [ "$(cat "$STATE" 2>/dev/null)" != "fail" ]; then
   notify "Мой вход в Claude не работает: пробный запрос не прошёл. Фоновые задачи стоят, нужен повторный вход (claude /login на сервере). Живая сессия может ещё отвечать, но расписание уже нет."
