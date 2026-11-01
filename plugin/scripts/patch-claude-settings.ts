@@ -229,12 +229,42 @@ function isLegacyDashiEntry(entry: HookEntry | undefined): boolean {
   return false
 }
 
+// Commands this patch installs on `event` — what an unmarked copy is matched by.
+function ownCommandsFor(event: HookEvent, opts: PatchOptions): ReadonlySet<string> {
+  const out = new Set<string>()
+  if (feederEventsFor(opts).has(event)) out.add(buildCommand(opts))
+  if (event === 'PreToolUse' && opts.permissionGateHelperPath !== undefined) {
+    out.add(buildGateCommand(opts))
+  }
+  if (event === 'UserPromptSubmit' && opts.reminderHelperPath !== undefined) {
+    out.add(buildReminderCommand(opts))
+  }
+  return out
+}
+
+// An unmarked entry carrying a hook BYTE-IDENTICAL to one we install is our own
+// copy that lost its marker (Lena 01.11.2026: channel-reminder twice after a
+// rerun). Drop just those hooks; the entry goes only if nothing else is left in
+// it. Different commands — even with the same script name (ov-recall from the
+// repo vs the kit copy) — and every foreign hook stay as they are.
+function withoutOwnCopies(entry: HookEntry, own: ReadonlySet<string>): HookEntry | undefined {
+  if (!Array.isArray(entry.hooks) || own.size === 0) return entry
+  const kept = entry.hooks.filter((h) => !(h && typeof h.command === 'string' && own.has(h.command)))
+  if (kept.length === entry.hooks.length) return entry
+  return kept.length > 0 ? { ...entry, hooks: kept } : undefined
+}
+
 /** Pure patcher — exposed for unit tests. */
 export function applyPatch(settings: SettingsShape, opts: PatchOptions): SettingsShape {
   const hooks: NonNullable<SettingsShape['hooks']> = { ...(settings.hooks ?? {}) }
   const withGate = opts.permissionGateHelperPath !== undefined
   for (const event of HOOK_EVENTS) {
-    const existing = hooks[event] ?? []
+    const own = ownCommandsFor(event, opts)
+    const existing = (hooks[event] ?? []).flatMap((e) => {
+      if (!e) return [e]
+      const left = withoutOwnCopies(e, own)
+      return left === undefined ? [] : [left]
+    })
     // Drop anything that's clearly ours: notification marker, legacy
     // markerless notification entry, OR the gate marker (re-added below for
     // PreToolUse). Unrelated entries survive untouched. This also STRIPS a

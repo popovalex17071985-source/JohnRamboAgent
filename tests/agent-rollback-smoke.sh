@@ -44,18 +44,43 @@ echo '{"name":"fx"}' > "$O/plugin/package.json"; echo 'v1' > "$O/plugin/src.ts"
 git -C "$O" add -A && git -C "$O" commit -q -m "Старая версия"
 OLD="$(git -C "$O" rev-parse HEAD)"
 mkdir -p "$T/cd"; git clone -q --depth 1 "file://$O" "$REPO"
-echo 'v2' > "$O/plugin/src.ts"; git -C "$O" commit -q -am "Новая версия, оказалась плохой"
+echo 'v2' > "$O/plugin/src.ts"; echo 'shipped' > "$O/plugin/added.ts"
+git -C "$O" add -A && git -C "$O" commit -q -m "Новая версия, оказалась плохой"
 NEW="$(git -C "$O" rev-parse HEAD)"
 
 # 0. До первого обновления откатываться некуда
 ctl rollback > "$T/out"; rc=$?
 [[ $rc == 6 && "$(last)" == NOPREV ]] || fail "без прошлой версии ждали NOPREV/6, есть $rc: $(cat "$T/out")"
 
-# 1. update запоминает версию, с которой ушёл
-ctl update > "$T/out" || fail "update упал: $(cat "$T/out" "$T/err")"
+# 0b. Свой новый файл агента там, где новая версия кладёт свой: reset --hard его
+#     перетёр бы молча -- это DIRTY, код не двигается, файл цел.
+echo 'мой' > "$REPO/plugin/added.ts"
+ctl update > "$T/out"; rc=$?
+[[ $rc == 3 && "$(last)" == "DIRTY plugin/added.ts " ]] || fail "новый файл на месте файла обновления: ждали DIRTY/3, есть $rc: $(cat "$T/out")"
+[[ "$(g rev-parse HEAD)" == "$OLD" && "$(cat "$REPO/plugin/added.ts")" == мой ]] || fail "при DIRTY код сдвинулся или файл перетёрт"
+rm "$REPO/plugin/added.ts"
+# своя папка там, где новая версия кладёт файл: reset --hard снёс бы её целиком
+mkdir -p "$REPO/plugin/added.ts"; echo 'мой' > "$REPO/plugin/added.ts/notes.md"
+ctl update > "$T/out"; rc=$?
+[[ $rc == 3 && "$(last)" == DIRTY* ]] || fail "своя папка на пути файла обновления: ждали DIRTY/3, есть $rc: $(cat "$T/out")"
+[[ "$(cat "$REPO/plugin/added.ts/notes.md")" == мой ]] || fail "своя папка перетёрта"
+rm -rf "$REPO/plugin/added.ts"
+# под локалью сервиса (LANG=en_US.UTF-8) -- то же самое
+echo 'мой' > "$REPO/plugin/added.ts"
+LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 ctl update > "$T/out"; rc=$?
+[[ $rc == 3 && "$(last)" == "DIRTY plugin/added.ts " ]] || fail "под en_US: ждали DIRTY/3, есть $rc: $(cat "$T/out")"
+rm "$REPO/plugin/added.ts"
+echo "✓ свой файл или папка на пути файла обновления — DIRTY"
+
+# 1. update запоминает версию, с которой ушёл. Свои новые файлы агента (картинки
+#    в plugin/tmp-out, Гор 01.11.2026) — не правки: reset --hard их не трогает,
+#    update не говорит DIRTY и файлы остаются на месте.
+mkdir -p "$REPO/plugin/tmp-out"; echo png > "$REPO/plugin/tmp-out/pic.png"; echo x > "$REPO/notes.txt"
+ctl update > "$T/out" || fail "update упал (свои новые файлы — не DIRTY): $(cat "$T/out" "$T/err")"
 [[ "$(last)" == "UPDATED 1 ${NEW:0:7}" ]] || fail "update: $(cat "$T/out")"
 [[ "$(g rev-parse refs/dashi/pre-update)" == "$OLD" ]] || fail "update не запомнил прежнюю версию"
-echo "✓ update запоминает прежнюю версию"
+[[ "$(cat "$REPO/plugin/tmp-out/pic.png" "$REPO/notes.txt")" == $'png\nx' ]] || fail "update стёр новые файлы агента"
+echo "✓ update запоминает прежнюю версию, новые файлы агента — не DIRTY и целы"
 # тег на старой версии появился в origin уже после установки — локально его нет
 git -C "$O" tag -a v1.0.0 -m "v1.0.0" "$OLD"
 ! g rev-parse -q --verify v1.0.0 >/dev/null || fail "тег уже есть локально — тест не про то"
@@ -66,7 +91,12 @@ ctl rollback > "$T/out"; rc=$?
 [[ $rc == 3 && "$(last)" == "DIRTY plugin/src.ts " ]] || fail "грязное дерево: ждали DIRTY/3, есть $rc: $(cat "$T/out")"
 [[ "$(g rev-parse HEAD)" == "$NEW" ]] || fail "при DIRTY код сдвинулся"
 g checkout -q -- plugin/src.ts
-echo "✓ грязное дерево — отказ"
+# правка, уже добавленная в индекс (git add), — тоже правка
+echo 'в индексе' > "$REPO/plugin/staged.ts"; g add plugin/staged.ts
+ctl update > "$T/out"; rc=$?
+[[ $rc == 3 && "$(last)" == "DIRTY plugin/staged.ts " ]] || fail "правка в индексе: ждали DIRTY/3, есть $rc: $(cat "$T/out")"
+g rm -q --cached plugin/staged.ts; rm "$REPO/plugin/staged.ts"
+echo "✓ грязное дерево — отказ (и правка в индексе тоже)"
 
 # 3. Откат: код на прежней версии, bun install прогнан, подсказка про restart
 : > "$BUNLOG"
@@ -78,7 +108,13 @@ grep -q "dashi-ctl-smoke restart" "$T/err" || fail "нет подсказки с
 [[ ! -e "$REPO.bak" || -d "$REPO.bak" ]] || fail "странный .bak"
 echo "✓ rollback возвращает прежнюю версию"
 
-# 4. Откат отката: прежняя «прежняя» — та, с которой ушли
+# 4. Откат отката: прежняя «прежняя» — та, с которой ушли. Свой файл на пути,
+#    который та версия кладёт, — сперва DIRTY, как у update.
+echo 'мой' > "$REPO/plugin/added.ts"
+ctl rollback > "$T/out"; rc=$?
+[[ $rc == 3 && "$(last)" == "DIRTY plugin/added.ts " ]] || fail "rollback на свой файл: ждали DIRTY/3, есть $rc: $(cat "$T/out")"
+[[ "$(cat "$REPO/plugin/added.ts")" == мой ]] || fail "rollback перетёр свой файл агента"
+rm "$REPO/plugin/added.ts"
 ctl rollback > "$T/out" || fail "второй rollback упал"
 [[ "$(g rev-parse HEAD)" == "$NEW" ]] || fail "второй rollback не вернул вперёд"
 echo "✓ повторный rollback отменяет откат"

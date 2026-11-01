@@ -31,6 +31,8 @@
 #                                    в старый список дописать новые шаблоны по умолчанию
 #   agent-backup.sh --print-excludes итоговые шаблоны исключений (для проверки)
 #   agent-backup.sh --size-report    сколько весит что попадёт в архив, без архива
+#   agent-backup.sh --local-only     архив + проверка + ротация, без облака
+#                                    (повторный прогон установщика)
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -56,10 +58,14 @@ RETAIN="${DASHI_BACKUP_RETAIN:-7}"
 GROWTH_WARN_MB="${DASHI_BACKUP_GROWTH_WARN_MB:-200}"
 
 MODE="run"
+LOCAL_ONLY=0
 case "${1:-}" in
   --init-excludes)  MODE=init ;;
   --print-excludes) MODE=print ;;
   --size-report)    MODE=size ;;
+  # Archive + self-check + rotation, no cloud: the installer's rerun (Gor 01.11.2026,
+  # a 1.6 GB upload hit the shared key's per-minute quota). The nightly run uploads.
+  --local-only)     LOCAL_ONLY=1 ;;
   "") ;;
   *) echo "неизвестный аргумент: $1" >&2; exit 2 ;;
 esac
@@ -405,7 +411,9 @@ gws_upload() {
 }
 
 # Off-site — only when rclone and the remote are configured.
-if [[ -x "$RCLONE_BIN" ]] && "$RCLONE_BIN" listremotes 2>/dev/null | grep -q "^${RCLONE_REMOTE}:"; then
+if [[ $LOCAL_ONLY == 1 ]]; then
+  log "off-site пропущен (--local-only): облачную копию зальёт ночной прогон"
+elif [[ -x "$RCLONE_BIN" ]] && "$RCLONE_BIN" listremotes 2>/dev/null | grep -q "^${RCLONE_REMOTE}:"; then
   # rclone's shared OAuth client splits Google's quota across everyone; a single
   # 403 rateLimitExceeded almost always passes on the 2nd-3rd try (Gor, 11.09.2026).
   # Room first: the age rule below runs only after a successful upload, so a full

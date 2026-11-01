@@ -1271,7 +1271,20 @@ cat > "$CTL" <<EOF
 set -euo pipefail
 g() { runuser -u $SERVICE_USER -- git -C $REPO_DIR "\$@"; }
 # Правки руками в коде плагина (bun.lock не в счёт) — до пяти имён через пробел.
-dirty() { g status --porcelain -- . ':!plugin/bun.lock' | awk 'NR<=5{print \$2}' | tr '\n' ' '; }
+# Только отслеживаемые файлы (правка или git add): свои новые файлы агента
+# (картинки в plugin/tmp-out) reset --hard не трогает — это не повод для DIRTY.
+dirty() { g status --porcelain --untracked-files=no -- . ':!plugin/bun.lock' | awk 'NR<=5{print \$2}' | tr '\n' ' '; }
+# А вот свой новый файл (или папку) там, где версия \$1 кладёт свой, reset --hard
+# перетрёт молча. Спрашиваем сам git: пробное слияние без записи (read-tree -n)
+# отказывает ровно на таких путях, в том числе файл-против-папки. Игнорируемые
+# (.gitignore) файлы git считает расходными -- их не видел и прежний dirty().
+# Отказ без имени пути -- всё равно DIRTY («?»): молча не перетираем.
+clash() {
+  local e
+  e="\$(runuser -u $SERVICE_USER -- env LC_ALL=C git -C $REPO_DIR read-tree -n -m -u HEAD "\$1" 2>&1 >/dev/null)" && return 0
+  e="\$(printf '%s\n' "\$e" | sed -n -e "s/^error: [^']*'\([^']*\)'.*/\1/p" -e 's/^\t//p' | head -5 | tr '\n' ' ')"
+  echo "\${e:-? }"
+}
 # Версия, с которой код ушёл последним update/rollback, — туда возвращает
 # rollback. Отдельная ссылка в git: её не съест уборка git и не сдвинет fetch,
 # а для отката нужна только локальная история (сеть не нужна).
@@ -1349,6 +1362,8 @@ case "\${1:-}" in
                  if [[ -n "\$d" && "\${2:-}" != force ]]; then echo "DIRTY \$d"; exit 3; fi
                  g fetch -q --depth 30 origin $BRANCH || { echo NOFETCH; exit 5; }
                  n="\$(g rev-list --count HEAD..FETCH_HEAD)"
+                 d="\$(clash FETCH_HEAD)"
+                 if [[ -n "\$d" && "\$n" != 0 && "\${2:-}" != force ]]; then echo "DIRTY \$d"; exit 3; fi
                  # Код свежий, а скрипты запуска могли остаться от установки: сверяем
                  # и ставим (сработают со следующего старта, рестарт не нужен).
                  [[ "\$n" == 0 ]] && { launch || echo "скрипты запуска не обновились" >&2; echo UPTODATE; exit 0; }
@@ -1381,6 +1396,8 @@ case "\${1:-}" in
                  fi
                  from="\$(g rev-parse HEAD)"
                  [[ "\$to" != "\$from" ]] || { echo "SAME \$(g rev-parse --short HEAD)"; exit 0; }
+                 d="\$(clash "\$to")"
+                 [[ -z "\$d" ]] || { echo "DIRTY \$d"; exit 3; }
                  switch_to "\$to" || { echo ROLLBACK; exit 4; }
                  g update-ref --create-reflog -m rollback "\$PREV" "\$from" || echo "точка отката не сохранилась" >&2
                  echo "дальше: sudo /usr/local/bin/dashi-ctl-$AGENT_NAME restart (повторный rollback вернёт как было)" >&2
@@ -1478,6 +1495,15 @@ else
   read -r -p "    Включить шифрованный бэкап? [Y/n] " __b </dev/tty || true
   [[ ! "$__b" =~ ^[Nn] ]] && setup_backup=1
 fi
+# Первый бэкап установщика: на первой установке -- с облаком, на повторном прогоне
+# (уже есть локальные архивы или облачная копия) -- только локально. Иначе каждый
+# прогон заливал полный архив (Гор 01.11.2026: 1,6 ГБ, 30 мин, потом поминутная
+# квота Google на общем ключе); облако и так зальёт ночной прогон.
+backup_first_args() {  # backup_first_args <workspace>
+  if [[ -s "$1/state/backup/last-offsite.json" ]] || compgen -G "$1/backups/*.gpg" >/dev/null; then
+    echo --local-only
+  fi
+}
 if [[ $setup_backup -eq 1 ]]; then
   PASS_FILE="$WORKSPACE/secrets/backup.pass"
   if ! as_agent "test -s '$PASS_FILE'"; then
@@ -1520,13 +1546,20 @@ EOF
   # Первый архив -- сразу, а не ночью: иначе до первой ночи проверка здоровья
   # пишет «бэкап не настроен», и у свежего агента нет ни одной копии (Смит,
   # переустановка 26.09.2026). Прогон занимает секунды.
+  BK_ARGS="$(backup_first_args "$WORKSPACE")"
+  BK_MARK="$(mktemp)"
   if runuser -u "$SERVICE_USER" -- env DASHI_AGENT="$AGENT_NAME" DASHI_WORKSPACE="$WORKSPACE" \
-       /bin/bash "$CLAUDE_DIR/dashi-plugin-claude-code/scripts/agent-backup.sh" >/dev/null 2>&1 \
-     && ls "$WORKSPACE"/backups/*.gpg >/dev/null 2>&1; then
-    ok "первый бэкап сделан"
+       /bin/bash "$CLAUDE_DIR/dashi-plugin-claude-code/scripts/agent-backup.sh" ${BK_ARGS:+"$BK_ARGS"} >/dev/null 2>&1 \
+     && [[ -n "$(find "$WORKSPACE/backups" -maxdepth 1 -name '*.gpg' -newer "$BK_MARK" 2>/dev/null)" ]]; then
+    if [[ -n "$BK_ARGS" ]]; then
+      ok "свежий бэкап сделан локально (в облако его копия уедет ночным прогоном)"
+    else
+      ok "первый бэкап сделан"
+    fi
   else
     warn "первый бэкап не получился -- ночной прогон попробует снова"
   fi
+  rm -f "$BK_MARK"
   # rclone ставим ВСЕГДА: без него облачная копия невозможна в принципе, а
   # хозяин узнавал об этом уже после смерти сервера (Саня 27.08.2026).
   command -v rclone >/dev/null 2>&1 || apt_quiet install -y -qq rclone || true

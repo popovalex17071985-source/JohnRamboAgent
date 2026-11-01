@@ -427,9 +427,9 @@ case "\$1" in
 esac
 EOF
 chmod +x "$FR"
-run_cloud() {
+run_cloud() {  # run_cloud [args...]
   HOME="$H" PATH="$SHIM:$PATH" DASHI_AGENT="$AGENT" DASHI_WORKSPACE="$WS" \
-    DASHI_SYSTEMD_DIR="$box/etc-systemd" RCLONE_BIN="$FR" bash "$S" >/dev/null
+    DASHI_SYSTEMD_DIR="$box/etc-systemd" RCLONE_BIN="$FR" bash "$S" "$@" >/dev/null
 }
 : >"$FRLOG"; run_cloud
 first_line() { grep -n -m1 -E "$1" "$FRLOG" | cut -d: -f1; }
@@ -449,6 +449,21 @@ ok "полное облако: до заливки удаляется самая
 grep -q '^deletefile ' "$FRLOG" && fail "облако не сказало про место, а копии удалены"
 grep -q '^copy ' "$FRLOG" || fail "облако не сказало про место -- заливка пропала"
 ok "облако без about: ничего не удаляем, заливаем как раньше"
+
+# Гор 01.11.2026: повторный прогон установщика заливал в облако полный архив (1,6 ГБ,
+# 30 мин, потом поминутная квота Google на общем ключе). --local-only: архив и его
+# проверка -- да, облако -- нет (его зальёт ночной прогон).
+: >"$FRLOG"; : >"$WS/logs/backup.log"; rm -f "$WS/state/backup/last-attempt.json"
+: >"$box/local-only.mark"; sleep 0.05
+run_cloud --local-only
+[[ -n "$(find "$WS/backups" -name "$AGENT-*.tar.gz.gpg" -newer "$box/local-only.mark")" ]] \
+  || fail "--local-only: свежего локального архива нет"
+grep -q 'self-check пройден' "$WS/logs/backup.log" || fail "--local-only: нет проверки архива"
+# (статус сторожа на выходе облако только читает -- lsjson; заливки и удалений нет)
+grep -qE '^(copy|deletefile|delete|about) ' "$FRLOG" && fail "--local-only полез в облако: $(cat "$FRLOG")"
+grep -q 'off-site пропущен' "$WS/logs/backup.log" || fail "--local-only: в логе не сказано, что облако пропущено"
+[[ ! -e "$WS/state/backup/last-attempt.json" ]] || fail "--local-only записал попытку заливки -- сторож посчитает её"
+ok "--local-only: локальный архив с проверкой, в облако ни заливки, ни удалений"
 
 # ── 4b. files the agent cannot read (Smith 01.11.2026) ──────────────────────
 # The OpenViking container ran as root and left root:600 files in ~/.openviking;
@@ -498,5 +513,18 @@ grep -q 'backup-offsite-watch.sh' "$I" || fail "установщик не ста
 grep -q 'agent-backup.sh" --init-excludes' "$I" || fail "установщик не создаёт список исключений"
 grep -q 'backup-pass-send.sh' "$I" || fail "установщик не отправляет пароль хозяину"
 ok "установщик: крон сторожа, список исключений, пароль хозяину"
+
+# Первый бэкап установщика заливает в облако только на первой установке: есть уже
+# локальные архивы или облачная копия -- это повторный прогон, облако ждёт ночи.
+eval "$(sed -n '/^backup_first_args() {/,/^}/p' "$I")"
+declare -F backup_first_args >/dev/null || fail "в установщике нет backup_first_args"
+FW="$box/first-ws"; mkdir -p "$FW/backups" "$FW/state/backup"
+[[ -z "$(backup_first_args "$FW")" ]] || fail "первая установка (пусто) -- облако должно ехать сразу"
+: >"$FW/backups/$AGENT-20261101-0340.tar.gz.gpg"
+[[ "$(backup_first_args "$FW")" == --local-only ]] || fail "есть локальный архив -- повторный прогон, а облако едет"
+rm -f "$FW/backups/"*.gpg; echo '{"ts": 1}' >"$FW/state/backup/last-offsite.json"
+[[ "$(backup_first_args "$FW")" == --local-only ]] || fail "есть облачная копия -- повторный прогон, а облако едет"
+grep -q 'BK_ARGS="$(backup_first_args "$WORKSPACE")"' "$I" && grep -q 'agent-backup.sh" ${BK_ARGS:+"$BK_ARGS"}' "$I" || fail "первый бэкап установщика не спрашивает backup_first_args"
+ok "установщик: облако в первом бэкапе только на первой установке"
 
 echo "✓ agent-backup home smoke ok"
