@@ -125,6 +125,26 @@ run_press $'  Do you trust the files in this folder?\n  ❯ No, exit\n    Yes, p
 run_press $'  WARNING: Claude Code running in Bypass Permissions mode\n  ❯ 1. No, exit\n    2. Yes, I accept\n  Enter to confirm · Esc to cancel'
 [[ "$(head -2 "$pd/keys" | tr '\n' ' ')" == "Down Enter " ]] || fail "на «Bypass Permissions» сторож жмёт не Down+Enter -- Enter выбрал бы «No, exit»: $(tr '\n' ' ' <"$pd/keys")"
 echo "✓ Bypass Permissions: Down+Enter, не голый Enter"
+# Mutation audit 01.11.2026: the pane lock was only grepped for. Panel busy (autocompact
+# holds the lock between «/compact» and its Enter) -> the watcher must NOT press; a press
+# past the lock confirmed the wrong line and killed Claude (Gor, 11.09.2026).
+# capture-pane answers with a dialog once and then fails, so the watcher exits fast.
+cat >"$pd/tmp-tmux" <<'STUB'
+#!/usr/bin/env bash
+case "$1" in
+  capture-pane) [[ -e "$KEYS.seen" ]] && exit 1; : >"$KEYS.seen"; printf '%s\n' "$SCREEN" ;;
+  send-keys) echo "${@: -1}" >>"$KEYS" ;;
+esac
+STUB
+mkdir -p "$pd/busy"; mv "$pd/tmp-tmux" "$pd/busy/tmux"; cp "$pd/sleep" "$pd/busy/sleep"; chmod +x "$pd/busy/tmux"
+# The lock is held by THIS shell (fd 8): the watcher opens its own descriptor and waits.
+exec 8>"/tmp/dashi-pane-smoke_$$.lock"; flock 8
+: >"$pd/keys"; rm -f "$pd/keys.seen"
+SCREEN=$' Security notes:\n 1. Claude can make mistakes.\n Press Enter to continue…' KEYS="$pd/keys" \
+  PATH="$pd/busy:$PATH" bash "$pd/press" smoke-$$
+exec 8>&-
+[[ ! -s "$pd/keys" ]] || fail "панель занята (замок у автосжатия), а сторож всё равно жмёт: $(tr '\n' ' ' <"$pd/keys")"
+echo "✓ занятая панель: сторож ждёт замок и не жмёт мимо него"
 rm -rf "$pd" "/tmp/dashi-pane-smoke_$$.lock"
 
 # 30.10.2026, Жора: ~/.claude.json переписан задачей от root -- без онбординга, доверия
