@@ -1177,6 +1177,9 @@ launch_refresh() {
     exit 0
   )
 }
+# На сервере с несколькими агентами скрипты общие: ставим из клона этого агента,
+# только что сброшенного на origin (шаг 4) -- то же доверие клону, что и у копии
+# уборки диска ниже, которую исполняет root. dashi-ctl при соседях их не трогает.
 LAUNCH_RC=0
 launch_refresh "$REPO_DIR/scripts/launch" "$SERVICE_USER" "$LAUNCH_BIN" "$LAUNCH_STATE" || LAUNCH_RC=$?
 if [[ ! -x "$LAUNCH_BIN/dashi-run" || ! -x "$LAUNCH_BIN/dashi-press-dialogs" ]]; then
@@ -1252,10 +1255,19 @@ PREV=refs/dashi/pre-update
 # свой клон в них не кладём -- их исполняют и чужие сервисы, это дело установщика.
 $(declare -f launch_refresh)
 launch() {
-  local o
-  o="\$(ls -1 $AGENTS_ETC 2>/dev/null | grep -vx '$AGENT_NAME' | head -3 | tr '\n' ' ')" || o=""
+  local o d
+  # Соседи -- ПАПКИ агентов (файлы рядом, например webhook.env, не в счёт).
+  # Не вышло посмотреть -- считаем, что соседи есть.
+  o="\$(find '$AGENTS_ETC' -mindepth 1 -maxdepth 1 -type d ! -name '$AGENT_NAME' -printf '%f ')" || o="?"
   if [[ -n "\$o" ]]; then
     echo "скрипты запуска не трогаю: на сервере есть и другие агенты (\$o) -- их обновит повторный прогон установщика" >&2
+    return 0
+  fi
+  # restart ставит из рабочей копии: правки руками в scripts/launch не ставим --
+  # неудачная уронила бы агента в круг рестартов, а rollback на правках отказывает.
+  d="\$(g status --porcelain -- scripts/launch)" || d="?"
+  if [[ -n "\$d" ]]; then
+    echo "скрипты запуска не трогаю: в scripts/launch правки руками" >&2
     return 0
   fi
   launch_refresh '$REPO_DIR/scripts/launch' '$SERVICE_USER' '$LAUNCH_BIN' '$LAUNCH_STATE'

@@ -137,8 +137,20 @@ grep -q "restart dashi-smoke" "$T/systemctl.log" || fail "битый скрип�
 cp "$T/run.src" "$REPO/scripts/launch/dashi-run"; no_tmp
 echo "✓ restart: скрипты из клона, мусор не ставится, перезапуск не блокируется"
 
+# правки руками в scripts/launch restart не ставит, даже годные
+put_old; printf '#!/usr/bin/env bash\necho hand-made\n' > "$REPO/scripts/launch/dashi-run"
+ctl restart > "$T/out" || fail "restart с правкой руками упал"
+is_old || fail "restart поставил правку руками из scripts/launch"
+g checkout -q -- scripts/launch
+echo "✓ правки руками в scripts/launch restart не ставит"
+
 # ── 6. на сервере несколько агентов: общий скрипт из своего клона не ставим ───
-# (его исполняют и чужие сервисы, под своими пользователями)
+# (его исполняют и чужие сервисы, под своими пользователями). Файлы рядом с папками
+# агентов (webhook.env слушателя вебхуков) соседями не считаются.
+: > "$T/etc/webhook.env"; put_old
+ctl update > "$T/out" || fail "update с webhook.env рядом упал"
+is_src "$REPO/scripts/launch" || fail "файл webhook.env принят за соседа-агента"
+rm "$T/etc/webhook.env"
 mkdir -p "$T/etc/other"; put_old
 ctl update > "$T/out" || fail "update при двух агентах упал"
 is_old || fail "агент переписал общий скрипт запуска соседа из своего клона"
