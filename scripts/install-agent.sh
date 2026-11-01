@@ -169,7 +169,7 @@ if [[ -n "$REPO_KEY" ]]; then
   [[ -z "$REPO_TOKEN${DASHI_REPO_TOKEN:-}" ]] || die "передай что-то одно: --repo-key (SSH) или --repo-token (https)"
   if [[ "$REPO_URL_GIVEN" == 0 ]]; then
     REPO_URL="$REPO_SSH_DEFAULT"; REPO_URL_GIVEN=1
-  elif [[ ! "$REPO_URL" =~ ^(git@github\.com:|ssh://git@github\.com/) ]]; then
+  elif [[ ! "$REPO_URL" =~ ^(git@github\.com:|ssh://git@github\.com/)[A-Za-z0-9._/-]+$ ]]; then
     die "--repo-key работает только с SSH-адресом GitHub (git@github.com:...), а --repo $REPO_URL"
   fi
 fi
@@ -419,7 +419,7 @@ ensure_swap() {
   # На btrfs/zfs fallocate проходит, а swapon отказывает («дырявый» файл) —
   # раньше set -e ронял всю установку; пробуем dd, не вышло — идём без свопа.
   if make_swap fallocate "$err" || make_swap dd "$err"; then
-    grep -q "^$SWAP_FILE " "$fstab" 2>/dev/null || echo "$SWAP_FILE none swap sw 0 0" >> "$fstab"
+    grep -qE "^$SWAP_FILE[[:space:]]" "$fstab" 2>/dev/null || echo "$SWAP_FILE none swap sw 0 0" >> "$fstab"
     ok "своп 2 ГБ (памяти всего $(( mem_kb / 1024 )) МБ)"
   else
     rm -f "$SWAP_FILE"
@@ -555,18 +555,32 @@ GITHUB_HOST_KEYS='github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG
 github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=
 github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk='
 REPO_KEY_FILE=dashi-repo-key
-REPO_SSH_CMD="ssh -i ~/.ssh/$REPO_KEY_FILE -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+# Абсолютные пути, не ~: dashi-ctl зовёт git через sudo + runuser, и HOME там /root --
+# с ~ ssh искал бы ключ и known_hosts у root, и обновление падало бы (NOFETCH).
+REPO_SSH_CMD="ssh -i $HOME_DIR/.ssh/$REPO_KEY_FILE -o IdentitiesOnly=yes -o UserKnownHostsFile=$HOME_DIR/.ssh/known_hosts -o StrictHostKeyChecking=yes"
+as_user() {  # as_user USER CMD... -- под этим пользователем (уже он -- как есть)
+  local u="$1"; shift
+  if [[ "$(id -un)" == "$u" ]]; then "$@"; else runuser -u "$u" -- "$@"; fi
+}
 repo_key_install() {  # repo_key_install KEY HOME USER -- ключ в HOME/.ssh, ключи GitHub закреплены
-  local key="$1" home="$2" user="$3" pub line kh="$2/.ssh/known_hosts"
-  # Не ключ или ключ под паролем -- агент им ходить не сможет, говорим сразу
-  pub="$(ssh-keygen -y -P '' -f "$key" 2>/dev/null)" || return 1
-  install -d -m 700 -o "$user" -g "$user" "$home/.ssh" || return 1
-  install -m 600 -o "$user" -g "$user" "$key" "$home/.ssh/$REPO_KEY_FILE" || return 1
-  printf '%s\n' "$pub" > "$home/.ssh/$REPO_KEY_FILE.pub"
-  chown "$user:$user" "$home/.ssh/$REPO_KEY_FILE.pub"; chmod 644 "$home/.ssh/$REPO_KEY_FILE.pub"
-  [[ -f "$kh" ]] || install -m 600 -o "$user" -g "$user" /dev/null "$kh"
+  # Всё в чужой домашке пишет сам агент, не root: подложенная агентом ссылка
+  # (~/.ssh/known_hosts -> /etc/sudoers.d/x) иначе отдала бы ему системный файл.
+  # Ключ читает root (он может лежать в /root) и отдаёт агенту через stdin.
+  local key="$1" home="$2" user="$3" pub line d="$2/.ssh" kh="$2/.ssh/known_hosts"
+  as_user "$user" sh -c 'umask 077; mkdir -p "$1" && chmod 700 "$1"' sh "$d" || return 1
+  as_user "$user" sh -c 'umask 077; cat > "$1.new" && mv -f "$1.new" "$1"' sh "$d/$REPO_KEY_FILE" <"$key" \
+    || return 1
+  # Не ключ или ключ под паролем -- агент им ходить не сможет, говорим сразу. Проверяем
+  # копию (600): исходник 644 ssh-keygen отвергает как «UNPROTECTED PRIVATE KEY FILE».
+  if ! pub="$(as_user "$user" ssh-keygen -y -P '' -f "$d/$REPO_KEY_FILE" 2>/dev/null)"; then
+    as_user "$user" rm -f "$d/$REPO_KEY_FILE"; return 1
+  fi
+  printf '%s\n' "$pub" | as_user "$user" sh -c 'umask 022; cat > "$1.new" && chmod 644 "$1.new" && mv -f "$1.new" "$1"' \
+    sh "$d/$REPO_KEY_FILE.pub" || return 1
+  as_user "$user" sh -c 'umask 077; touch "$1"' sh "$kh" || return 1
   while IFS= read -r line; do
-    grep -qxF "$line" "$kh" || printf '%s\n' "$line" >> "$kh"
+    as_user "$user" grep -qxF "$line" "$kh" \
+      || printf '%s\n' "$line" | as_user "$user" sh -c 'cat >> "$1"' sh "$kh" || return 1
   done <<<"$GITHUB_HOST_KEYS"
 }
 repo_clone_cmd() {  # команда свежего клона для as_agent: с токеном (https) или ключом (SSH)
@@ -1905,6 +1919,8 @@ EOF
     # --user = агент, не root: root-контейнер клал в ~/.openviking файлы root:600,
     # и ночной бэкап агента их не читал (Смит, 01.11.2026; образ под uid агента проверен).
     as_agent "mkdir -p '$OV_DIR/appdata'"
+    # Старый root-контейнер мог оставить root:600 -- новый под агентом их не откроет
+    chown -R "$SERVICE_USER:$SERVICE_USER" "$OV_DIR"
     docker run -d --name openviking --network host --restart unless-stopped \
       --user "$(id -u "$SERVICE_USER"):$(id -g "$SERVICE_USER")" \
       -v "$OV_DIR:/app/.openviking" -v "$OV_DIR/appdata:/app/data" \

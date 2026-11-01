@@ -471,8 +471,9 @@ EOF
   grep -qxF -- "-n $CTL fix-owner" "$box/sudo.args" 2>/dev/null \
     || fail "нечитаемый файл в домашке -- бэкап не вернул владельца: $(cat "$box/sudo.args" 2>/dev/null)"
   grep -q 'не смог прочитать' "$WS/logs/backup.log" && fail "после fix-owner tar всё равно не прочитал: $(grep 'не смог' "$WS/logs/backup.log")"
-  gpg --batch --quiet --passphrase-file "$WS/secrets/backup.pass" -d "$(newest)" | tar tzf - \
-    | grep -qxF "${SQ#/}" || fail "файл памяти root:600 не попал в архив"
+  # list first, then grep: `| grep -q` under pipefail kills tar with SIGPIPE on a slow box
+  sq_list="$(gpg --batch --quiet --passphrase-file "$WS/secrets/backup.pass" -d "$(newest)" | tar tzf -)"
+  grep -qxF "${SQ#/}" <<<"$sq_list" || fail "файл памяти root:600 не попал в архив"
   grep -q 'вернул себе' "$WS/logs/backup.log" || fail "в журнале нет строки о возврате владельца"
   run_fix
   [[ -s "$box/sudo.args" ]] && fail "всё читается -- а бэкап всё равно зовёт sudo: $(cat "$box/sudo.args")"
@@ -480,8 +481,13 @@ EOF
   chmod 000 "$SQ"; touch "$box/sudo.deny"; run_fix; rm -f "$box/sudo.deny"
   grep -q 'не смог прочитать 1 файл' "$WS/logs/backup.log" || fail "без права fix-owner: нет WARN про нечитаемый файл"
   [[ -n "$(newest)" ]] || fail "без права fix-owner бэкап не записан"
-  chmod 600 "$SQ"; rm -f "$SHIM/sudo"
-  ok "нечитаемые файлы: бэкап сам возвращает владельца (fix-owner), иначе WARN и копия всё равно пишется"
+  chmod 600 "$SQ"
+  # outside ~/.openviking nobody gets chowned automatically -- only tar's WARN
+  OTHER="$H/projects/shop/db.sqlite"; echo db >"$OTHER"; chmod 000 "$OTHER"; run_fix; chmod 600 "$OTHER"; rm -f "$OTHER"
+  [[ -s "$box/sudo.args" ]] && fail "нечитаемый файл вне памяти -- бэкап сам зовёт fix-owner: $(cat "$box/sudo.args")"
+  grep -q 'не смог прочитать 1 файл' "$WS/logs/backup.log" || fail "нечитаемый файл вне памяти: нет WARN"
+  rm -f "$SHIM/sudo"
+  ok "нечитаемые файлы памяти: бэкап сам возвращает владельца (fix-owner), иначе WARN; вне памяти -- только WARN"
 else
   echo "· под root любой файл читается -- ветку нечитаемых файлов пропускаю"
 fi

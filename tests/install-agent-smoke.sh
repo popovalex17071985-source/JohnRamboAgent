@@ -319,6 +319,8 @@ out="$(bash "$INST" --name t --yes --repo-key "$kd/nope" 2>&1 || true)"
 grep -q 'ключ к репозиторию не найден' <<<"$out" || fail "--repo-key на несуществующий файл не остановил установку: $out"
 out="$(bash "$INST" --name t --yes --repo-key "$kd/key" --repo https://github.com/x/y.git 2>&1 || true)"
 grep -q 'только с SSH-адресом' <<<"$out" || fail "--repo-key с https-адресом принят: $out"
+out="$(bash "$INST" --name t --yes --repo-key "$kd/key" --repo "git@github.com:x/y'; touch /tmp/x" 2>&1 || true)"
+grep -q 'только с SSH-адресом' <<<"$out" || fail "--repo-key: кавычка в адресе принята (ломает команды агента): $out"
 out="$(bash "$INST" --name t --yes --repo-key "$kd/key" --repo-token github_pat_x 2>&1 || true)"
 grep -q 'что-то одно' <<<"$out" || fail "--repo-key вместе с --repo-token принят: $out"
 grep -q -- '--repo-key)' "$INST" || fail "нет разбора флага --repo-key"
@@ -331,11 +333,20 @@ fps="$(ssh-keygen -lf <(printf '%s\n' "$GITHUB_HOST_KEYS") | awk '{print $2}' | 
   || fail "ключи GitHub в установщике не совпадают с опубликованными: $fps"
 grep -c '^github.com ' <<<"$GITHUB_HOST_KEYS" | grep -qx 3 || fail "ждал ровно 3 ключа GitHub"
 # repo_key_install: key into HOME/.ssh (700/600/644), host keys pinned, idempotent
-eval "$(awk '/^REPO_KEY_FILE=/{print} /^REPO_SSH_CMD=/{print}
+H2="$kd/home"; mkdir -p "$H2"; me="$(id -un)"; HOME_DIR="$H2"
+eval "$(awk '/^REPO_KEY_FILE=/{print} /^REPO_SSH_CMD=/{print} /^as_user\(\) \{/,/^\}$/{print}
              /^repo_key_install\(\) \{/,/^\}$/{print} /^repo_clone_cmd\(\) \{/,/^\}$/{print}' "$INST")"
-declare -F repo_key_install >/dev/null && declare -F repo_clone_cmd >/dev/null \
-  || fail "нет repo_key_install/repo_clone_cmd в установщике"
-H2="$kd/home"; mkdir -p "$H2"; me="$(id -un)"
+declare -F repo_key_install >/dev/null && declare -F repo_clone_cmd >/dev/null && declare -F as_user >/dev/null \
+  || fail "нет repo_key_install/repo_clone_cmd/as_user в установщике"
+# Root never writes into the agent's home itself: a symlink the agent planted
+# (~/.ssh/known_hosts -> /etc/sudoers.d/x) would hand it a system file.
+body="$(awk '/^repo_key_install\(\) \{/,/^\}$/' "$INST" | grep -v '^ *#')"
+grep -nE '(^|[;&|[:space:]])(chown|chmod|install|cp|tee)[[:space:]]' <<<"$body" | grep -v 'as_user "\$user"' \
+  && fail "repo_key_install пишет в домашку агента от root, мимо as_user"
+grep -nE '>>? *"\$(d|kh|home)' <<<"$body" | grep -v "sh -c" && fail "repo_key_install пишет в домашку агента от root (>)"
+# a key dropped with 0644 (cloud-init write_files default) is fine: checked on the 600 copy
+cp "$kd/key" "$kd/key644"; chmod 644 "$kd/key644"
+repo_key_install "$kd/key644" "$kd/h644" "$me" || fail "ключ с правами 644 отвергнут (ssh-keygen смотрел исходник)"
 repo_key_install "$kd/key" "$H2" "$me" || fail "repo_key_install упал на нормальном ключе"
 [[ "$(stat -c %a "$H2/.ssh")" == 700 ]] || fail "~/.ssh не 700"
 [[ "$(stat -c %a "$H2/.ssh/$REPO_KEY_FILE")" == 600 ]] || fail "ключ не 600"
@@ -376,8 +387,11 @@ grep -qF -- "-i $H2/.ssh/$REPO_KEY_FILE" "$kd/ssh.args" || fail "клон шёл
 grep -qF -- 'StrictHostKeyChecking=yes' "$kd/ssh.args" || fail "клон не требует закреплённый ключ GitHub"
 grep -qF -- 'BatchMode=yes' "$kd/ssh.args" || fail "клон по SSH может зависнуть на вопросе ssh"
 : > "$kd/ssh.args"
-( cd "$C" && HOME="$H2" PATH="$kd/bin:$PATH" eval "$GIT_SSH_BATCH GIT_TERMINAL_PROMPT=0 git fetch -q --depth 1 origin main" ) \
+# HOME=/root here on purpose: dashi-ctl runs git via sudo + runuser, HOME stays root's
+( cd "$C" && HOME=/nonexistent-root PATH="$kd/bin:$PATH" eval "$GIT_SSH_BATCH GIT_TERMINAL_PROMPT=0 git fetch -q --depth 1 origin main" ) \
   || fail "обновление клона по ключу не прошло"
+grep -qF -- "UserKnownHostsFile=$H2/.ssh/known_hosts" "$kd/ssh.args" \
+  || fail "обновление с чужим HOME ищет known_hosts не у агента: $(cat "$kd/ssh.args")"
 grep -qF -- "-i $H2/.ssh/$REPO_KEY_FILE" "$kd/ssh.args" || fail "обновление шло без ключа развёртывания"
 REPO_KEY=""; [[ "$(repo_clone_cmd)" == *sshCommand* ]] && fail "без --repo-key клон тоже получает sshCommand"
 grep -qF 'as_agent "$(repo_clone_cmd)"' "$INST" || fail "установщик клонирует мимо repo_clone_cmd"

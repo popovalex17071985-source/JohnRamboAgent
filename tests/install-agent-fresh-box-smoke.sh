@@ -160,6 +160,9 @@ grep -q 'своп 2 ГБ' <<<"$out" || fail "нет строки об успех
 grep -q 'Setting up swapspace' <<<"$out" && fail "болтовня mkswap на экране: $out"
 out="$(swap_run 2015232 keep)"; (( $(grep -c swapfile "$T/fstab") <= 1 )) || fail "fstab: своп дописан дважды"
 grep -q '^mkswap' "$T/sw.args" && fail "своп уже есть -- а установщик делает новый"
+# an fstab entry written with a tab is still the same entry
+rm -f "$T/sw.active"; printf '%s\tnone\tswap\tsw\t0\t0\n' "$T/swapfile" > "$T/fstab"
+out="$(swap_run 2015232 keep)"; (( $(grep -c swapfile "$T/fstab") == 1 )) || fail "fstab с табом: своп дописан второй раз"
 # 4 GB box: no swap needed
 out="$(swap_run 4026531)"
 [[ -f "$T/sw.active" ]] && fail "4 ГБ памяти: своп поднят зря"
@@ -186,6 +189,11 @@ for f in "$S" "$MEM"; do
     grep -qF -- "$want " "$T/docker.args" \
       || fail "$(basename "$f"): контейнер памяти запускается не под агентом ($want): $(cat "$T/docker.args")"
   done < <(awk '/docker run .*--name openviking/{c=1} c{l=l $0; if ($0 ~ /\\$/) sub(/\\$/, "", l); else {print l; l=""; c=0}}' "$f")
+done
+# leftovers of an old root container go back to the agent before the new one starts
+for f in "$S" "$MEM"; do
+  awk '/chown -R "\$(SERVICE_USER|OWNER):\$(SERVICE_USER|OWNER)" "\$OV_DIR"/{c=NR} /docker run .*--name openviking/{if(!c||NR-c>8)bad=1} END{exit bad}' "$f" \
+    || fail "$(basename "$f"): перед запуском контейнера памяти ~/.openviking не возвращается агенту"
 done
 (( n_runs >= 2 )) || fail "нашёл $n_runs запусков контейнера памяти, ждал 2 (установщик + setup-memory)"
 echo "✓ контейнер памяти: $n_runs запуска, все под пользователем агента"
