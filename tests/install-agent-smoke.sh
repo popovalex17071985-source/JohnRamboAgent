@@ -294,3 +294,17 @@ eval "$(sed -n '/^REPO_HDR_KEY=/p; /^repo_auth_header()/p; /^save_repo_token() {
 git config --file "$rt/clone/.git/config" --get "$REPO_HDR_KEY" | grep -q '^Authorization: Basic ' || fail "ключ не лёг заголовком в клон"
 rm -rf "$rt"
 echo "✓ ключ репозитория закрыт (600) в клоне и в secrets/"
+# Only OUR repo over SSH is left on its origin; a clone pointing anywhere else is moved
+# to the official https origin as before (the SSH branch skips set-url).
+ssh_re="$(sed -n 's/.*"\$CLONE_ORIGIN" =~ \(.*\) \]\]; then$/\1/p' "$INST")"
+[[ -n "$ssh_re" ]] || fail "не нашёл в установщике условие SSH-origin"
+for o in git@github.com:popovalex17071985-source/JohnRamboAgent.git \
+         ssh://git@github.com/popovalex17071985-source/JohnRamboAgent; do
+  [[ "$o" =~ $ssh_re ]] || fail "наш SSH-origin не узнан: $o"
+done
+for o in git@github.com:someone/JohnRamboAgent.git git@github.com:popovalex17071985-source/other.git \
+         git@evil.example:popovalex17071985-source/JohnRamboAgent.git \
+         https://github.com/popovalex17071985-source/JohnRamboAgent.git; do
+  [[ "$o" =~ $ssh_re ]] && fail "чужой origin оставлен как есть (SSH-путь): $o"
+done
+echo "✓ SSH-origin оставляется только нашему репозиторию"
