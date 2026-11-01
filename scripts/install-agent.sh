@@ -639,6 +639,7 @@ else
   ok "ключ к репозиторию подошёл"
 fi
 
+REPO_SYNCED=0   # клон сброшен ровно на origin в этом прогоне (его читает шаг 8)
 if [[ -d "$CLAUDE_DIR/dashi-plugin-claude-code/.git" ]]; then
   [[ -n "$REPO_TOKEN" ]] && save_repo_token
   # Повторный прогон = обновление плагина, иначе фиксы моста не доезжают.
@@ -652,12 +653,13 @@ if [[ -d "$CLAUDE_DIR/dashi-plugin-claude-code/.git" ]]; then
     warn "закоммить или откати их (git -C $CLAUDE_DIR/dashi-plugin-claude-code status) и запусти снова"
   else
     as_agent "cd '$CLAUDE_DIR/dashi-plugin-claude-code' && git remote set-url origin '$REPO_URL' && $GIT_SSH_BATCH GIT_TERMINAL_PROMPT=0 timeout 300 git fetch --depth 1 origin '$BRANCH' && git reset --hard FETCH_HEAD" >/dev/null 2>&1 \
-      && ok "плагин обновлён до свежего $BRANCH" \
+      && { REPO_SYNCED=1; ok "плагин обновлён до свежего $BRANCH"; } \
       || warn "не смог обновить плагин (нет сети до GitHub?) — работаю на том, что есть"
   fi
 else
   as_agent "$(repo_clone_cmd)" >/dev/null 2>&1 || die "не удалось склонировать $REPO_URL"
   [[ -n "$REPO_TOKEN" ]] && save_repo_token
+  REPO_SYNCED=1
   ok "плагин склонирован"
 fi
 
@@ -1135,9 +1137,10 @@ launch_refresh() {
       echo "скрипты запуска: в $src лежат не все -- не трогаю" >&2; exit 1
     fi
     declare -A tmp=()
-    changed=() placed=()
+    changed=() placed=() bad=0
     # ${a[@]+...}: пустой массив под set -u на bash < 4.4 -- «unbound variable»
     drop() { for f in ${tmp[@]+"${tmp[@]}"}; do rm -f -- "$f"; done; }
+    trap drop EXIT   # убит сигналом посреди -- временные файлы не остаются
     for n in "${names[@]}"; do
       f="$(mktemp "$bin/.$n.XXXXXX")" || { drop; exit 1; }
       tmp[$n]="$f"
@@ -1179,19 +1182,32 @@ launch_refresh() {
     exit 0
   )
 }
-# На сервере с несколькими агентами скрипты общие: ставим из клона этого агента,
-# только что сброшенного на origin (шаг 4) -- то же доверие клону, что и у копии
-# уборки диска ниже, которую исполняет root. dashi-ctl при соседях их не трогает.
-LAUNCH_RC=0
-launch_refresh "$REPO_DIR/scripts/launch" "$SERVICE_USER" "$LAUNCH_BIN" "$LAUNCH_STATE" || LAUNCH_RC=$?
+# На сервере с несколькими агентами скрипты общие, их исполняют сервисы всех агентов
+# под своими пользователями. Ставим из клона этого агента, только если шаг 4 сбросил
+# его ровно на origin и в scripts/launch нет правок -- иначе оставляем прежние.
+# dashi-ctl при соседях их не трогает вовсе.
+LAUNCH_RC=0 LAUNCH_SKIP=""
+if [[ -n "$OTHER_AGENTS" ]]; then
+  if [[ "$REPO_SYNCED" != 1 ]]; then
+    LAUNCH_SKIP="клон плагина не обновился до $BRANCH"
+  elif [[ -n "$(as_agent "git -C '$REPO_DIR' status --porcelain -- scripts/launch" 2>/dev/null || echo '?')" ]]; then
+    LAUNCH_SKIP="в scripts/launch клона правки руками"
+  fi
+fi
+[[ -n "$LAUNCH_SKIP" ]] \
+  || launch_refresh "$REPO_DIR/scripts/launch" "$SERVICE_USER" "$LAUNCH_BIN" "$LAUNCH_STATE" || LAUNCH_RC=$?
 if [[ ! -x "$LAUNCH_BIN/dashi-run" || ! -x "$LAUNCH_BIN/dashi-press-dialogs" ]]; then
-  die "нет скриптов запуска в $LAUNCH_BIN (в клоне плагина нет scripts/launch?) -- сервис не поднимется"
+  die "нет скриптов запуска в $LAUNCH_BIN (${LAUNCH_SKIP:-в клоне плагина нет scripts/launch?}) -- сервис не поднимется"
+elif [[ -n "$LAUNCH_SKIP" ]]; then
+  warn "скрипты запуска общие для агентов сервера ($OTHER_AGENTS), а $LAUNCH_SKIP -- из него не ставлю, остались прежние"
 elif (( LAUNCH_RC )) && [[ -n "$OTHER_AGENTS" ]]; then
   # При соседях их мог положить dashi-ctl одного из агентов, пока тот был один:
   # оставить как есть = чужой код под пользователями соседей. Чиним, а не молчим.
   die "скрипты запуска не обновились, а на сервере есть и другие агенты ($OTHER_AGENTS) -- повтори установку"
 elif (( LAUNCH_RC )); then
   warn "скрипты запуска не обновились -- остались прежние"
+elif ! as_agent "test -d '$REPO_DIR/scripts/launch'" 2>/dev/null; then
+  warn "клон плагина старый (в нём нет scripts/launch) -- скрипты запуска остались прежними; обнови клон и повтори"
 else
   ok "держатель сессии и прожиматель диалогов на месте (из scripts/launch)"
 fi

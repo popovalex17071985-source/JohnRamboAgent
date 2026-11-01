@@ -25,7 +25,7 @@ declare -F launch_refresh >/dev/null || fail "нет общего генерат
 BODY="$(awk '/^cat > "\$CTL" <<EOF$/{f=1;next} f&&/^EOF$/{exit} f' "$S")"
 [[ -n "$BODY" ]] || fail "не нашёл текст dashi-ctl в установщике"
 grep -qF '$(declare -f launch_refresh)' <<<"$BODY" || fail "dashi-ctl не берёт генератор установщика (разъедутся)"
-grep -qE '^launch_refresh "\$REPO_DIR/scripts/launch" ' "$S" || fail "установщик не ставит скрипты запуска общим генератором"
+grep -qE '^[[:space:]|]*launch_refresh "\$REPO_DIR/scripts/launch" ' "$S" || fail "установщик не ставит скрипты запуска общим генератором"
 echo "✓ установщик и dashi-ctl ставят скрипты запуска одним генератором из scripts/launch"
 
 # ── стенд ────────────────────────────────────────────────────────────────────
@@ -157,5 +157,26 @@ is_old || fail "агент переписал общий скрипт запус
 grep -q "установщик" "$T/err" || fail "нет подсказки, как обновить скрипты при нескольких агентах: $(cat "$T/err")"
 rmdir "$T/etc/other"
 echo "✓ несколько агентов на сервере: общие скрипты меняет только установщик"
+
+# ── 7. шаг установщика: когда ставить из клона, когда оставить прежние ─────────
+STEP="$(awk '/^LAUNCH_RC=0 LAUNCH_SKIP=""$/{f=1} f{print} f&&/ok "держатель сессии и прожиматель/{g=1} g&&/^fi$/{exit}' "$S")"
+grep -q 'launch_refresh' <<<"$STEP" || fail "не нашёл шаг установщика со скриптами запуска"
+step() {  # step OTHER_AGENTS REPO_SYNCED -> вывод шага в $T/step
+  ( OTHER_AGENTS="$1" REPO_SYNCED="$2"
+    as_agent() { bash -c "$1"; }
+    ok() { echo "OK $*"; }; warn() { echo "WARN $*"; }; die() { echo "DIE $*"; exit 1; }
+    PATH="$T/stub:$PATH"; eval "$STEP" ) >"$T/step" 2>&1
+}
+g reset -q --hard "$NEW"
+put_old; step "" 0;            is_src "$REPO/scripts/launch" && grep -q '^OK' "$T/step" || fail "один агент: установщик не поставил скрипты: $(cat "$T/step")"
+put_old; step "other " 0;      is_old && grep -q '^WARN.*не обновился' "$T/step" || fail "соседи + клон не обновился: поставил из него: $(cat "$T/step")"
+put_old; : > "$REPO/scripts/launch/extra"
+step "other " 1;               is_old && grep -q '^WARN.*правки' "$T/step" || fail "соседи + правки в scripts/launch: поставил из клона: $(cat "$T/step")"
+rm "$REPO/scripts/launch/extra"
+put_old; step "other " 1;      is_src "$REPO/scripts/launch" || fail "соседи + чистый свежий клон: не поставил: $(cat "$T/step")"
+rm -f "$BIN"/dashi-*; step "other " 0; grep -q '^DIE' "$T/step" || fail "нет скриптов и ставить не из чего -- установщик не остановился: $(cat "$T/step")"
+g reset -q --hard "$OLD"; put_old
+step "" 1;                     grep -q '^WARN.*клон плагина старый' "$T/step" || fail "старый клон без scripts/launch -- установщик молча сказал «на месте»: $(cat "$T/step")"
+echo "✓ установщик: при соседях ставит только из чистого свежего клона, о старом клоне говорит прямо"
 
 echo "✓ launch-scripts-refresh smoke ok"
