@@ -170,6 +170,38 @@ rm "$rd"/.claude.json.bak-dashi-run-*; before="$(md5sum <"$rd/.claude.json")"
 HOME="$rd" python3 "$rd/fix.py" /srv/plugin /srv 2>/dev/null
 [[ "$(md5sum <"$rd/.claude.json")" == "$before" ]] && ! compgen -G "$rd/.claude.json.bak-dashi-run-*" >/dev/null \
   || fail "dashi-run переписывает целый ~/.claude.json"
+# Mutation audit 01.11.2026: each of the three losses is checked ALONE -- the file above
+# lacks all three at once, so dropping any one condition from «missing» stayed green.
+# And a bridge entry the owner already has (env with keys) is kept, not replaced.
+python3 - "$rd/.claude.json" <<'PYT'
+import json, sys
+full = {"hasCompletedOnboarding": True,
+        "projects": {k: {"hasTrustDialogAccepted": True, "hasClaudeMdExternalIncludesApproved": True,
+                         "hasClaudeMdExternalIncludesWarningShown": True} for k in ("/srv/plugin", "/srv")},
+        "mcpServers": {"dashi-channel": {"type": "stdio", "command": "bun", "args": ["./src/server.ts"],
+                                         "env": {"OWNER_KEY": "keep-me"}}}}
+json.dump(full, open(sys.argv[1], "w"))
+PYT
+fix_case() {  # fix_case <python that breaks one thing in d> <python assert on d>
+  python3 - "$rd/.claude.json" "$1" <<'PYT'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p)); exec(sys.argv[2]); json.dump(d, open(p, "w"))
+PYT
+  HOME="$rd" python3 "$rd/fix.py" /srv/plugin /srv 2>/dev/null
+  python3 - "$rd/.claude.json" "$2" <<'PYT'
+import json, sys
+d = json.load(open(sys.argv[1])); exec(sys.argv[2])
+PYT
+}
+fix_case 'del d["mcpServers"]["dashi-channel"]' \
+  'assert d["mcpServers"]["dashi-channel"]["args"] == ["./src/server.ts"]' \
+  || fail "dashi-run не возвращает мост, когда пропал только он"
+fix_case 'd["projects"]["/srv"]["hasClaudeMdExternalIncludesApproved"] = False' \
+  'assert d["projects"]["/srv"]["hasClaudeMdExternalIncludesApproved"] is True' \
+  || fail "dashi-run не возвращает одобрение внешних импортов, когда пропало только оно"
+fix_case 'd["mcpServers"]["dashi-channel"]["env"] = {"OWNER_KEY": "keep-me"}; d.pop("hasCompletedOnboarding")' \
+  'assert d["hasCompletedOnboarding"] is True and d["mcpServers"]["dashi-channel"]["env"] == {"OWNER_KEY": "keep-me"}' \
+  || fail "dashi-run затёр свою же запись моста хозяина (env с ключами)"
 echo '{"broken' >"$rd/.claude.json"
 HOME="$rd" python3 "$rd/fix.py" /srv/plugin /srv 2>/dev/null && fail "dashi-run молчит о битом ~/.claude.json"
 [[ "$(cat "$rd/.claude.json")" == '{"broken' ]] || fail "dashi-run затёр битый ~/.claude.json"
