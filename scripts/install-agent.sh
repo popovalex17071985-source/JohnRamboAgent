@@ -1480,6 +1480,15 @@ else
   read -r -p "    Включить шифрованный бэкап? [Y/n] " __b </dev/tty || true
   [[ ! "$__b" =~ ^[Nn] ]] && setup_backup=1
 fi
+# Первый бэкап установщика: на первой установке -- с облаком, на повторном прогоне
+# (уже есть локальные архивы или облачная копия) -- только локально. Иначе каждый
+# прогон заливал полный архив (Гор 01.11.2026: 1,6 ГБ, 30 мин, потом поминутная
+# квота Google на общем ключе); облако и так зальёт ночной прогон.
+backup_first_args() {  # backup_first_args <workspace>
+  if [[ -s "$1/state/backup/last-offsite.json" ]] || compgen -G "$1/backups/*.gpg" >/dev/null; then
+    echo --local-only
+  fi
+}
 if [[ $setup_backup -eq 1 ]]; then
   PASS_FILE="$WORKSPACE/secrets/backup.pass"
   if ! as_agent "test -s '$PASS_FILE'"; then
@@ -1522,13 +1531,20 @@ EOF
   # Первый архив -- сразу, а не ночью: иначе до первой ночи проверка здоровья
   # пишет «бэкап не настроен», и у свежего агента нет ни одной копии (Смит,
   # переустановка 26.09.2026). Прогон занимает секунды.
+  BK_ARGS="$(backup_first_args "$WORKSPACE")"
+  BK_MARK="$(mktemp)"
   if runuser -u "$SERVICE_USER" -- env DASHI_AGENT="$AGENT_NAME" DASHI_WORKSPACE="$WORKSPACE" \
-       /bin/bash "$CLAUDE_DIR/dashi-plugin-claude-code/scripts/agent-backup.sh" >/dev/null 2>&1 \
-     && ls "$WORKSPACE"/backups/*.gpg >/dev/null 2>&1; then
-    ok "первый бэкап сделан"
+       /bin/bash "$CLAUDE_DIR/dashi-plugin-claude-code/scripts/agent-backup.sh" ${BK_ARGS:+"$BK_ARGS"} >/dev/null 2>&1 \
+     && [[ -n "$(find "$WORKSPACE/backups" -maxdepth 1 -name '*.gpg' -newer "$BK_MARK" 2>/dev/null)" ]]; then
+    if [[ -n "$BK_ARGS" ]]; then
+      ok "свежий бэкап сделан локально (в облако его копия уедет ночным прогоном)"
+    else
+      ok "первый бэкап сделан"
+    fi
   else
     warn "первый бэкап не получился -- ночной прогон попробует снова"
   fi
+  rm -f "$BK_MARK"
   # rclone ставим ВСЕГДА: без него облачная копия невозможна в принципе, а
   # хозяин узнавал об этом уже после смерти сервера (Саня 27.08.2026).
   command -v rclone >/dev/null 2>&1 || apt_quiet install -y -qq rclone || true
