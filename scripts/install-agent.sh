@@ -240,7 +240,8 @@ ok "ветка обновлений: $BRANCH ($BRANCH_SRC)"
 # стучатся в 8089). Без обоих флагов честно останавливаемся.
 # `|| true` обязателен: на чистом сервере /etc/dashi-plugin нет, ls падает, и
 # set -e с pipefail молча ронял установку прямо здесь (e2e 02.09).
-OTHER_AGENTS="$(ls -1 /etc/dashi-plugin 2>/dev/null | grep -vx "$AGENT_NAME" | tr '\n' ' ' || true)"
+# Агенты -- ПАПКИ: файлы рядом (webhook.env слушателя вебхуков) агентами не считаются.
+OTHER_AGENTS="$(find /etc/dashi-plugin -mindepth 1 -maxdepth 1 -type d ! -name "$AGENT_NAME" -printf '%f ' 2>/dev/null || true)"
 if [[ -f "$ENV_FILE" ]]; then
   # Повторный прогон: порт и пользователь — те, что у агента уже есть
   [[ $PORT_GIVEN -eq 1 ]] || WEBHOOK_PORT="$(sed -n 's/^TELEGRAM_WEBHOOK_PORT=//p' "$ENV_FILE" | head -1)"
@@ -1135,7 +1136,8 @@ launch_refresh() {
     fi
     declare -A tmp=()
     changed=() placed=()
-    drop() { for f in "${tmp[@]}"; do rm -f -- "$f"; done; }
+    # ${a[@]+...}: пустой массив под set -u на bash < 4.4 -- «unbound variable»
+    drop() { for f in ${tmp[@]+"${tmp[@]}"}; do rm -f -- "$f"; done; }
     for n in "${names[@]}"; do
       f="$(mktemp "$bin/.$n.XXXXXX")" || { drop; exit 1; }
       tmp[$n]="$f"
@@ -1160,7 +1162,7 @@ launch_refresh() {
       fi
     done
     if [[ "${bad:-0}" == 1 ]]; then
-      for n in "${placed[@]}"; do
+      for n in ${placed[@]+"${placed[@]}"}; do
         if [[ -f "$state/backup/$n.$stamp" ]]; then
           cp -p -- "$state/backup/$n.$stamp" "$bin/.$n.back" && mv -f -- "$bin/.$n.back" "$bin/$n"
         else
@@ -1184,6 +1186,10 @@ LAUNCH_RC=0
 launch_refresh "$REPO_DIR/scripts/launch" "$SERVICE_USER" "$LAUNCH_BIN" "$LAUNCH_STATE" || LAUNCH_RC=$?
 if [[ ! -x "$LAUNCH_BIN/dashi-run" || ! -x "$LAUNCH_BIN/dashi-press-dialogs" ]]; then
   die "нет скриптов запуска в $LAUNCH_BIN (в клоне плагина нет scripts/launch?) -- сервис не поднимется"
+elif (( LAUNCH_RC )) && [[ -n "$OTHER_AGENTS" ]]; then
+  # При соседях их мог положить dashi-ctl одного из агентов, пока тот был один:
+  # оставить как есть = чужой код под пользователями соседей. Чиним, а не молчим.
+  die "скрипты запуска не обновились, а на сервере есть и другие агенты ($OTHER_AGENTS) -- повтори установку"
 elif (( LAUNCH_RC )); then
   warn "скрипты запуска не обновились -- остались прежние"
 else
