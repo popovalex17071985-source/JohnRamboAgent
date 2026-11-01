@@ -119,6 +119,12 @@ run_press $'  Allow external CLAUDE.md file imports?\n  ❯ No, disable external
 echo "✓ внешние импорты правил сторож разрешает, а не отключает"
 run_press $'  Do you trust the files in this folder?\n  ❯ No, exit\n    Yes, proceed\n  Enter to confirm · Esc to cancel'
 [[ "$(head -2 "$pd/keys" | tr '\n' ' ')" == "Down Enter " ]] || fail "на «No, exit» сторож жмёт не Down+Enter -- Enter выбил бы Claude"
+# Mutation audit 01.11.2026: the Bypass Permissions warning stands on «1. No, exit»
+# (numbered -- the «❯ No, exit» branch does not see it). A plain Enter there exits
+# Claude and the service loops in restarts (20.08.2026). Down+Enter only.
+run_press $'  WARNING: Claude Code running in Bypass Permissions mode\n  ❯ 1. No, exit\n    2. Yes, I accept\n  Enter to confirm · Esc to cancel'
+[[ "$(head -2 "$pd/keys" | tr '\n' ' ')" == "Down Enter " ]] || fail "на «Bypass Permissions» сторож жмёт не Down+Enter -- Enter выбрал бы «No, exit»: $(tr '\n' ' ' <"$pd/keys")"
+echo "✓ Bypass Permissions: Down+Enter, не голый Enter"
 rm -rf "$pd" "/tmp/dashi-pane-smoke_$$.lock"
 
 # 30.10.2026, Жора: ~/.claude.json переписан задачей от root -- без онбординга, доверия
