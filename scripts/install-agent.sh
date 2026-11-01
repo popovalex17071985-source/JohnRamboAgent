@@ -1126,9 +1126,14 @@ launch_refresh() {
     # head -c: не больше лимита (FIFO или гигантский файл в клоне не повесят и не
     # забьют диск root'у), timeout -- на тот же FIFO
     reader=(timeout 30 runuser -u "$user" -- head -c 262145 --)
+    # Есть ли файлы -- смотрит root (lstat, содержимое не читается): сбой runuser
+    # или таймаут не должен выглядеть как «версия без scripts/launch» и
+    # возвращать скрипты до первой замены. Читаем потом всё равно под агентом.
     have=0
     for n in "${names[@]}"; do
-      if timeout 30 runuser -u "$user" -- test -e "$src/$n"; then have=$((have + 1)); fi
+      if [[ -e "$src/$n" || -L "$src/$n" ]]; then have=$((have + 1)); fi
+      # сироты прошлых прогонов, убитых SIGKILL/OOM (trap их не ловит)
+      find "$bin" -maxdepth 1 -name ".$n.??????" -type f -mmin +60 -delete 2>/dev/null || true
     done
     if (( have == 0 )); then
       src="$state/legacy"; reader=(head -c 262145 --)
@@ -1203,7 +1208,7 @@ elif [[ -n "$LAUNCH_SKIP" ]]; then
 elif (( LAUNCH_RC )) && [[ -n "$OTHER_AGENTS" ]]; then
   # При соседях их мог положить dashi-ctl одного из агентов, пока тот был один:
   # оставить как есть = чужой код под пользователями соседей. Чиним, а не молчим.
-  die "скрипты запуска не обновились, а на сервере есть и другие агенты ($OTHER_AGENTS) -- повтори установку"
+  die "скрипты запуска не встали (причина выше), а на сервере есть и другие агенты ($OTHER_AGENTS): лежащие могли остаться от одного из них -- поправь причину (битый файл в origin -- починить там) и повтори установку"
 elif (( LAUNCH_RC )); then
   warn "скрипты запуска не обновились -- остались прежние"
 elif ! as_agent "test -d '$REPO_DIR/scripts/launch'" 2>/dev/null; then

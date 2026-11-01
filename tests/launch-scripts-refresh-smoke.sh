@@ -158,6 +158,16 @@ grep -q "установщик" "$T/err" || fail "нет подсказки, ка
 rmdir "$T/etc/other"
 echo "✓ несколько агентов на сервере: общие скрипты меняет только установщик"
 
+# ── 6b. runuser упал/таймаут: это сбой, а не «версия без scripts/launch» ────
+# (иначе ушли бы в legacy и вернули скрипты до первой замены -- баг 30.10 обратно)
+mkdir -p "$T/stub-bad"; printf '#!/bin/sh\nexit 1\n' > "$T/stub-bad/runuser"; chmod +x "$T/stub-bad/runuser"
+cp "$BIN/dashi-run" "$T/run.now"
+PATH="$T/stub-bad:$T/stub:$PATH" launch_refresh "$REPO/scripts/launch" agent "$BIN" "$STATE" 2>/dev/null \
+  && fail "runuser упал, а генератор ответил успехом"
+same "$BIN/dashi-run" "$T/run.now" || fail "сбой runuser вернул старые скрипты из legacy"
+no_tmp
+echo "✓ сбой чтения под агентом не откатывает скрипты на старые"
+
 # ── 7. шаг установщика: когда ставить из клона, когда оставить прежние ─────────
 STEP="$(awk '/^LAUNCH_RC=0 LAUNCH_SKIP=""$/{f=1} f{print} f&&/ok "держатель сессии и прожиматель/{g=1} g&&/^fi$/{exit}' "$S")"
 grep -q 'launch_refresh' <<<"$STEP" || fail "не нашёл шаг установщика со скриптами запуска"
