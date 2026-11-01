@@ -281,3 +281,16 @@ eval "$(sed -n '/^repo_auth_header()/p' "$INST")"
 grep -q 'curl -fsSL -H "$H" $R/$P/scripts/install-agent.sh' "$GUIDE" || fail "инструкция скачивает установщик без ключа"
 grep -q 'sudo DASHI_REPO_TOKEN=$K bash install-agent.sh' "$GUIDE" || fail "инструкция не передаёт ключ установщику"
 echo "✓ закрытый репозиторий: ключ в клоне и в secrets/, инструкция качает с ключом"
+# Mutation audit 01.11.2026: the installer runs under umask 022 since 19.10, so the
+# clone's .git/config (it carries the repo key as a header) is world-readable unless
+# save_repo_token closes it. Run the real function in a sandbox: key file and config 600.
+rt="$(mktemp -d)"; git init -q "$rt/clone"; chmod 644 "$rt/clone/.git/config"
+eval "$(sed -n '/^REPO_HDR_KEY=/p; /^repo_auth_header()/p; /^save_repo_token() {/,/^}/p' "$INST")"
+( umask 022; chown() { :; }
+  REPO_DIR="$rt/clone" REPO_TOKEN_FILE="$rt/repo-token" REPO_TOKEN=github_pat_smoke SERVICE_USER=nobody
+  save_repo_token )
+[[ "$(stat -c %a "$rt/clone/.git/config")" == 600 ]] || fail "ключ репозитория лежит в .git/config, открытом всем ($(stat -c %a "$rt/clone/.git/config"))"
+[[ "$(stat -c %a "$rt/repo-token")" == 600 ]] || fail "копия ключа в secrets/ открыта всем"
+git config --file "$rt/clone/.git/config" --get "$REPO_HDR_KEY" | grep -q '^Authorization: Basic ' || fail "ключ не лёг заголовком в клон"
+rm -rf "$rt"
+echo "✓ ключ репозитория закрыт (600) в клоне и в secrets/"
