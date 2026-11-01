@@ -51,11 +51,15 @@ NEW="$(git -C "$O" rev-parse HEAD)"
 ctl rollback > "$T/out"; rc=$?
 [[ $rc == 6 && "$(last)" == NOPREV ]] || fail "без прошлой версии ждали NOPREV/6, есть $rc: $(cat "$T/out")"
 
-# 1. update запоминает версию, с которой ушёл
-ctl update > "$T/out" || fail "update упал: $(cat "$T/out" "$T/err")"
+# 1. update запоминает версию, с которой ушёл. Свои новые файлы агента (картинки
+#    в plugin/tmp-out, Гор 01.11.2026) — не правки: reset --hard их не трогает,
+#    update не говорит DIRTY и файлы остаются на месте.
+mkdir -p "$REPO/plugin/tmp-out"; echo png > "$REPO/plugin/tmp-out/pic.png"; echo x > "$REPO/notes.txt"
+ctl update > "$T/out" || fail "update упал (свои новые файлы — не DIRTY): $(cat "$T/out" "$T/err")"
 [[ "$(last)" == "UPDATED 1 ${NEW:0:7}" ]] || fail "update: $(cat "$T/out")"
 [[ "$(g rev-parse refs/dashi/pre-update)" == "$OLD" ]] || fail "update не запомнил прежнюю версию"
-echo "✓ update запоминает прежнюю версию"
+[[ "$(cat "$REPO/plugin/tmp-out/pic.png" "$REPO/notes.txt")" == $'png\nx' ]] || fail "update стёр новые файлы агента"
+echo "✓ update запоминает прежнюю версию, новые файлы агента — не DIRTY и целы"
 # тег на старой версии появился в origin уже после установки — локально его нет
 git -C "$O" tag -a v1.0.0 -m "v1.0.0" "$OLD"
 ! g rev-parse -q --verify v1.0.0 >/dev/null || fail "тег уже есть локально — тест не про то"
@@ -66,7 +70,12 @@ ctl rollback > "$T/out"; rc=$?
 [[ $rc == 3 && "$(last)" == "DIRTY plugin/src.ts " ]] || fail "грязное дерево: ждали DIRTY/3, есть $rc: $(cat "$T/out")"
 [[ "$(g rev-parse HEAD)" == "$NEW" ]] || fail "при DIRTY код сдвинулся"
 g checkout -q -- plugin/src.ts
-echo "✓ грязное дерево — отказ"
+# правка, уже добавленная в индекс (git add), — тоже правка
+echo 'в индексе' > "$REPO/plugin/staged.ts"; g add plugin/staged.ts
+ctl update > "$T/out"; rc=$?
+[[ $rc == 3 && "$(last)" == "DIRTY plugin/staged.ts " ]] || fail "правка в индексе: ждали DIRTY/3, есть $rc: $(cat "$T/out")"
+g rm -q --cached plugin/staged.ts; rm "$REPO/plugin/staged.ts"
+echo "✓ грязное дерево — отказ (и правка в индексе тоже)"
 
 # 3. Откат: код на прежней версии, bun install прогнан, подсказка про restart
 : > "$BUNLOG"

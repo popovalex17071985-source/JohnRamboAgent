@@ -1271,7 +1271,9 @@ cat > "$CTL" <<EOF
 set -euo pipefail
 g() { runuser -u $SERVICE_USER -- git -C $REPO_DIR "\$@"; }
 # Правки руками в коде плагина (bun.lock не в счёт) — до пяти имён через пробел.
-dirty() { g status --porcelain -- . ':!plugin/bun.lock' | awk 'NR<=5{print \$2}' | tr '\n' ' '; }
+# Только отслеживаемые файлы (правка или git add): свои новые файлы агента
+# (картинки в plugin/tmp-out) reset --hard не трогает — это не повод для DIRTY.
+dirty() { g status --porcelain --untracked-files=no -- . ':!plugin/bun.lock' | awk 'NR<=5{print \$2}' | tr '\n' ' '; }
 # Версия, с которой код ушёл последним update/rollback, — туда возвращает
 # rollback. Отдельная ссылка в git: её не съест уборка git и не сдвинет fetch,
 # а для отката нужна только локальная история (сеть не нужна).
