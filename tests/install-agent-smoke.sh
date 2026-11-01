@@ -308,3 +308,79 @@ for o in git@github.com:someone/JohnRamboAgent.git git@github.com:popovalex17071
   [[ "$o" =~ $ssh_re ]] && fail "чужой origin оставлен как есть (SSH-путь): $o"
 done
 echo "✓ SSH-origin оставляется только нашему репозиторию"
+
+# ── fresh install with a repo deploy key: --repo-key (Smith 01.11.2026) ──────
+# The SSH path of 31.10 only kept an SSH origin on a RERUN; a fresh box had no way to
+# clone the private repo over SSH, so Smith's wrapper made ~agent/.ssh by hand.
+bash "$INST" --help | grep -q -- '--repo-key' || fail "--help молчит про --repo-key"
+kd="$(mktemp -d)"
+ssh-keygen -q -t ed25519 -N '' -C smoke -f "$kd/key" >/dev/null
+out="$(bash "$INST" --name t --yes --repo-key "$kd/nope" 2>&1 || true)"
+grep -q 'ключ к репозиторию не найден' <<<"$out" || fail "--repo-key на несуществующий файл не остановил установку: $out"
+out="$(bash "$INST" --name t --yes --repo-key "$kd/key" --repo https://github.com/x/y.git 2>&1 || true)"
+grep -q 'только с SSH-адресом' <<<"$out" || fail "--repo-key с https-адресом принят: $out"
+out="$(bash "$INST" --name t --yes --repo-key "$kd/key" --repo-token github_pat_x 2>&1 || true)"
+grep -q 'что-то одно' <<<"$out" || fail "--repo-key вместе с --repo-token принят: $out"
+grep -q -- '--repo-key)' "$INST" || fail "нет разбора флага --repo-key"
+# GitHub host keys pinned in the installer = GitHub's published fingerprints
+# (https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints)
+eval "$(sed -n "/^GITHUB_HOST_KEYS='/,/'\$/p" "$INST" | head -4)"   # 4 lines max: never eval the installer
+[[ -n "${GITHUB_HOST_KEYS:-}" ]] || fail "нет закреплённых ключей GitHub (GITHUB_HOST_KEYS)"
+fps="$(ssh-keygen -lf <(printf '%s\n' "$GITHUB_HOST_KEYS") | awk '{print $2}' | sort | paste -sd' ')"
+[[ "$fps" == "SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU SHA256:p2QAMXNIC1TJYWeIOttrVc98/R1BUFWu3/LiyKgUfQM SHA256:uNiVztksCsDhcc0u9e8BujQXVUpKZIDTMczCvj3tD2s" ]] \
+  || fail "ключи GitHub в установщике не совпадают с опубликованными: $fps"
+grep -c '^github.com ' <<<"$GITHUB_HOST_KEYS" | grep -qx 3 || fail "ждал ровно 3 ключа GitHub"
+# repo_key_install: key into HOME/.ssh (700/600/644), host keys pinned, idempotent
+eval "$(awk '/^REPO_KEY_FILE=/{print} /^REPO_SSH_CMD=/{print}
+             /^repo_key_install\(\) \{/,/^\}$/{print} /^repo_clone_cmd\(\) \{/,/^\}$/{print}' "$INST")"
+declare -F repo_key_install >/dev/null && declare -F repo_clone_cmd >/dev/null \
+  || fail "нет repo_key_install/repo_clone_cmd в установщике"
+H2="$kd/home"; mkdir -p "$H2"; me="$(id -un)"
+repo_key_install "$kd/key" "$H2" "$me" || fail "repo_key_install упал на нормальном ключе"
+[[ "$(stat -c %a "$H2/.ssh")" == 700 ]] || fail "~/.ssh не 700"
+[[ "$(stat -c %a "$H2/.ssh/$REPO_KEY_FILE")" == 600 ]] || fail "ключ не 600"
+[[ "$(stat -c %a "$H2/.ssh/$REPO_KEY_FILE.pub")" == 644 ]] || fail "публичная половина не 644"
+cmp -s "$kd/key" "$H2/.ssh/$REPO_KEY_FILE" || fail "ключ скопирован не тот"
+[[ "$(cut -d' ' -f1-2 "$H2/.ssh/$REPO_KEY_FILE.pub")" == "$(cut -d' ' -f1-2 "$kd/key.pub")" ]] \
+  || fail "публичная половина не та"
+[[ "$(stat -c %a "$H2/.ssh/known_hosts")" == 600 ]] || fail "known_hosts не 600"
+echo 'example.org ssh-ed25519 AAAAOWN' >> "$H2/.ssh/known_hosts"
+repo_key_install "$kd/key" "$H2" "$me" || fail "повторный repo_key_install упал"
+(( $(grep -c '^github.com ' "$H2/.ssh/known_hosts") == 3 )) || fail "ключи GitHub задвоились в known_hosts"
+grep -q '^example.org ' "$H2/.ssh/known_hosts" || fail "repo_key_install стёр чужие строки known_hosts"
+ssh-keygen -q -t ed25519 -N 'secret' -f "$kd/locked" >/dev/null
+repo_key_install "$kd/locked" "$kd/h3" "$me" 2>/dev/null && fail "ключ под паролем принят (агент не сможет им ходить)"
+echo 'not a key' > "$kd/junk"
+repo_key_install "$kd/junk" "$kd/h4" "$me" 2>/dev/null && fail "не-ключ принят как ключ"
+# The fresh clone goes over SSH with that key, and the key stays in the clone's config
+# (core.sshCommand) -- updates, the advisor and a rerun all use it. ssh is a stub that
+# serves a local bare repo the way GitHub would.
+git init -q --bare "$kd/srv.git"; git init -q "$kd/w"
+git -C "$kd/w" -c user.email=s@s -c user.name=s commit -q --allow-empty -m one
+git -C "$kd/w" push -q "$kd/srv.git" HEAD:refs/heads/main
+mkdir -p "$kd/bin"
+cat > "$kd/bin/ssh" <<EOF
+#!/bin/sh
+echo "\$*" >> "$kd/ssh.args"
+for last; do :; done
+exec sh -c "\$(printf '%s' "\$last" | sed "s|'[^']*'|'$kd/srv.git'|")"
+EOF
+chmod +x "$kd/bin/ssh"
+REPO_KEY="$kd/key"; REPO_TOKEN=""; BRANCH=main; REPO_URL=git@github.com:popovalex17071985-source/JohnRamboAgent.git
+CLAUDE_DIR="$kd/ws"
+HOME="$H2" PATH="$kd/bin:$PATH" bash -c "$(repo_clone_cmd)" >/dev/null 2>&1 \
+  || fail "клон по SSH-ключу не прошёл: $(cat "$kd/ssh.args" 2>/dev/null)"
+C="$kd/ws/dashi-plugin-claude-code"
+[[ "$(git -C "$C" config core.sshCommand)" == "$REPO_SSH_CMD" ]] || fail "ключ не записан в клон (core.sshCommand)"
+grep -qF -- "-i $H2/.ssh/$REPO_KEY_FILE" "$kd/ssh.args" || fail "клон шёл не с ключом развёртывания: $(cat "$kd/ssh.args")"
+grep -qF -- 'StrictHostKeyChecking=yes' "$kd/ssh.args" || fail "клон не требует закреплённый ключ GitHub"
+grep -qF -- 'BatchMode=yes' "$kd/ssh.args" || fail "клон по SSH может зависнуть на вопросе ssh"
+: > "$kd/ssh.args"
+( cd "$C" && HOME="$H2" PATH="$kd/bin:$PATH" eval "$GIT_SSH_BATCH GIT_TERMINAL_PROMPT=0 git fetch -q --depth 1 origin main" ) \
+  || fail "обновление клона по ключу не прошло"
+grep -qF -- "-i $H2/.ssh/$REPO_KEY_FILE" "$kd/ssh.args" || fail "обновление шло без ключа развёртывания"
+REPO_KEY=""; [[ "$(repo_clone_cmd)" == *sshCommand* ]] && fail "без --repo-key клон тоже получает sshCommand"
+grep -qF 'as_agent "$(repo_clone_cmd)"' "$INST" || fail "установщик клонирует мимо repo_clone_cmd"
+grep -q 'repo_key_install "$REPO_KEY" "$HOME_DIR" "$SERVICE_USER"' "$INST" || fail "установщик не ставит ключ развёртывания"
+rm -rf "$kd"
+echo "✓ --repo-key: ключ в ~/.ssh (600), ключи GitHub закреплены, свежий клон и обновления по SSH"
