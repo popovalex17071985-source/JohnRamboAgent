@@ -91,6 +91,11 @@ put_old
 ctl update > "$T/out" || fail "update (UPTODATE) упал: $(cat "$T/out" "$T/err")"
 [[ "$(last)" == UPTODATE ]] || fail "ждали UPTODATE: $(cat "$T/out")"
 is_src "$REPO/scripts/launch" || fail "UPTODATE: старые скрипты запуска не заменены"
+# разошёлся только один: второй (одинаковый) временный файл не остаётся лежать
+printf '#!/usr/bin/env bash\necho old\n' > "$BIN/dashi-press-dialogs"
+ctl update > "$T/out" || fail "update (один скрипт старый) упал"
+is_src "$REPO/scripts/launch" || fail "UPTODATE: старый сторож диалогов не заменён"
+no_tmp
 nb="$(ls "$STATE/backup" | wc -l)"
 ctl update > "$T/out" || fail "повторный update упал"
 [[ "$(last)" == UPTODATE && "$(ls "$STATE/backup" | wc -l)" == "$nb" ]] || fail "одинаковые скрипты переписаны зря"

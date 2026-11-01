@@ -1172,6 +1172,7 @@ launch_refresh() {
     for n in "${changed[@]}"; do
       ls -1t -- "$state/backup/$n".* 2>/dev/null | tail -n +11 | xargs -r rm -f -- || true
     done
+    drop   # временные файлы тех, что совпали и не менялись
     echo "скрипты запуска обновлены: ${changed[*]} (прежние копии: $state/backup)" >&2
     exit 0
   )
