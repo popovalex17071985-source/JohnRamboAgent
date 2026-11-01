@@ -1274,9 +1274,17 @@ g() { runuser -u $SERVICE_USER -- git -C $REPO_DIR "\$@"; }
 # Только отслеживаемые файлы (правка или git add): свои новые файлы агента
 # (картинки в plugin/tmp-out) reset --hard не трогает — это не повод для DIRTY.
 dirty() { g status --porcelain --untracked-files=no -- . ':!plugin/bun.lock' | awk 'NR<=5{print \$2}' | tr '\n' ' '; }
-# А вот свой новый файл там, где версия \$1 кладёт свой, reset --hard перетрёт молча.
-clash() { comm -12 <(g ls-files --others --exclude-standard | LC_ALL=C sort) \
-                   <(g ls-tree -r --name-only "\$1" | LC_ALL=C sort) | head -5 | tr '\n' ' '; }
+# А вот свой новый файл (или папку) там, где версия \$1 кладёт свой, reset --hard
+# перетрёт молча. Спрашиваем сам git: пробное слияние без записи (read-tree -n)
+# отказывает ровно на таких путях, в том числе файл-против-папки. Игнорируемые
+# (.gitignore) файлы git считает расходными -- их не видел и прежний dirty().
+# Отказ без имени пути -- всё равно DIRTY («?»): молча не перетираем.
+clash() {
+  local e
+  e="\$(runuser -u $SERVICE_USER -- env LC_ALL=C git -C $REPO_DIR read-tree -n -m -u HEAD "\$1" 2>&1 >/dev/null)" && return 0
+  e="\$(printf '%s\n' "\$e" | sed -n -e "s/^error: [^']*'\([^']*\)'.*/\1/p" -e 's/^\t//p' | head -5 | tr '\n' ' ')"
+  echo "\${e:-? }"
+}
 # Версия, с которой код ушёл последним update/rollback, — туда возвращает
 # rollback. Отдельная ссылка в git: её не съест уборка git и не сдвинет fetch,
 # а для отката нужна только локальная история (сеть не нужна).

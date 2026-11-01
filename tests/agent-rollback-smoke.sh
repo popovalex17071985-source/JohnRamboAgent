@@ -59,7 +59,18 @@ ctl update > "$T/out"; rc=$?
 [[ $rc == 3 && "$(last)" == "DIRTY plugin/added.ts " ]] || fail "новый файл на месте файла обновления: ждали DIRTY/3, есть $rc: $(cat "$T/out")"
 [[ "$(g rev-parse HEAD)" == "$OLD" && "$(cat "$REPO/plugin/added.ts")" == мой ]] || fail "при DIRTY код сдвинулся или файл перетёрт"
 rm "$REPO/plugin/added.ts"
-echo "✓ свой файл на пути файла обновления — DIRTY"
+# своя папка там, где новая версия кладёт файл: reset --hard снёс бы её целиком
+mkdir -p "$REPO/plugin/added.ts"; echo 'мой' > "$REPO/plugin/added.ts/notes.md"
+ctl update > "$T/out"; rc=$?
+[[ $rc == 3 && "$(last)" == DIRTY* ]] || fail "своя папка на пути файла обновления: ждали DIRTY/3, есть $rc: $(cat "$T/out")"
+[[ "$(cat "$REPO/plugin/added.ts/notes.md")" == мой ]] || fail "своя папка перетёрта"
+rm -rf "$REPO/plugin/added.ts"
+# под локалью сервиса (LANG=en_US.UTF-8) -- то же самое
+echo 'мой' > "$REPO/plugin/added.ts"
+LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 ctl update > "$T/out"; rc=$?
+[[ $rc == 3 && "$(last)" == "DIRTY plugin/added.ts " ]] || fail "под en_US: ждали DIRTY/3, есть $rc: $(cat "$T/out")"
+rm "$REPO/plugin/added.ts"
+echo "✓ свой файл или папка на пути файла обновления — DIRTY"
 
 # 1. update запоминает версию, с которой ушёл. Свои новые файлы агента (картинки
 #    в plugin/tmp-out, Гор 01.11.2026) — не правки: reset --hard их не трогает,
