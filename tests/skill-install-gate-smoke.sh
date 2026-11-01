@@ -17,6 +17,7 @@ check deny  'git clone https://github.com/x/skill ~/.claude/skills/skill'
 check deny  'cp -r /tmp/x/skill /home/agent/.claude-lab/bot/.claude/skills/skill'
 check deny  'mv /tmp/x ~/.agents/skills/x'
 check deny  'rsync -a /tmp/p/ ~/.claude/plugins/p'
+check deny  'ln -s /tmp/x/skill ~/.claude/skills/skill'  # a link is an install too (audit 01.11)
 check deny  'tar -xz --strip-components=1 -C ~/.claude/skills/anatomy'
 check deny  'unzip -q skill.zip -d ~/.codex/skills/s'
 check deny  'claude plugin install foo@bar'
