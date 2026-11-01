@@ -1274,6 +1274,9 @@ g() { runuser -u $SERVICE_USER -- git -C $REPO_DIR "\$@"; }
 # Только отслеживаемые файлы (правка или git add): свои новые файлы агента
 # (картинки в plugin/tmp-out) reset --hard не трогает — это не повод для DIRTY.
 dirty() { g status --porcelain --untracked-files=no -- . ':!plugin/bun.lock' | awk 'NR<=5{print \$2}' | tr '\n' ' '; }
+# А вот свой новый файл там, где версия \$1 кладёт свой, reset --hard перетрёт молча.
+clash() { comm -12 <(g ls-files --others --exclude-standard | LC_ALL=C sort) \
+                   <(g ls-tree -r --name-only "\$1" | LC_ALL=C sort) | head -5 | tr '\n' ' '; }
 # Версия, с которой код ушёл последним update/rollback, — туда возвращает
 # rollback. Отдельная ссылка в git: её не съест уборка git и не сдвинет fetch,
 # а для отката нужна только локальная история (сеть не нужна).
@@ -1351,6 +1354,8 @@ case "\${1:-}" in
                  if [[ -n "\$d" && "\${2:-}" != force ]]; then echo "DIRTY \$d"; exit 3; fi
                  g fetch -q --depth 30 origin $BRANCH || { echo NOFETCH; exit 5; }
                  n="\$(g rev-list --count HEAD..FETCH_HEAD)"
+                 d="\$(clash FETCH_HEAD)"
+                 if [[ -n "\$d" && "\$n" != 0 && "\${2:-}" != force ]]; then echo "DIRTY \$d"; exit 3; fi
                  # Код свежий, а скрипты запуска могли остаться от установки: сверяем
                  # и ставим (сработают со следующего старта, рестарт не нужен).
                  [[ "\$n" == 0 ]] && { launch || echo "скрипты запуска не обновились" >&2; echo UPTODATE; exit 0; }
@@ -1383,6 +1388,8 @@ case "\${1:-}" in
                  fi
                  from="\$(g rev-parse HEAD)"
                  [[ "\$to" != "\$from" ]] || { echo "SAME \$(g rev-parse --short HEAD)"; exit 0; }
+                 d="\$(clash "\$to")"
+                 [[ -z "\$d" ]] || { echo "DIRTY \$d"; exit 3; }
                  switch_to "\$to" || { echo ROLLBACK; exit 4; }
                  g update-ref --create-reflog -m rollback "\$PREV" "\$from" || echo "точка отката не сохранилась" >&2
                  echo "дальше: sudo /usr/local/bin/dashi-ctl-$AGENT_NAME restart (повторный rollback вернёт как было)" >&2

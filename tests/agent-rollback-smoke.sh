@@ -44,12 +44,22 @@ echo '{"name":"fx"}' > "$O/plugin/package.json"; echo 'v1' > "$O/plugin/src.ts"
 git -C "$O" add -A && git -C "$O" commit -q -m "Старая версия"
 OLD="$(git -C "$O" rev-parse HEAD)"
 mkdir -p "$T/cd"; git clone -q --depth 1 "file://$O" "$REPO"
-echo 'v2' > "$O/plugin/src.ts"; git -C "$O" commit -q -am "Новая версия, оказалась плохой"
+echo 'v2' > "$O/plugin/src.ts"; echo 'shipped' > "$O/plugin/added.ts"
+git -C "$O" add -A && git -C "$O" commit -q -m "Новая версия, оказалась плохой"
 NEW="$(git -C "$O" rev-parse HEAD)"
 
 # 0. До первого обновления откатываться некуда
 ctl rollback > "$T/out"; rc=$?
 [[ $rc == 6 && "$(last)" == NOPREV ]] || fail "без прошлой версии ждали NOPREV/6, есть $rc: $(cat "$T/out")"
+
+# 0b. Свой новый файл агента там, где новая версия кладёт свой: reset --hard его
+#     перетёр бы молча -- это DIRTY, код не двигается, файл цел.
+echo 'мой' > "$REPO/plugin/added.ts"
+ctl update > "$T/out"; rc=$?
+[[ $rc == 3 && "$(last)" == "DIRTY plugin/added.ts " ]] || fail "новый файл на месте файла обновления: ждали DIRTY/3, есть $rc: $(cat "$T/out")"
+[[ "$(g rev-parse HEAD)" == "$OLD" && "$(cat "$REPO/plugin/added.ts")" == мой ]] || fail "при DIRTY код сдвинулся или файл перетёрт"
+rm "$REPO/plugin/added.ts"
+echo "✓ свой файл на пути файла обновления — DIRTY"
 
 # 1. update запоминает версию, с которой ушёл. Свои новые файлы агента (картинки
 #    в plugin/tmp-out, Гор 01.11.2026) — не правки: reset --hard их не трогает,
@@ -87,7 +97,13 @@ grep -q "dashi-ctl-smoke restart" "$T/err" || fail "нет подсказки с
 [[ ! -e "$REPO.bak" || -d "$REPO.bak" ]] || fail "странный .bak"
 echo "✓ rollback возвращает прежнюю версию"
 
-# 4. Откат отката: прежняя «прежняя» — та, с которой ушли
+# 4. Откат отката: прежняя «прежняя» — та, с которой ушли. Свой файл на пути,
+#    который та версия кладёт, — сперва DIRTY, как у update.
+echo 'мой' > "$REPO/plugin/added.ts"
+ctl rollback > "$T/out"; rc=$?
+[[ $rc == 3 && "$(last)" == "DIRTY plugin/added.ts " ]] || fail "rollback на свой файл: ждали DIRTY/3, есть $rc: $(cat "$T/out")"
+[[ "$(cat "$REPO/plugin/added.ts")" == мой ]] || fail "rollback перетёр свой файл агента"
+rm "$REPO/plugin/added.ts"
 ctl rollback > "$T/out" || fail "второй rollback упал"
 [[ "$(g rev-parse HEAD)" == "$NEW" ]] || fail "второй rollback не вернул вперёд"
 echo "✓ повторный rollback отменяет откат"
