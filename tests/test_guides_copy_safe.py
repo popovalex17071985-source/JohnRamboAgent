@@ -19,9 +19,14 @@ node docs/build-guides.mjs).
 
 from __future__ import annotations
 
+import io
+import os
 import shutil
 import subprocess
+import tempfile
 import unittest
+from contextlib import redirect_stdout
+from unittest import mock
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -114,7 +119,12 @@ def problems_in_command(cmd: str) -> list[str]:
     return found
 
 
-def pdf_lines_pdftotext(pdf: Path) -> list[str]:
+PDFTOTEXT_MISSING = "pdftotext (poppler-utils) not installed"
+
+
+def pdf_lines_pdftotext(pdf: Path) -> list[str] | None:
+    if shutil.which("pdftotext") is None:  # a dev tool only: no runtime feature needs it
+        return None
     out = subprocess.run(
         ["pdftotext", "-raw", "-enc", "UTF-8", str(pdf), "-"],
         check=True, capture_output=True, text=True,
@@ -157,7 +167,7 @@ class GuidesCopySafe(unittest.TestCase):
                 with self.subTest(guide=guide.name, cmd=cmd):
                     self.assertEqual(problems_in_command(cmd), [])
 
-    @unittest.skipUnless(shutil.which("pdftotext"), "pdftotext (poppler-utils) not installed")
+    @unittest.skipUnless(shutil.which("pdftotext"), PDFTOTEXT_MISSING)
     def test_pdf_text_has_every_command_as_exact_line(self) -> None:
         for guide in GUIDES:
             pdf = guide.with_suffix(".pdf")
@@ -174,9 +184,24 @@ class GuidesCopySafe(unittest.TestCase):
                         self.assertIn(cmd, stripped)
 
 
+class MainWithoutPdftotext(unittest.TestCase):
+    """Smith 01.11.2026: a box without poppler-utils crashed the report with
+    FileNotFoundError instead of saying what it could not check."""
+
+    def test_main_skips_missing_pdftotext_with_reason(self) -> None:
+        with tempfile.TemporaryDirectory() as empty, \
+                mock.patch.dict(os.environ, {"PATH": empty}), \
+                redirect_stdout(io.StringIO()) as out:
+            rc = main()
+        self.assertIn(rc, (0, 1))
+        self.assertIn("pdftotext (poppler-utils) not installed", out.getvalue())
+
+
 def main() -> int:
     """Human-readable report: one line per command and extractor."""
     total = bad = 0
+    if shutil.which("pdftotext") is None:
+        print(f"SKIP pdftotext checks: {PDFTOTEXT_MISSING} (apt install poppler-utils)")
     for guide in GUIDES:
         pdf = guide.with_suffix(".pdf")
         extracted = {name: fn(pdf) for name, fn in EXTRACTORS} if pdf.exists() else {}
