@@ -26,6 +26,8 @@
 #   ... --webhook-port 8089                  # порт приёмника хуков; второму агенту на хосте — свой (+ свой --user)
 #   ... --repo URL                           # откуда клонировать плагин (по умолчанию GitHub)
 #   ... --repo-token github_pat_...          # ключ к ЗАКРЫТОМУ репозиторию (только чтение); лучше через DASHI_REPO_TOKEN
+#   ... --repo-key /root/deploy-key          # ключ развёртывания GitHub (SSH, только чтение) вместо --repo-token:
+#                                            # клон и обновления по SSH; --repo по умолчанию git@github.com:...
 #   ... --yes                                # без вопросов (cloud-init, CI): необязательное пропускается
 #
 set -euo pipefail
@@ -62,7 +64,7 @@ USER_GIVEN=0; PORT_GIVEN=0
 [[ -n "${DASHI_SERVICE_USER:-}" ]] && USER_GIVEN=1
 [[ -n "${DASHI_WEBHOOK_PORT:-}" ]] && PORT_GIVEN=1
 
-REPO_TOKEN=""; AGENT_NAME=""; BOT_TOKEN=""; USER_ID=""; GROQ_KEY=""; OPENAI_KEY=""; CLAUDE_TOKEN=""; REPAIR_TOKEN=""; ASSUME_YES=0
+REPO_TOKEN=""; REPO_KEY=""; AGENT_NAME=""; BOT_TOKEN=""; USER_ID=""; GROQ_KEY=""; OPENAI_KEY=""; CLAUDE_TOKEN=""; REPAIR_TOKEN=""; ASSUME_YES=0
 MODEL="${DASHI_MODEL:-}"
 OWNER_TZ="${DASHI_OWNER_TZ:-}"
 SKIP_BROWSER=0
@@ -144,6 +146,7 @@ while [[ $# -gt 0 ]]; do
     --webhook-port) WEBHOOK_PORT="$2"; PORT_GIVEN=1; shift 2 ;;   # порт приёмника хуков (по умолчанию 8089)
     --repo)      REPO_URL="$2"; REPO_URL_GIVEN=1; shift 2 ;;
     --repo-token) REPO_TOKEN="$2"; shift 2 ;;  # ключ к закрытому репозиторию; DASHI_REPO_TOKEN не светится в ps
+    --repo-key)  REPO_KEY="$2";   shift 2 ;;   # ключ развёртывания GitHub (SSH): свежий клон по SSH
     --branch)    BRANCH="$2";     shift 2 ;;   # main (по умолчанию) | feature-ветка для staging
     --tz)        OWNER_TZ="$2";   shift 2 ;;   # пояс ХОЗЯИНА: сводка приходит в 09:00 по нему
     --model)     MODEL="$2";      shift 2 ;;   # opus|sonnet|haiku|полный id; пусто = дефолт аккаунта
@@ -157,6 +160,19 @@ done
 # Токен можно передать и через окружение — не светится в ps, в отличие от флага:
 #   CLAUDE_CODE_OAUTH_TOKEN=sk-ant-... sudo -E bash install-agent.sh ...
 CLAUDE_TOKEN="${CLAUDE_TOKEN:-${CLAUDE_CODE_OAUTH_TOKEN:-}}"
+
+# Ключ развёртывания (SSH) -- проверяем сразу, до долгой установки системы.
+# Без --repo адрес -- SSH-адрес нашего репозитория; https с ключом SSH не ходит.
+REPO_SSH_DEFAULT="git@github.com:popovalex17071985-source/JohnRamboAgent.git"
+if [[ -n "$REPO_KEY" ]]; then
+  [[ -f "$REPO_KEY" && -r "$REPO_KEY" ]] || die "ключ к репозиторию не найден: $REPO_KEY"
+  [[ -z "$REPO_TOKEN${DASHI_REPO_TOKEN:-}" ]] || die "передай что-то одно: --repo-key (SSH) или --repo-token (https)"
+  if [[ "$REPO_URL_GIVEN" == 0 ]]; then
+    REPO_URL="$REPO_SSH_DEFAULT"; REPO_URL_GIVEN=1
+  elif [[ ! "$REPO_URL" =~ ^(git@github\.com:|ssh://git@github\.com/)[A-Za-z0-9._/-]+$ ]]; then
+    die "--repo-key работает только с SSH-адресом GitHub (git@github.com:...), а --repo $REPO_URL"
+  fi
+fi
 
 [[ $EUID -eq 0 ]] || die "запускай под root: sudo bash $0"
 
@@ -375,28 +391,43 @@ fi
 # unzip нужен установщику Bun — без него тот падает уже после скачивания;
 # tmux держит интерактивную сессию Claude под systemd;
 # python3-yaml: хук мультичата без PyYAML запрещает все команды (fail-safe deny)
-apt_get install -y -qq git unzip tmux curl jq python3 python3-yaml
+apt_get install -y -qq git openssh-client unzip tmux curl jq python3 python3-yaml
 
-# На 1 ГБ памяти сборка и Claude Code упираются в потолок и падают молча.
-# Ставим своп — дешевле, чем объяснять человеку OOM.
-mem_kb=$(awk '/MemTotal/{print $2}' /proc/meminfo)
-if (( mem_kb < 1800000 )) && ! swapon --show --noheadings | grep -q .; then
-  make_swap() {  # make_swap fallocate|dd — файл, права, mkswap, swapon; любой сбой = false
-    rm -f /swapfile
-    if [[ "$1" == fallocate ]]; then fallocate -l 2G /swapfile 2>/dev/null
-    else dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none 2>/dev/null; fi \
-      && chmod 600 /swapfile && mkswap -q /swapfile 2>/dev/null && swapon /swapfile 2>/dev/null
-  }
+# На маленькой памяти сборка и Claude Code упираются в потолок и падают молча.
+# Ставим своп — дешевле, чем объяснять человеку OOM. Порог 3 ГБ: на 2 ГБ (Смит,
+# 01.11.2026) проверку типов плагина прибило по OOM рядом с Claude и OpenViking.
+SWAP_MIN_RAM_KB=3000000
+SWAP_SIZE_MB=2048
+SWAP_FILE=/swapfile
+SWAP_FSTAB_DEFAULT=/etc/fstab
+SWAP_MEMINFO_DEFAULT=/proc/meminfo
+make_swap() {  # make_swap fallocate|dd ERRFILE — файл, права, mkswap, swapon; любой сбой = false
+  rm -f "$SWAP_FILE"
+  if [[ "$1" == fallocate ]]; then fallocate -l "${SWAP_SIZE_MB}M" "$SWAP_FILE" 2>>"$2"
+  else dd if=/dev/zero of="$SWAP_FILE" bs=1M count="$SWAP_SIZE_MB" status=none 2>>"$2"; fi \
+    && chmod 600 "$SWAP_FILE" 2>>"$2" \
+    && mkswap "$SWAP_FILE" >/dev/null 2>>"$2" \
+    && swapon "$SWAP_FILE" 2>>"$2"
+  # NB: no `mkswap -q` -- util-linux 2.37 (Ubuntu 22.04) has no -q, it failed every box
+}
+ensure_swap() {
+  local mem_kb err fstab="${FSTAB:-$SWAP_FSTAB_DEFAULT}"
+  mem_kb=$(awk '/MemTotal/{print $2}' "${MEMINFO:-$SWAP_MEMINFO_DEFAULT}")
+  (( mem_kb < SWAP_MIN_RAM_KB )) || return 0
+  swapon --show --noheadings 2>/dev/null | grep -q . && return 0
+  err="$(mktemp)"
   # На btrfs/zfs fallocate проходит, а swapon отказывает («дырявый» файл) —
   # раньше set -e ронял всю установку; пробуем dd, не вышло — идём без свопа.
-  if make_swap fallocate || make_swap dd; then
-    grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  if make_swap fallocate "$err" || make_swap dd "$err"; then
+    grep -qE "^$SWAP_FILE[[:space:]]" "$fstab" 2>/dev/null || echo "$SWAP_FILE none swap sw 0 0" >> "$fstab"
     ok "своп 2 ГБ (памяти всего $(( mem_kb / 1024 )) МБ)"
   else
-    rm -f /swapfile
-    warn "своп не поднялся (btrfs/zfs/контейнер?) — продолжаю без него; памяти $(( mem_kb / 1024 )) МБ, Claude может падать по OOM"
+    rm -f "$SWAP_FILE"
+    warn "своп не поднялся: $(tail -n 1 "$err" 2>/dev/null) — продолжаю без него; памяти $(( mem_kb / 1024 )) МБ, Claude может падать по OOM"
   fi
-fi
+  rm -f "$err"
+}
+ensure_swap
 
 # Журнал systemd без потолка за месяцы съедает гигабайты на маленьком VPS
 mkdir -p /etc/systemd/journald.conf.d
@@ -514,6 +545,68 @@ REPO_VIA_SSH=0
 # ssh без вопросов, но с ключом развёртывания клона: голый GIT_SSH_COMMAND перекрывает
 # core.sshCommand, и git шёл без ключа (Жупик 31.10.2026: «GitHub по SSH не ответил»).
 GIT_SSH_BATCH='GIT_SSH_COMMAND="$(git config core.sshCommand || echo ssh) -o BatchMode=yes"'
+# Ключ развёртывания (--repo-key, Смит 01.11.2026): кладём его агенту в ~/.ssh, ключи
+# GitHub закрепляем, а клону пишем core.sshCommand -- им же потом ходят обновления
+# (dashi-ctl update, советник, повторный прогон), и другим SSH-ключам агента он не мешает.
+# Ключи GitHub сверены 01.11.2026 с опубликованными (docs.github.com, «GitHub's SSH key
+# fingerprints», и api.github.com/meta): ED25519 SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU,
+# ECDSA SHA256:p2QAMXNIC1TJYWeIOttrVc98/R1BUFWu3/LiyKgUfQM, RSA SHA256:uNiVztksCsDhcc0u9e8BujQXVUpKZIDTMczCvj3tD2s.
+GITHUB_HOST_KEYS='github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
+github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=
+github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk='
+REPO_KEY_FILE=dashi-repo-key
+# Абсолютные пути, не ~: dashi-ctl зовёт git через sudo + runuser, и HOME там /root --
+# с ~ ssh искал бы ключ и known_hosts у root, и обновление падало бы (NOFETCH).
+REPO_SSH_CMD="ssh -i $HOME_DIR/.ssh/$REPO_KEY_FILE -o IdentitiesOnly=yes -o UserKnownHostsFile=$HOME_DIR/.ssh/known_hosts -o StrictHostKeyChecking=yes"
+as_user() {  # as_user USER CMD... -- под этим пользователем (уже он -- как есть)
+  local u="$1"; shift
+  if [[ "$(id -un)" == "$u" ]]; then "$@"; else runuser -u "$u" -- "$@"; fi
+}
+repo_key_install() {  # repo_key_install KEY HOME USER -- ключ в HOME/.ssh, ключи GitHub закреплены
+  # Всё в чужой домашке пишет сам агент, не root: подложенная агентом ссылка
+  # (~/.ssh/known_hosts -> /etc/sudoers.d/x) иначе отдала бы ему системный файл.
+  # Ключ читает root (он может лежать в /root) и отдаёт агенту через stdin.
+  local key="$1" home="$2" user="$3" pub line d="$2/.ssh" kh="$2/.ssh/known_hosts"
+  as_user "$user" sh -c 'umask 077; mkdir -p "$1" && chmod 700 "$1"' sh "$d" || return 1
+  as_user "$user" sh -c 'umask 077; cat > "$1.new" && mv -f "$1.new" "$1"' sh "$d/$REPO_KEY_FILE" <"$key" \
+    || return 1
+  # Не ключ или ключ под паролем -- агент им ходить не сможет, говорим сразу. Проверяем
+  # копию (600): исходник 644 ssh-keygen отвергает как «UNPROTECTED PRIVATE KEY FILE».
+  if ! pub="$(as_user "$user" ssh-keygen -y -P '' -f "$d/$REPO_KEY_FILE" 2>/dev/null)"; then
+    as_user "$user" rm -f "$d/$REPO_KEY_FILE"; return 1
+  fi
+  printf '%s\n' "$pub" | as_user "$user" sh -c 'umask 022; cat > "$1.new" && chmod 644 "$1.new" && mv -f "$1.new" "$1"' \
+    sh "$d/$REPO_KEY_FILE.pub" || return 1
+  as_user "$user" sh -c 'umask 077; touch "$1"' sh "$kh" || return 1
+  while IFS= read -r line; do
+    as_user "$user" grep -qxF "$line" "$kh" \
+      || printf '%s\n' "$line" | as_user "$user" sh -c 'cat >> "$1"' sh "$kh" || return 1
+  done <<<"$GITHUB_HOST_KEYS"
+}
+repo_clone_cmd() {  # команда свежего клона для as_agent: с токеном (https) или ключом (SSH)
+  local cfg="" opts="" env=""
+  [[ -n "$REPO_TOKEN" ]] && cfg="-c '$REPO_HDR_KEY=$(repo_auth_header "$REPO_TOKEN")' "
+  if [[ -n "$REPO_KEY" ]]; then
+    opts="--config core.sshCommand='$REPO_SSH_CMD' "
+    env="GIT_SSH_COMMAND='$REPO_SSH_CMD -o BatchMode=yes' GIT_TERMINAL_PROMPT=0 "
+  fi
+  printf "%sgit %sclone %s--depth 1 --branch '%s' '%s' '%s'" "$env" "$cfg" "$opts" \
+    "$BRANCH" "$REPO_URL" "$CLAUDE_DIR/dashi-plugin-claude-code"
+}
+if [[ -n "$REPO_KEY" ]]; then
+  repo_key_install "$REPO_KEY" "$HOME_DIR" "$SERVICE_USER" \
+    || die "ключ к репозиторию $REPO_KEY не подходит: это не закрытый ключ SSH или он под паролем"
+  REPO_VIA_SSH=1; REPO_TOKEN=""
+  # Клон уже есть (повторный прогон): переводим его на этот ключ
+  [[ -d "$REPO_DIR/.git" ]] && as_agent "git -C '$REPO_DIR' config core.sshCommand '$REPO_SSH_CMD'"
+  if as_agent "GIT_SSH_COMMAND='$REPO_SSH_CMD -o BatchMode=yes' GIT_TERMINAL_PROMPT=0 timeout 60 git ls-remote --heads '$REPO_URL'" >/dev/null 2>&1; then
+    ok "ключ развёртывания на месте: плагин качается и обновляется по SSH"
+  elif [[ -d "$REPO_DIR/.git" ]]; then
+    warn "GitHub по ключу развёртывания сейчас не ответил -- работаю на том клоне, что есть"
+  else
+    die "GitHub не пустил по ключу $REPO_KEY в $REPO_URL -- ключ добавлен в репозиторий (Settings -> Deploy keys)?"
+  fi
+fi
 if [[ "$REPO_URL_GIVEN" == 0 && -d "$REPO_DIR/.git" ]]; then
   CLONE_ORIGIN="$(as_agent "git -C '$REPO_DIR' remote get-url origin" 2>/dev/null || true)"
   # Явно переданный ключ -- решение человека: идём по нему, SSH не навязываем.
@@ -562,11 +655,7 @@ if [[ -d "$CLAUDE_DIR/dashi-plugin-claude-code/.git" ]]; then
       || warn "не смог обновить плагин (нет сети до GitHub?) — работаю на том, что есть"
   fi
 else
-  CLONE_CFG=""
-  [[ -n "$REPO_TOKEN" ]] && CLONE_CFG="-c '$REPO_HDR_KEY=$(repo_auth_header "$REPO_TOKEN")'"
-  as_agent "git $CLONE_CFG clone --depth 1 --branch '$BRANCH' '$REPO_URL' '$CLAUDE_DIR/dashi-plugin-claude-code'" >/dev/null 2>&1 \
-    || die "не удалось склонировать $REPO_URL"
-  unset CLONE_CFG
+  as_agent "$(repo_clone_cmd)" >/dev/null 2>&1 || die "не удалось склонировать $REPO_URL"
   [[ -n "$REPO_TOKEN" ]] && save_repo_token
   ok "плагин склонирован"
 fi
@@ -1827,8 +1916,13 @@ EOF
     # appdata -> /app/data обязательно: без него вся память живёт внутри
     # контейнера и пропадает при его пересоздании (обновление образа). Так же
     # монтирует agent-kit/scripts/setup-memory.sh и контейнер у Jarvis.
+    # --user = агент, не root: root-контейнер клал в ~/.openviking файлы root:600,
+    # и ночной бэкап агента их не читал (Смит, 01.11.2026; образ под uid агента проверен).
     as_agent "mkdir -p '$OV_DIR/appdata'"
+    # Старый root-контейнер мог оставить root:600 -- новый под агентом их не откроет
+    chown -R "$SERVICE_USER:$SERVICE_USER" "$OV_DIR"
     docker run -d --name openviking --network host --restart unless-stopped \
+      --user "$(id -u "$SERVICE_USER"):$(id -g "$SERVICE_USER")" \
       -v "$OV_DIR:/app/.openviking" -v "$OV_DIR/appdata:/app/data" \
       -e OPENVIKING_CONFIG_FILE=/app/.openviking/ov.conf \
       -e OPENVIKING_SERVER_HOST=127.0.0.1 \

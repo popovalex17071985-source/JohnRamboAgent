@@ -121,6 +121,83 @@ else
   echo "· script(1) нет -- ветку с терминалом пропускаю"
 fi
 
+# ── 4. swap (Smith 01.11.2026, Ubuntu 22.04, util-linux 2.37.2) ──────────────
+# `mkswap -q` -> «invalid option -- 'q'», so no box got swap since 19.08; and a 2 GB box
+# (above the old 1.8 GB line) had tsc OOM-killed next to Claude + OpenViking.
+eval "$(awk '/^ok\(\)/{print} /^warn\(\)/{print} /^SWAP_[A-Z_]+=/{print}
+             /^make_swap\(\) \{/,/^\}$/{print} /^ensure_swap\(\) \{$/,/^\}$/{print}' "$S")"
+declare -F ensure_swap >/dev/null && declare -F make_swap >/dev/null \
+  || fail "не нашёл ensure_swap/make_swap в установщике"
+[[ "${SWAP_MIN_RAM_KB:-}" =~ ^[0-9]+$ ]] || fail "порог свопа -- не именованная константа SWAP_MIN_RAM_KB"
+mkdir -p "$T/sw"
+# util-linux 2.37.2 behaviour: no -q; prints to stdout on success
+cat > "$T/sw/mkswap" <<EOF
+#!/bin/sh
+echo "mkswap \$*" >> "$T/sw.args"
+for a in "\$@"; do case "\$a" in -q) echo "mkswap: invalid option -- 'q'" >&2; exit 1;; esac; done
+[ -f "$T/sw.mkswap-fail" ] && { echo "mkswap: \$1: insecure permissions 0644" >&2; exit 1; }
+echo "Setting up swapspace version 1, size = 2 GiB"
+EOF
+cat > "$T/sw/swapon" <<EOF
+#!/bin/sh
+echo "swapon \$*" >> "$T/sw.args"
+[ "\$1" = --show ] && { [ -f "$T/sw.active" ] && echo "/swapfile file 2G 0B -2"; exit 0; }
+touch "$T/sw.active"
+EOF
+printf '#!/bin/sh\n: > "$3"\n' > "$T/sw/fallocate"
+chmod +x "$T/sw/mkswap" "$T/sw/swapon" "$T/sw/fallocate"
+swap_run() {  # swap_run MEM_KB [keep] -> output; state in $T/sw.*; keep = swap already on
+  [[ "${2:-}" == keep ]] || { rm -f "$T/sw.active"; : > "$T/fstab"; }
+  rm -f "$T/sw.args"
+  printf 'MemTotal:       %s kB\n' "$1" > "$T/meminfo"
+  SWAP_FILE="$T/swapfile" FSTAB="$T/fstab" MEMINFO="$T/meminfo" PATH="$T/sw:$PATH" ensure_swap 2>&1
+}
+# Smith: 1968 MB in free -m
+out="$(swap_run 2015232)"
+[[ -f "$T/sw.active" ]] || fail "2 ГБ памяти: своп не поднят (порог $SWAP_MIN_RAM_KB кБ): $out $(cat "$T/sw.args" 2>/dev/null)"
+grep -q -- "^$T/swapfile none swap sw 0 0$" "$T/fstab" || fail "своп не записан в fstab: $(cat "$T/fstab")"
+grep -q 'своп 2 ГБ' <<<"$out" || fail "нет строки об успехе свопа: $out"
+grep -q 'Setting up swapspace' <<<"$out" && fail "болтовня mkswap на экране: $out"
+out="$(swap_run 2015232 keep)"; (( $(grep -c swapfile "$T/fstab") <= 1 )) || fail "fstab: своп дописан дважды"
+grep -q '^mkswap' "$T/sw.args" && fail "своп уже есть -- а установщик делает новый"
+# an fstab entry written with a tab is still the same entry
+rm -f "$T/sw.active"; printf '%s\tnone\tswap\tsw\t0\t0\n' "$T/swapfile" > "$T/fstab"
+out="$(swap_run 2015232 keep)"; (( $(grep -c swapfile "$T/fstab") == 1 )) || fail "fstab с табом: своп дописан второй раз"
+# 4 GB box: no swap needed
+out="$(swap_run 4026531)"
+[[ -f "$T/sw.active" ]] && fail "4 ГБ памяти: своп поднят зря"
+# the real error reaches the screen, not a guess about btrfs/zfs
+touch "$T/sw.mkswap-fail"; out="$(swap_run 2015232)"; rm -f "$T/sw.mkswap-fail"
+grep -q 'insecure permissions' <<<"$out" || fail "при сбое свопа не видно настоящей ошибки: $out"
+grep -q 'btrfs/zfs/контейнер?' <<<"$out" && fail "при сбое свопа -- догадка про btrfs/zfs вместо ошибки: $out"
+[[ -e "$T/swapfile" ]] && fail "после сбоя свопа файл остался"
+echo "✓ своп: mkswap без -q, порог $SWAP_MIN_RAM_KB кБ, настоящая ошибка на экране"
+
+# ── 5. OpenViking container runs as the agent, not root (Smith 01.11.2026) ────
+# A root container on the bind mount left root:600 files in ~agent/.openviking, and the
+# agent's nightly backup could not read them. Every `docker run` of it is evaluated with
+# a docker stub: the --user it gets must be the agent's uid:gid.
+mkdir -p "$T/dk"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s/docker.args"\n' "$T" > "$T/dk/docker"; chmod +x "$T/dk/docker"
+me="$(id -un)"; want="--user $(id -u):$(id -g)"
+n_runs=0
+for f in "$S" "$MEM"; do
+  while IFS= read -r cmd; do
+    n_runs=$((n_runs + 1)); : > "$T/docker.args"
+    ( die() { :; }; SERVICE_USER="$me" OWNER="$me" OV_DIR="$T/ov" OPENVIKING_IMAGE=img OV_IMAGE=img
+      PATH="$T/dk:$PATH"; eval "$cmd" ) >/dev/null 2>&1 || true
+    grep -qF -- "$want " "$T/docker.args" \
+      || fail "$(basename "$f"): контейнер памяти запускается не под агентом ($want): $(cat "$T/docker.args")"
+  done < <(awk '/docker run .*--name openviking/{c=1} c{l=l $0; if ($0 ~ /\\$/) sub(/\\$/, "", l); else {print l; l=""; c=0}}' "$f")
+done
+# leftovers of an old root container go back to the agent before the new one starts
+for f in "$S" "$MEM"; do
+  awk '/chown -R "\$(SERVICE_USER|OWNER):\$(SERVICE_USER|OWNER)" "\$OV_DIR"/{c=NR} /docker run .*--name openviking/{if(!c||NR-c>8)bad=1} END{exit bad}' "$f" \
+    || fail "$(basename "$f"): перед запуском контейнера памяти ~/.openviking не возвращается агенту"
+done
+(( n_runs >= 2 )) || fail "нашёл $n_runs запусков контейнера памяти, ждал 2 (установщик + setup-memory)"
+echo "✓ контейнер памяти: $n_runs запуска, все под пользователем агента"
+
 # umask 022 right after `set -euo pipefail`, before anything installs (Smith 19.10: an
 # inherited 077 left Claude Code unreadable for the agent user).
 awk '/^set -euo pipefail/{if(!s)s=NR} /^umask 022$/{if(!u)u=NR} /^(apt_get|install_node|NODE_MAJOR)/{if(!f)f=NR} END{exit !(s && u && u>s && u<f)}' \

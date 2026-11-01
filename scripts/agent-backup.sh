@@ -330,6 +330,23 @@ if [[ "$est_b" =~ ^[0-9]+$ && "$free_b" =~ ^[0-9]+$ ]]; then
   fi
 fi
 
+# Memory files the agent cannot read drop out of the archive (tar: Permission denied):
+# the OpenViking container ran as root before 01.11.2026 and keeps leaving root:600
+# files in ~/.openviking on boxes installed earlier (Smith). Only THAT folder triggers
+# the agent's own fix-owner (sudoers allows exactly that command; the installer does
+# the same chown on every run). Anything else unreadable is left to a human: tar's
+# WARN below names it.
+CTL="${DASHI_CTL:-/usr/local/bin/dashi-ctl-$AGENT}"
+OV_HOME="$AGENT_HOME/.openviking"
+if [[ $EUID -ne 0 && -d "$OV_HOME" ]] \
+   && find "$OV_HOME" -xdev ! -readable -print -quit 2>/dev/null | grep -q .; then
+  if [[ -x "$CTL" ]] && sudo -n "$CTL" fix-owner >/dev/null 2>>"$LOG"; then
+    log "в памяти (~/.openviking) были файлы, которые агент не мог прочитать (их оставил контейнер под root) -- вернул себе через fix-owner"
+  else
+    log "WARN: в памяти (~/.openviking) есть нечитаемые файлы, а fix-owner не сработал -- они не попадут в архив"
+  fi
+fi
+
 # --ignore-failed-read: live dirs change under us, and the OpenViking container
 # leaves root-owned files in ~/.openviking; neither may cost the whole night.
 # Excludes come BEFORE -C: in GNU tar they apply to the names that follow them.

@@ -175,7 +175,12 @@ if ! docker ps --format '{{.Names}}' | grep -qx openviking; then
   docker rm -f openviking >/dev/null 2>&1 || true
   # --network host + explicit SERVER_HOST: without the env it binds 0.0.0.0 and
   # dev auth mode refuses to start ("must not be exposed to the network").
+  # As the owner, not root: a root container left root:600 files in ~/.openviking that
+  # the owner's nightly backup could not read (Smith, 01.11.2026). Those leftovers go
+  # back to the owner first, or the new container cannot open its own base.
+  chown -R "$OWNER:$OWNER" "$OV_DIR"
   docker run -d --name openviking --restart unless-stopped --network host \
+    --user "$(id -u "$OWNER"):$(id -g "$OWNER")" \
     -e OPENVIKING_SERVER_HOST=127.0.0.1 -e OPENVIKING_CONFIG_FILE=/app/.openviking/ov.conf \
     -v "$OV_DIR:/app/.openviking" -v "$OV_DIR/appdata:/app/data" \
     "$OV_IMAGE" >/dev/null
