@@ -251,3 +251,26 @@ describe('assertSendableFile — secret files are refused', () => {
     }
   })
 })
+
+// Mutation audit 01.11.2026: matching the denylist against the ABSOLUTE path
+// instead of the workspace-relative one left the suite green. A workspace
+// that itself lives under a credential-looking dir (a Codex agent under
+// ~/.codex/, a folder named secrets/) would then refuse EVERY file.
+describe('assertSendableFile — denylist is relative to the workspace', () => {
+  for (const parentName of ['.codex', 'secrets']) {
+    test(`a workspace under ${parentName}/ still sends ordinary files, and still refuses .env`, () => {
+      const root = mkdtempSync(join(tmpdir(), 'dashi-paths-under-'))
+      try {
+        const ws = join(root, parentName, 'agent')
+        mkdirSync(join(ws, 'out'), { recursive: true })
+        writeFileSync(join(ws, 'out', 'report.pdf'), 'pdf')
+        writeFileSync(join(ws, '.env'), 'TOKEN=x')
+        const config = makeConfig({ workspace_root: ws })
+        expect(assertSendableFile({ filePath: 'out/report.pdf', config }).endsWith('/out/report.pdf')).toBe(true)
+        expect(() => assertSendableFile({ filePath: '.env', config })).toThrow(/refusing to send secret file/)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+  }
+})
