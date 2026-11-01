@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Bypass Permissions -> Down+Enter (дефолт «No, exit»), остальные диалоги
+# (dev channels, trust, внешние импорты) -> Enter. Всегда exit 0: зовётся
+# фоном из dashi-run, его код возврата никого не интересует, а падение
+# с ошибкой только засоряет журнал.
+set -u
+SESSION="${1:?usage: dashi-press-dialogs <tmux-session>}"
+# Замок на панель: в неё печатает ещё и автосжатие (context-autocompact.sh),
+# у которого между набором «/compact» и Enter есть пауза. Наш Enter в эту щель
+# подтверждает не ту строку, а на диалоге с «No, exit» -- выбивает Claude:
+# сессия умирает, systemd поднимает службу заново, и в журналетолько факт смерти.
+# 11.09.2026, агент Гора: 15 таких рестартов за день. Один писатель на панель.
+press() {
+  ( exec 9>"/tmp/dashi-pane-${SESSION//[^a-zA-Z0-9]/_}.lock"
+    flock -w 3 9 || exit 0
+    tmux send-keys -t "$SESSION" "$@" ) || true
+}
+# 40×3с = 2 мин: на слабом VPS (1 ГБ + своп) Claude грузится дольше 45 секунд
+for _ in $(seq 1 40); do
+  sleep 3
+  screen="$(tmux capture-pane -pt "$SESSION" 2>/dev/null)" || exit 0
+  # Строка статуса = стартовые экраны пройдены, Claude в работе. Проверяем её ПЕРВОЙ:
+  # фразы диалогов («Dark mode», «Press Enter to continue»…) бывают и в старой
+  # переписке на экране, и тогда сторож жал Enter в живой ввод (ревью 30.10.2026).
+  if grep -q "bypass permissions on" <<<"$screen"; then
+    exit 0
+  # 02.09.2026: Claude Code 2.1.25x спрашивает «Do you trust this folder?» с курсором на
+  # «No, exit» — слепой Enter ВЫХОДИЛ из Claude, сервис крутился в рестартах (живой прогон
+  # на Смите). Любой диалог, где выделено «No, exit», — сначала Down, потом Enter.
+  # 30.10.2026, агент Жора: «Allow external CLAUDE.md file imports?» стоит на «No, disable
+  # external imports» — Enter молча отрезал бы агенту core/rules.md и USER.md. Туда же.
+  elif grep -qE "❯ *No, (exit|disable external imports)" <<<"$screen"; then
+    press Down
+    sleep 1
+    press Enter
+  elif grep -q "Bypass Permissions" <<<"$screen"; then
+    press Down
+    sleep 1
+    press Enter
+  # Онбординг (выбор темы и пр.) раньше проходил человек при ручном логине;
+  # с годовым токеном логина нет — экраны всплывают при первом старте сервиса.
+  # 30.10.2026, агент Жора: ~/.claude.json пересоздался без hasCompletedOnboarding,
+  # Claude 2.1.308 после рестарта встал на «Security notes … Press Enter to continue»
+  # и бот молчал, пока кто-то не нажал Enter руками.
+  elif grep -qE "development channels|Do you trust|Enter to confirm|Light mode|Dark mode|text style|Syntax theme|Press Enter to continue" <<<"$screen"; then
+    press Enter
+  fi
+done
+exit 0

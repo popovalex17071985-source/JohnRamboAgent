@@ -17,8 +17,12 @@ BODY="$(awk '/^cat > "\$CTL" <<EOF$/{f=1;next} f&&/^EOF$/{exit} f' "$S")"
 grep -q 'rollback)' <<<"$BODY" || fail "в dashi-ctl нет команды rollback"
 REPO="$T/cd/dashi-plugin-claude-code"
 AGENT_NAME=smoke UNIT=dashi-smoke SERVICE_USER=agent REPO_DIR="$REPO" PLUGIN_DIR="$REPO/plugin"
-BRANCH=main ENV_FILE="$T/channel.env" CLAUDE_DIR="$T/cd" USER_ID=42
-: > "$ENV_FILE"
+BRANCH=main ENV_FILE="$T/etc/smoke/channel.env" CLAUDE_DIR="$T/cd" USER_ID=42
+# скрипты запуска -- во временный каталог (их обновление гоняет launch-scripts-refresh-smoke.sh)
+LAUNCH_BIN="$T/launch-bin" LAUNCH_STATE="$T/launch-state" AGENTS_ETC="$T/etc"
+eval "$(sed -n '/^launch_refresh() {/,/^}/p' "$S")"
+declare -F launch_refresh >/dev/null || fail "нет launch_refresh в установщике"
+mkdir -p "$T/etc/smoke"; : > "$ENV_FILE"
 eval "cat > \"\$T/ctl\" <<EOF
 $BODY
 EOF"

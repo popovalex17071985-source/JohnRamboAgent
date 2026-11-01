@@ -5,6 +5,9 @@
 set -euo pipefail
 
 S="$(cd "$(dirname "$0")/.." && pwd)/scripts/install-agent.sh"
+# Скрипты запуска лежат файлами (01.11.2026): их ставят и установщик, и dashi-ctl
+RUN="$(dirname "$S")/launch/dashi-run"
+PRESS="$(dirname "$S")/launch/dashi-press-dialogs"
 fail() { echo "✗ $1" >&2; exit 1; }
 
 bash -n "$S" || fail "синтаксис"
@@ -45,7 +48,7 @@ grep -q -- '--claude-token'           "$S" || fail "нет флага --claude-t
 # Модель агента: флаг --model → DASHI_MODEL в channel.env → --model у claude в tmux
 grep -q -- '--model)'                 "$S" || fail "нет флага --model"
 grep -q 'DASHI_MODEL=\$MODEL'         "$S" || fail "модель не пишется в channel.env"
-grep -q 'claude \${DASHI_MODEL:+--model \$DASHI_MODEL}' "$S" || fail "dashi-run не передаёт модель claude"
+grep -q 'claude \${DASHI_MODEL:+--model \$DASHI_MODEL}' "$RUN" || fail "dashi-run не передаёт модель claude"
 
 # Ремонтник-страховка: отдельный бот, отдельный юнит, не под root
 grep -q -- '--repair-token'           "$S" || fail "нет флага --repair-token (бот-страховка)"
@@ -61,7 +64,7 @@ grep -qE 'read -r -p "\$__prompt" __val </dev/tty 2>/dev/null' "$S" \
   && fail "ask(): stderr read'а уведён в /dev/null — приглашение не видно" || true
 
 # 02.09.2026: диалог «Do you trust this folder?» с курсором на «No, exit» — слепой Enter выходил из Claude.
-grep -q 'grep -qE "❯ \*No, (exit|disable external imports)"' "$S" || fail "dashi-press-dialogs: нет обработки диалога с выделенным «No, exit»"
+grep -q 'grep -qE "❯ \*No, (exit|disable external imports)"' "$PRESS" || fail "dashi-press-dialogs: нет обработки диалога с выделенным «No, exit»"
 
 # 02.09.2026: Claude Code 2.1.258 не читал plugin/.mcp.json на живом прогоне — мост регистрируется в user-scope.
 grep -q 'claude mcp add -s user dashi-channel -- bun ./src/server.ts' "$S" || fail "нет регистрации моста через claude mcp add -s user"
@@ -84,7 +87,7 @@ echo "✓ часы сервера = пояс хозяина (только пер
 # Enter) и автосжатие (пауза перед своим Enter). Столкновение подтверждало
 # «No, exit» и убивало Claude: у агента Гора 15 рестартов за день. Держим
 # инвариант: каждое нажатие в панель идёт через замок, и экран пишется в файл.
-press_block="$(sed -n '/^cat > \/usr\/local\/bin\/dashi-press-dialogs/,/^chmod 755 \/usr\/local\/bin\/dashi-press-dialogs/p' "$S")"
+press_block="$(cat "$PRESS")"
 grep -q 'flock -w' <<<"$press_block" || fail "сторож диалогов жмёт клавиши без замка на панель"
 # Ровно ОДНО tmux send-keys -- внутри press(). Больше: нажатие мимо замка.
 # Ноль: press() зовёт сам себя (так я и сломал агента Гора 11.09 -- вместо
@@ -98,7 +101,7 @@ echo "✓ один писатель на панель: нажатия сторо
 # Гоняем сам сторож с подменёнными tmux/sleep: экран диалога -> Enter, тот же текст
 # над строкой статуса (старая переписка) -> выход без нажатий.
 pd="$(mktemp -d)"
-sed -n "/^cat > \/usr\/local\/bin\/dashi-press-dialogs <<'EOF'/,/^EOF\$/p" "$S" | sed '1d;$d' >"$pd/press"
+cp "$PRESS" "$pd/press"
 cat >"$pd/tmux" <<'STUB'
 #!/usr/bin/env bash
 case "$1" in capture-pane) printf '%s\n' "$SCREEN" ;; send-keys) echo "${@: -1}" >>"$KEYS" ;; esac
@@ -150,8 +153,7 @@ rm -rf "$pd" "/tmp/dashi-pane-smoke_$$.lock"
 # 30.10.2026, Жора: ~/.claude.json переписан задачей от root -- без онбординга, доверия
 # и моста. dashi-run возвращает их до старта; целый файл не трогает, битый -- тоже.
 rd="$(mktemp -d)"
-sed -n "/^cat > \/usr\/local\/bin\/dashi-run <<'EOF'/,/^EOF\$/p" "$S" \
-  | sed -n "/^python3 -I - \"\$PLUGIN\" \"\$GIT_ROOT\" <<'PY'/,/^PY\$/p" | sed '1d;$d' >"$rd/fix.py"
+sed -n "/^python3 -I - \"\$PLUGIN\" \"\$GIT_ROOT\" <<'PY'/,/^PY\$/p" "$RUN" | sed '1d;$d' >"$rd/fix.py"
 [[ -s "$rd/fix.py" ]] || fail "не нашёл в dashi-run починку ~/.claude.json"
 echo '{"numStartups": 7}' >"$rd/.claude.json"
 HOME="$rd" python3 "$rd/fix.py" /srv/plugin /srv 2>/dev/null
@@ -208,7 +210,7 @@ HOME="$rd" python3 "$rd/fix.py" /srv/plugin /srv 2>/dev/null && fail "dashi-run 
 rm -rf "$rd"
 echo "✓ dashi-run возвращает онбординг, доверие и мост; целый и битый файл не трогает"
 echo "✓ экран «Security notes» сторож проходит Enter"
-grep -q 'tmux pipe-pane -o' "$S" || fail "экран сессии не пишется в файл -- падение снова будет немым"
+grep -q 'tmux pipe-pane -o' "$RUN" || fail "экран сессии не пишется в файл -- падение снова будет немым"
 echo "✓ экран сессии пишется в лог"
 
 # 12.09.2026: сторож ввода перезапускал ЖИВОГО агента раз в 25 минут. Две
@@ -227,7 +229,7 @@ fl="$(grep -c 'flock -w' "$MW")"
 echo "✓ замок панели берётся один раз"
 
 # После перезапуска хозяин видит «на связи» -- иначе непонятно, встал агент или нет
-grep -q 'перезапуск завершён' "$S" || fail "dashi-run не шлёт пинг «на связи» после старта"
+grep -q 'перезапуск завершён' "$RUN" || fail "dashi-run не шлёт пинг «на связи» после старта"
 
 # Подсказки владельцу про rclone: у «rclone authorize» нет флагов --client-id /
 # --client-secret (ID и секрет -- позиционно), а brew на чистом маке нет.

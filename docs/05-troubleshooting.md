@@ -99,7 +99,7 @@ Claude Code при первом запуске показывает **2 инте
 ExecStartPost=/bin/sh -c 'sleep 6 && /usr/bin/tmux send-keys -t channel-<agent> Enter && sleep 2 && /usr/bin/tmux send-keys -t channel-<agent> Enter'
 ```
 
-(два Enter с паузой — на оба промта). Надёжнее — повторить логику `dashi-press-dialogs` (текст в `scripts/install-agent.sh`, секция «8. systemd»).
+(два Enter с паузой — на оба промта). Надёжнее — повторить логику `dashi-press-dialogs` (текст в `scripts/launch/dashi-press-dialogs`).
 
 Persistent fix — записать accepts в `~/.claude/settings.json` (см. [03-installation.md → Persistent welcome approvals](03-installation.md#persistent-welcome-approvals)).
 

@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# Поднимает tmux-сессию с Claude и живёт, пока жива она (для Type=simple).
+# Плюс сторож моста: Telegram-мост (вебхук 127.0.0.1:PORT) был жив и пропал
+# на 2 проверки подряд -> выходим ненулевым, systemd перезапустит всё целиком.
+# Иначе классика «tmux жив, мост сдох»: systemd доволен, бот молчит, ремонт
+# только терминалом. До первого подъёма моста порт не проверяем — на свежей
+# установке Claude может стоять на логине сколько угодно.
+# Порт: аргумент → TELEGRAM_WEBHOOK_PORT из channel.env (EnvironmentFile юнита)
+# → 8089. Второй агент на хосте живёт на своём порту — сторож обязан смотреть туда же.
+set -uo pipefail
+SESSION="${1:?usage: dashi-run <tmux-session> <plugin-dir> [webhook-port]}"
+PLUGIN="${2:?usage: dashi-run <tmux-session> <plugin-dir> [webhook-port]}"
+PORT="${3:-${TELEGRAM_WEBHOOK_PORT:-8089}}"
+tmux kill-session -t "$SESSION" 2>/dev/null || true
+# 30.10.2026, агент Жора: задача от root переписала ~/.claude.json, и пропали три вещи:
+# онбординг, доверие к папке плагина (с одобрением внешних импортов правил) и мост
+# dashi-channel в user-scope. Claude встал на стартовых экранах, а пройдя их, поднялся
+# без моста: служба active, бот молчит. Возвращаем их до старта. Файл трогаем, только
+# если чего-то не хватает, и с копией. Claude пишет этот файл при выходе -- сначала
+# ждём, пока он завершится (не дольше 10 с: claude -p фоновых задач тоже в списке).
+# Доверие Claude ищет под корнем git (живой ~/.claude.json Жоры 30.10), а не под
+# папкой плагина: пишем в обе записи.
+for _ in $(seq 1 10); do pgrep -u "$(id -u)" -x claude >/dev/null || break; sleep 1; done
+pgrep -u "$(id -u)" -x claude >/dev/null \
+  && echo "dashi-run: ещё живы процессы claude -- при выходе могут переписать ~/.claude.json" >&2
+GIT_ROOT="$(git -C "$PLUGIN" rev-parse --show-toplevel 2>/dev/null || echo "$PLUGIN")"
+python3 -I - "$PLUGIN" "$GIT_ROOT" <<'PY' || echo "dashi-run: ~/.claude.json не проверен" >&2
+import json, os, shutil, sys, time
+path = os.path.expanduser("~/.claude.json")
+dirs = sorted(set(sys.argv[1:]))
+try:
+    with open(path) as f:
+        data = json.load(f)
+except FileNotFoundError:
+    data = {}
+except json.JSONDecodeError:
+    sys.exit("dashi-run: ~/.claude.json битый -- не трогаю")
+trust = {"hasTrustDialogAccepted": True, "hasClaudeMdExternalIncludesApproved": True,
+         "hasClaudeMdExternalIncludesWarningShown": True}
+projects = [data.setdefault("projects", {}).setdefault(d, {}) for d in dirs]
+servers = data.setdefault("mcpServers", {})
+missing = (not data.get("hasCompletedOnboarding")
+           or any(pr.get(k) is not True for pr in projects for k in trust)
+           or "dashi-channel" not in servers)
+if missing:
+    if os.path.exists(path):
+        shutil.copy2(path, f"{path}.bak-dashi-run-{time.strftime('%Y%m%d-%H%M%S')}")
+    data["hasCompletedOnboarding"] = True
+    for pr in projects:
+        pr.update(trust)
+    servers.setdefault("dashi-channel",
+                       {"type": "stdio", "command": "bun", "args": ["./src/server.ts"], "env": {}})
+    # 0600 с момента создания: в файле бывают ключи из mcpServers.*.env.
+    fd = os.open(path + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(data, f, indent=2)
+    os.replace(path + ".tmp", path)
+    print("dashi-run: вернул в ~/.claude.json онбординг, доверие к папке и мост", file=sys.stderr)
+PY
+tmux new-session -d -s "$SESSION" \
+  "/bin/bash -lc 'cd $PLUGIN && exec claude ${DASHI_MODEL:+--model $DASHI_MODEL} --dangerously-skip-permissions --dangerously-load-development-channels server:dashi-channel'"
+sleep 3
+# Экран сессии пишем в файл: Claude выводит всё в псевдотерминал, и когда он
+# умирает, в journald долетает только «сессия умерла», без причины. Файл
+# обнуляем на каждом старте -- нужен экран последнего падения, не архив.
+mkdir -p "$HOME/logs"
+# Предыдущий экран не стираем, а сдвигаем в .prev: причина падения видна
+# ИМЕННО в том, что было до смерти сессии, а старт затирал бы её начисто.
+[[ -f "$HOME/logs/tmux-pane.log" ]] && mv -f "$HOME/logs/tmux-pane.log" "$HOME/logs/tmux-pane.prev.log"
+: > "$HOME/logs/tmux-pane.log"
+tmux pipe-pane -o -t "$SESSION" "cat >> $HOME/logs/tmux-pane.log"
+tmux has-session -t "$SESSION" 2>/dev/null || { echo "tmux session did not start" >&2; exit 1; }
+/usr/local/bin/dashi-press-dialogs "$SESSION" &
+# Пинг хозяину «перезапуск завершён» -- один раз, когда мост впервые поднялся.
+# Без него после restart непонятно, готов агент или ещё встаёт: tmux жив, а
+# сообщения до Claude пока не доезжают. Код ответа -- в журнал службы, токен
+# никогда: молчаливый curl не оставляет следа, дошёл ли пинг (Jarvis 14.09.2026).
+notify_online() {
+  [[ -n "${TELEGRAM_BOT_TOKEN:-}" && -n "${TELEGRAM_ALLOWED_USER_IDS:-}" ]] || return 0
+  local code
+  code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' \
+    "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+    -d chat_id="${TELEGRAM_ALLOWED_USER_IDS%%,*}" \
+    --data-urlencode "text=🟢 на связи, work hard no drama (systemd, перезапуск завершён)") || code=000
+  echo "online ping: HTTP $code" >&2
+}
+seen_up=0 down=0
+while tmux has-session -t "$SESSION" 2>/dev/null; do
+  if (exec 3<>"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null; then
+    (( seen_up )) || notify_online &
+    seen_up=1 down=0
+  elif (( seen_up )); then
+    down=$((down + 1))
+    (( down >= 2 )) && { echo "bridge port $PORT dead, restarting" >&2; exit 1; }
+  fi
+  # Лог экрана пишется постоянно (у боевого агента ~15 МБ в сутки), а сессия
+  # может жить месяцами -- режем хвостом, не трогая файл как объект: pipe-pane
+  # держит его открытым на дозапись, и подмена через mv увела бы вывод в
+  # удалённый inode. Нужен последний экран, а не архив за месяц.
+  if (( $(stat -c%s "$HOME/logs/tmux-pane.log" 2>/dev/null || echo 0) > 4194304 )); then
+    tail -c 2097152 "$HOME/logs/tmux-pane.log" > "$HOME/logs/.pane-tail" \
+      && cat "$HOME/logs/.pane-tail" > "$HOME/logs/tmux-pane.log"
+    rm -f "$HOME/logs/.pane-tail"
+  fi
+  sleep 15
+done

@@ -93,6 +93,12 @@ retroactively marks the state of `main` on 2026-06-14.
   instead of letting the planner guess it from `FETCH_HEAD`.
 
 ### Fixed
+- **Launch scripts follow `/update`.** `dashi-run` and `dashi-press-dialogs` moved
+  from installer heredocs to `scripts/launch/`; one generator (`launch_refresh`,
+  embedded into `dashi-ctl`) installs them on install, `dashi-ctl update` (also
+  UPTODATE), `rollback` and `restart` -- validated, atomic, root:root 755, old copy
+  backed up, ROLLBACK restores both code and scripts. Needs one installer rerun on
+  agents installed earlier; on multi-agent hosts only the installer refreshes them.
 - **Fallback no longer leaks internal text (#105).** The «Stop hook feedback»
   line and turn-companion lines stay part of the original Telegram turn (its
   `reply` and `chat_id` are kept); a turn started by a background

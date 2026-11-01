@@ -240,7 +240,8 @@ ok "ветка обновлений: $BRANCH ($BRANCH_SRC)"
 # стучатся в 8089). Без обоих флагов честно останавливаемся.
 # `|| true` обязателен: на чистом сервере /etc/dashi-plugin нет, ls падает, и
 # set -e с pipefail молча ронял установку прямо здесь (e2e 02.09).
-OTHER_AGENTS="$(ls -1 /etc/dashi-plugin 2>/dev/null | grep -vx "$AGENT_NAME" | tr '\n' ' ' || true)"
+# Агенты -- ПАПКИ: файлы рядом (webhook.env слушателя вебхуков) агентами не считаются.
+OTHER_AGENTS="$(find /etc/dashi-plugin -mindepth 1 -maxdepth 1 -type d ! -name "$AGENT_NAME" -printf '%f ' 2>/dev/null || true)"
 if [[ -f "$ENV_FILE" ]]; then
   # Повторный прогон: порт и пользователь — те, что у агента уже есть
   [[ $PORT_GIVEN -eq 1 ]] || WEBHOOK_PORT="$(sed -n 's/^TELEGRAM_WEBHOOK_PORT=//p' "$ENV_FILE" | head -1)"
@@ -638,6 +639,7 @@ else
   ok "ключ к репозиторию подошёл"
 fi
 
+REPO_SYNCED=0   # клон сброшен ровно на origin в этом прогоне (его читает шаг 8)
 if [[ -d "$CLAUDE_DIR/dashi-plugin-claude-code/.git" ]]; then
   [[ -n "$REPO_TOKEN" ]] && save_repo_token
   # Повторный прогон = обновление плагина, иначе фиксы моста не доезжают.
@@ -651,12 +653,13 @@ if [[ -d "$CLAUDE_DIR/dashi-plugin-claude-code/.git" ]]; then
     warn "закоммить или откати их (git -C $CLAUDE_DIR/dashi-plugin-claude-code status) и запусти снова"
   else
     as_agent "cd '$CLAUDE_DIR/dashi-plugin-claude-code' && git remote set-url origin '$REPO_URL' && $GIT_SSH_BATCH GIT_TERMINAL_PROMPT=0 timeout 300 git fetch --depth 1 origin '$BRANCH' && git reset --hard FETCH_HEAD" >/dev/null 2>&1 \
-      && ok "плагин обновлён до свежего $BRANCH" \
+      && { REPO_SYNCED=1; ok "плагин обновлён до свежего $BRANCH"; } \
       || warn "не смог обновить плагин (нет сети до GitHub?) — работаю на том, что есть"
   fi
 else
   as_agent "$(repo_clone_cmd)" >/dev/null 2>&1 || die "не удалось склонировать $REPO_URL"
   [[ -n "$REPO_TOKEN" ]] && save_repo_token
+  REPO_SYNCED=1
   ok "плагин склонирован"
 fi
 
@@ -1089,178 +1092,130 @@ fi
 # ─────────────────────────────────────────────────────────────────────────────
 # 8. systemd
 # ─────────────────────────────────────────────────────────────────────────────
-# Прожиматель стартовых диалогов: смотрит на экран и жмёт нужное. Слепой
-# Down+Enter ломался, когда bypass-вопрос уже принят: Down попадал в диалог
-# dev-каналов и выбирал «Exit» — сервис сам убивал Claude (кейс 20.08.2026).
-say "Прожиматель стартовых диалогов"
-cat > /usr/local/bin/dashi-press-dialogs <<'EOF'
-#!/usr/bin/env bash
-# Bypass Permissions -> Down+Enter (дефолт «No, exit»), остальные диалоги
-# (dev channels, trust, внешние импорты) -> Enter. Всегда exit 0: зовётся
-# фоном из dashi-run, его код возврата никого не интересует, а падение
-# с ошибкой только засоряет журнал.
-set -u
-SESSION="${1:?usage: dashi-press-dialogs <tmux-session>}"
-# Замок на панель: в неё печатает ещё и автосжатие (context-autocompact.sh),
-# у которого между набором «/compact» и Enter есть пауза. Наш Enter в эту щель
-# подтверждает не ту строку, а на диалоге с «No, exit» -- выбивает Claude:
-# сессия умирает, systemd поднимает службу заново, и в журналетолько факт смерти.
-# 11.09.2026, агент Гора: 15 таких рестартов за день. Один писатель на панель.
-press() {
-  ( exec 9>"/tmp/dashi-pane-${SESSION//[^a-zA-Z0-9]/_}.lock"
-    flock -w 3 9 || exit 0
-    tmux send-keys -t "$SESSION" "$@" ) || true
-}
-# 40×3с = 2 мин: на слабом VPS (1 ГБ + своп) Claude грузится дольше 45 секунд
-for _ in $(seq 1 40); do
-  sleep 3
-  screen="$(tmux capture-pane -pt "$SESSION" 2>/dev/null)" || exit 0
-  # Строка статуса = стартовые экраны пройдены, Claude в работе. Проверяем её ПЕРВОЙ:
-  # фразы диалогов («Dark mode», «Press Enter to continue»…) бывают и в старой
-  # переписке на экране, и тогда сторож жал Enter в живой ввод (ревью 30.10.2026).
-  if grep -q "bypass permissions on" <<<"$screen"; then
+# Скрипты запуска: держатель сессии dashi-run и прожиматель стартовых диалогов
+# dashi-press-dialogs (что и зачем -- в шапках самих файлов, scripts/launch/).
+# Лежат файлами в репозитории и ставятся ОДНИМ генератором -- этим, им же
+# пользуется dashi-ctl (update, rollback, restart; текст функции вшивается в него
+# при установке). Раньше их писал только установщик своим heredoc, и обновления
+# двигали код, но не их: фиксы 30.10 до обновлённых агентов не доехали (01.11.2026).
+say "Скрипты запуска (держатель сессии, прожиматель диалогов)"
+LAUNCH_BIN=/usr/local/bin
+LAUNCH_STATE=/var/lib/dashi-plugin/launch
+# launch_refresh SRC USER BIN STATE -- ставит SRC/{dashi-run,dashi-press-dialogs}
+# в BIN: 0 = поставлено или и так одинаковые, 1 = сбой, в BIN всё как было.
+#  - читает из клона ПОД АГЕНТОМ (runuser): симлинк в клоне на чужой файл не даст
+#    root'у вынести его содержимое в общедоступный BIN;
+#  - проверка до замены: строка #!/usr/bin/env bash, размер, bash -n;
+#  - замена атомарная (временный файл рядом + mv: работающий bash дочитывает
+#    старый inode), root:root 755, прежняя копия -- в STATE/backup/<имя>.<время>;
+#  - при первом вызове откладывает то, что лежало, в STATE/legacy: это скрипты
+#    версий без scripts/launch, их возвращает откат на такую версию.
+# Пишет на stderr. Тело -- подоболочка: замок и переменные не утекают наружу.
+launch_refresh() {
+  (
+    src="$1" user="$2" bin="$3" state="$4"
+    names=(dashi-run dashi-press-dialogs)
+    mkdir -p "$bin" && mkdir -p -m 700 "$state" || exit 1
+    exec 8>>"$state/lock" && flock -w 60 8 || { echo "скрипты запуска: занято другим обновлением" >&2; exit 1; }
+    if [[ ! -d "$state/legacy" ]]; then
+      mkdir -m 700 "$state/legacy" || exit 1
+      for n in "${names[@]}"; do
+        if [[ -f "$bin/$n" ]]; then cp -p "$bin/$n" "$state/legacy/$n" || exit 1; fi
+      done
+    fi
+    # head -c: не больше лимита (FIFO или гигантский файл в клоне не повесят и не
+    # забьют диск root'у), timeout -- на тот же FIFO
+    reader=(timeout 30 runuser -u "$user" -- head -c 262145 --)
+    # Есть ли файлы -- смотрит root (lstat, содержимое не читается): сбой runuser
+    # или таймаут не должен выглядеть как «версия без scripts/launch» и
+    # возвращать скрипты до первой замены. Читаем потом всё равно под агентом.
+    have=0
+    for n in "${names[@]}"; do
+      if [[ -e "$src/$n" || -L "$src/$n" ]]; then have=$((have + 1)); fi
+      # сироты прошлых прогонов, убитых SIGKILL/OOM (trap их не ловит)
+      find "$bin" -maxdepth 1 -name ".$n.??????" -type f -mmin +60 -delete 2>/dev/null || true
+    done
+    if (( have == 0 )); then
+      src="$state/legacy"; reader=(head -c 262145 --)
+      for n in "${names[@]}"; do [[ -f "$src/$n" ]] || exit 0; done
+    elif (( have != ${#names[@]} )); then
+      echo "скрипты запуска: в $src лежат не все -- не трогаю" >&2; exit 1
+    fi
+    declare -A tmp=()
+    changed=() placed=() bad=0
+    # ${a[@]+...}: пустой массив под set -u на bash < 4.4 -- «unbound variable»
+    drop() { for f in ${tmp[@]+"${tmp[@]}"}; do rm -f -- "$f"; done; }
+    trap drop EXIT   # убит сигналом посреди -- временные файлы не остаются
+    for n in "${names[@]}"; do
+      f="$(mktemp "$bin/.$n.XXXXXX")" || { drop; exit 1; }
+      tmp[$n]="$f"
+      if ! "${reader[@]}" "$src/$n" >"$f" \
+         || [[ "$(head -n 1 -- "$f")" != '#!/usr/bin/env bash' ]] \
+         || (( $(stat -c %s -- "$f") > 262144 )) \
+         || ! bash -n "$f" 2>/dev/null; then
+        echo "скрипты запуска: $src/$n не прошёл проверку -- не ставлю ни один" >&2
+        drop; exit 1
+      fi
+      if ! cmp -s -- "$f" "$bin/$n"; then changed+=("$n"); fi
+    done
+    if (( ${#changed[@]} == 0 )); then drop; exit 0; fi
+    stamp="$(date +%Y%m%d-%H%M%S)-$$"
+    mkdir -p -m 700 "$state/backup" || { drop; exit 1; }
+    for n in "${changed[@]}"; do
+      if [[ -f "$bin/$n" ]] && ! cp -p -- "$bin/$n" "$state/backup/$n.$stamp"; then bad=1; break; fi
+      if chown root:root -- "${tmp[$n]}" && chmod 755 -- "${tmp[$n]}" && mv -f -- "${tmp[$n]}" "$bin/$n"; then
+        unset 'tmp[$n]'; placed+=("$n")
+      else
+        bad=1; break
+      fi
+    done
+    if [[ "${bad:-0}" == 1 ]]; then
+      for n in ${placed[@]+"${placed[@]}"}; do
+        if [[ -f "$state/backup/$n.$stamp" ]]; then
+          cp -p -- "$state/backup/$n.$stamp" "$bin/.$n.back" && mv -f -- "$bin/.$n.back" "$bin/$n"
+        else
+          rm -f -- "$bin/$n"
+        fi
+      done
+      drop; echo "скрипты запуска: замена не прошла -- вернул прежние" >&2; exit 1
+    fi
+    for n in "${changed[@]}"; do
+      ls -1t -- "$state/backup/$n".* 2>/dev/null | tail -n +11 | xargs -r rm -f -- || true
+    done
+    drop   # временные файлы тех, что совпали и не менялись
+    echo "скрипты запуска обновлены: ${changed[*]} (прежние копии: $state/backup)" >&2
     exit 0
-  # 02.09.2026: Claude Code 2.1.25x спрашивает «Do you trust this folder?» с курсором на
-  # «No, exit» — слепой Enter ВЫХОДИЛ из Claude, сервис крутился в рестартах (живой прогон
-  # на Смите). Любой диалог, где выделено «No, exit», — сначала Down, потом Enter.
-  # 30.10.2026, агент Жора: «Allow external CLAUDE.md file imports?» стоит на «No, disable
-  # external imports» — Enter молча отрезал бы агенту core/rules.md и USER.md. Туда же.
-  elif grep -qE "❯ *No, (exit|disable external imports)" <<<"$screen"; then
-    press Down
-    sleep 1
-    press Enter
-  elif grep -q "Bypass Permissions" <<<"$screen"; then
-    press Down
-    sleep 1
-    press Enter
-  # Онбординг (выбор темы и пр.) раньше проходил человек при ручном логине;
-  # с годовым токеном логина нет — экраны всплывают при первом старте сервиса.
-  # 30.10.2026, агент Жора: ~/.claude.json пересоздался без hasCompletedOnboarding,
-  # Claude 2.1.308 после рестарта встал на «Security notes … Press Enter to continue»
-  # и бот молчал, пока кто-то не нажал Enter руками.
-  elif grep -qE "development channels|Do you trust|Enter to confirm|Light mode|Dark mode|text style|Syntax theme|Press Enter to continue" <<<"$screen"; then
-    press Enter
-  fi
-done
-exit 0
-EOF
-chmod 755 /usr/local/bin/dashi-press-dialogs
-ok "диалоги жмутся по содержимому экрана, не вслепую"
-
-# Держатель сессии: Type=forking с tmux ненадёжен — systemd теряет main PID
-# демонизировавшегося tmux-сервера и тут же зовёт ExecStop, убивая только что
-# поднятого агента (кейс 20.08.2026). Type=simple + процесс, живущий пока жива
-# сессия, — проверенная схема.
-cat > /usr/local/bin/dashi-run <<'EOF'
-#!/usr/bin/env bash
-# Поднимает tmux-сессию с Claude и живёт, пока жива она (для Type=simple).
-# Плюс сторож моста: Telegram-мост (вебхук 127.0.0.1:PORT) был жив и пропал
-# на 2 проверки подряд -> выходим ненулевым, systemd перезапустит всё целиком.
-# Иначе классика «tmux жив, мост сдох»: systemd доволен, бот молчит, ремонт
-# только терминалом. До первого подъёма моста порт не проверяем — на свежей
-# установке Claude может стоять на логине сколько угодно.
-# Порт: аргумент → TELEGRAM_WEBHOOK_PORT из channel.env (EnvironmentFile юнита)
-# → 8089. Второй агент на хосте живёт на своём порту — сторож обязан смотреть туда же.
-set -uo pipefail
-SESSION="${1:?usage: dashi-run <tmux-session> <plugin-dir> [webhook-port]}"
-PLUGIN="${2:?usage: dashi-run <tmux-session> <plugin-dir> [webhook-port]}"
-PORT="${3:-${TELEGRAM_WEBHOOK_PORT:-8089}}"
-tmux kill-session -t "$SESSION" 2>/dev/null || true
-# 30.10.2026, агент Жора: задача от root переписала ~/.claude.json, и пропали три вещи:
-# онбординг, доверие к папке плагина (с одобрением внешних импортов правил) и мост
-# dashi-channel в user-scope. Claude встал на стартовых экранах, а пройдя их, поднялся
-# без моста: служба active, бот молчит. Возвращаем их до старта. Файл трогаем, только
-# если чего-то не хватает, и с копией. Claude пишет этот файл при выходе -- сначала
-# ждём, пока он завершится (не дольше 10 с: claude -p фоновых задач тоже в списке).
-# Доверие Claude ищет под корнем git (живой ~/.claude.json Жоры 30.10), а не под
-# папкой плагина: пишем в обе записи.
-for _ in $(seq 1 10); do pgrep -u "$(id -u)" -x claude >/dev/null || break; sleep 1; done
-pgrep -u "$(id -u)" -x claude >/dev/null \
-  && echo "dashi-run: ещё живы процессы claude -- при выходе могут переписать ~/.claude.json" >&2
-GIT_ROOT="$(git -C "$PLUGIN" rev-parse --show-toplevel 2>/dev/null || echo "$PLUGIN")"
-python3 -I - "$PLUGIN" "$GIT_ROOT" <<'PY' || echo "dashi-run: ~/.claude.json не проверен" >&2
-import json, os, shutil, sys, time
-path = os.path.expanduser("~/.claude.json")
-dirs = sorted(set(sys.argv[1:]))
-try:
-    with open(path) as f:
-        data = json.load(f)
-except FileNotFoundError:
-    data = {}
-except json.JSONDecodeError:
-    sys.exit("dashi-run: ~/.claude.json битый -- не трогаю")
-trust = {"hasTrustDialogAccepted": True, "hasClaudeMdExternalIncludesApproved": True,
-         "hasClaudeMdExternalIncludesWarningShown": True}
-projects = [data.setdefault("projects", {}).setdefault(d, {}) for d in dirs]
-servers = data.setdefault("mcpServers", {})
-missing = (not data.get("hasCompletedOnboarding")
-           or any(pr.get(k) is not True for pr in projects for k in trust)
-           or "dashi-channel" not in servers)
-if missing:
-    if os.path.exists(path):
-        shutil.copy2(path, f"{path}.bak-dashi-run-{time.strftime('%Y%m%d-%H%M%S')}")
-    data["hasCompletedOnboarding"] = True
-    for pr in projects:
-        pr.update(trust)
-    servers.setdefault("dashi-channel",
-                       {"type": "stdio", "command": "bun", "args": ["./src/server.ts"], "env": {}})
-    # 0600 с момента создания: в файле бывают ключи из mcpServers.*.env.
-    fd = os.open(path + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as f:
-        json.dump(data, f, indent=2)
-    os.replace(path + ".tmp", path)
-    print("dashi-run: вернул в ~/.claude.json онбординг, доверие к папке и мост", file=sys.stderr)
-PY
-tmux new-session -d -s "$SESSION" \
-  "/bin/bash -lc 'cd $PLUGIN && exec claude ${DASHI_MODEL:+--model $DASHI_MODEL} --dangerously-skip-permissions --dangerously-load-development-channels server:dashi-channel'"
-sleep 3
-# Экран сессии пишем в файл: Claude выводит всё в псевдотерминал, и когда он
-# умирает, в journald долетает только «сессия умерла», без причины. Файл
-# обнуляем на каждом старте -- нужен экран последнего падения, не архив.
-mkdir -p "$HOME/logs"
-# Предыдущий экран не стираем, а сдвигаем в .prev: причина падения видна
-# ИМЕННО в том, что было до смерти сессии, а старт затирал бы её начисто.
-[[ -f "$HOME/logs/tmux-pane.log" ]] && mv -f "$HOME/logs/tmux-pane.log" "$HOME/logs/tmux-pane.prev.log"
-: > "$HOME/logs/tmux-pane.log"
-tmux pipe-pane -o -t "$SESSION" "cat >> $HOME/logs/tmux-pane.log"
-tmux has-session -t "$SESSION" 2>/dev/null || { echo "tmux session did not start" >&2; exit 1; }
-/usr/local/bin/dashi-press-dialogs "$SESSION" &
-# Пинг хозяину «перезапуск завершён» -- один раз, когда мост впервые поднялся.
-# Без него после restart непонятно, готов агент или ещё встаёт: tmux жив, а
-# сообщения до Claude пока не доезжают. Код ответа -- в журнал службы, токен
-# никогда: молчаливый curl не оставляет следа, дошёл ли пинг (Jarvis 14.09.2026).
-notify_online() {
-  [[ -n "${TELEGRAM_BOT_TOKEN:-}" && -n "${TELEGRAM_ALLOWED_USER_IDS:-}" ]] || return 0
-  local code
-  code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' \
-    "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-    -d chat_id="${TELEGRAM_ALLOWED_USER_IDS%%,*}" \
-    --data-urlencode "text=🟢 на связи, work hard no drama (systemd, перезапуск завершён)") || code=000
-  echo "online ping: HTTP $code" >&2
+  )
 }
-seen_up=0 down=0
-while tmux has-session -t "$SESSION" 2>/dev/null; do
-  if (exec 3<>"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null; then
-    (( seen_up )) || notify_online &
-    seen_up=1 down=0
-  elif (( seen_up )); then
-    down=$((down + 1))
-    (( down >= 2 )) && { echo "bridge port $PORT dead, restarting" >&2; exit 1; }
+# На сервере с несколькими агентами скрипты общие, их исполняют сервисы всех агентов
+# под своими пользователями. Ставим из клона этого агента, только если шаг 4 сбросил
+# его ровно на origin и в scripts/launch нет правок -- иначе оставляем прежние.
+# dashi-ctl при соседях их не трогает вовсе.
+LAUNCH_RC=0 LAUNCH_SKIP=""
+if [[ -n "$OTHER_AGENTS" ]]; then
+  if [[ "$REPO_SYNCED" != 1 ]]; then
+    LAUNCH_SKIP="клон плагина не обновился до $BRANCH"
+  elif [[ -n "$(as_agent "git -C '$REPO_DIR' status --porcelain -- scripts/launch" 2>/dev/null || echo '?')" ]]; then
+    LAUNCH_SKIP="в scripts/launch клона правки руками"
   fi
-  # Лог экрана пишется постоянно (у боевого агента ~15 МБ в сутки), а сессия
-  # может жить месяцами -- режем хвостом, не трогая файл как объект: pipe-pane
-  # держит его открытым на дозапись, и подмена через mv увела бы вывод в
-  # удалённый inode. Нужен последний экран, а не архив за месяц.
-  if (( $(stat -c%s "$HOME/logs/tmux-pane.log" 2>/dev/null || echo 0) > 4194304 )); then
-    tail -c 2097152 "$HOME/logs/tmux-pane.log" > "$HOME/logs/.pane-tail" \
-      && cat "$HOME/logs/.pane-tail" > "$HOME/logs/tmux-pane.log"
-    rm -f "$HOME/logs/.pane-tail"
-  fi
-  sleep 15
-done
-EOF
-chmod 755 /usr/local/bin/dashi-run
-ok "держатель сессии установлен"
+fi
+[[ -n "$LAUNCH_SKIP" ]] \
+  || launch_refresh "$REPO_DIR/scripts/launch" "$SERVICE_USER" "$LAUNCH_BIN" "$LAUNCH_STATE" || LAUNCH_RC=$?
+if [[ ! -x "$LAUNCH_BIN/dashi-run" || ! -x "$LAUNCH_BIN/dashi-press-dialogs" ]]; then
+  die "нет скриптов запуска в $LAUNCH_BIN (${LAUNCH_SKIP:-в клоне плагина нет scripts/launch?}) -- сервис не поднимется"
+elif [[ -n "$LAUNCH_SKIP" ]]; then
+  warn "скрипты запуска общие для агентов сервера ($OTHER_AGENTS), а $LAUNCH_SKIP -- из него не ставлю, остались прежние"
+elif (( LAUNCH_RC )) && [[ -n "$OTHER_AGENTS" ]]; then
+  # При соседях их мог положить dashi-ctl одного из агентов, пока тот был один:
+  # оставить как есть = чужой код под пользователями соседей. Чиним, а не молчим.
+  die "скрипты запуска не встали (причина выше), а на сервере есть и другие агенты ($OTHER_AGENTS): лежащие могли остаться от одного из них -- поправь причину (битый файл в origin -- починить там) и повтори установку"
+elif (( LAUNCH_RC )); then
+  warn "скрипты запуска не обновились -- остались прежние"
+elif ! as_agent "test -d '$REPO_DIR/scripts/launch'" 2>/dev/null; then
+  warn "клон плагина старый (в нём нет scripts/launch) -- скрипты запуска остались прежними; обнови клон и повтори"
+else
+  ok "держатель сессии и прожиматель диалогов на месте (из scripts/launch)"
+fi
 
 say "Автозапуск ($UNIT)"
 cat > "/etc/systemd/system/$UNIT.service" <<EOF
@@ -1309,6 +1264,7 @@ say "Sudo для самообслуживания"
 # root-owned скрипт с зашитыми путями — валидация аргументов внутри него.
 CTL="/usr/local/bin/dashi-ctl-$AGENT_NAME"
 REPO_DIR="$CLAUDE_DIR/dashi-plugin-claude-code"
+AGENTS_ETC="$(dirname "$(dirname "$ENV_FILE")")"
 cat > "$CTL" <<EOF
 #!/usr/bin/env bash
 # Самообслуживание агента $AGENT_NAME. Принадлежит root, зовётся через sudo.
@@ -1320,12 +1276,37 @@ dirty() { g status --porcelain -- . ':!plugin/bun.lock' | awk 'NR<=5{print \$2}'
 # rollback. Отдельная ссылка в git: её не съест уборка git и не сдвинет fetch,
 # а для отката нужна только локальная история (сеть не нужна).
 PREV=refs/dashi/pre-update
-# Сдвинуть код на \$1: бэкап рядом (.bak), reset, bun install, комплект
-# дисциплины. Падение reset/bun = код возвращается из .bak, ненулевой код.
+# Скрипты запуска (dashi-run, dashi-press-dialogs) из клона -- тем же генератором,
+# что у установщика: текст launch_refresh вшит сюда из него при установке. Исполняет
+# их только сервис агента (под агентом), не root. Они общие на сервер: при соседях
+# свой клон в них не кладём -- их исполняют и чужие сервисы, это дело установщика.
+$(declare -f launch_refresh)
+launch() {
+  local o d
+  # Соседи -- ПАПКИ агентов (файлы рядом, например webhook.env, не в счёт).
+  # Не вышло посмотреть -- считаем, что соседи есть.
+  o="\$(find '$AGENTS_ETC' -mindepth 1 -maxdepth 1 -type d ! -name '$AGENT_NAME' -printf '%f ')" || o="?"
+  if [[ -n "\$o" ]]; then
+    echo "скрипты запуска не трогаю: на сервере есть и другие агенты (\$o) -- их обновит повторный прогон установщика" >&2
+    return 0
+  fi
+  # restart ставит из рабочей копии: правки руками в scripts/launch не ставим --
+  # неудачная уронила бы агента в круг рестартов, а rollback на правках отказывает.
+  d="\$(g status --porcelain -- scripts/launch)" || d="?"
+  if [[ -n "\$d" ]]; then
+    echo "скрипты запуска не трогаю: в scripts/launch правки руками" >&2
+    return 0
+  fi
+  launch_refresh '$REPO_DIR/scripts/launch' '$SERVICE_USER' '$LAUNCH_BIN' '$LAUNCH_STATE'
+}
+# Сдвинуть код на \$1: бэкап рядом (.bak), reset, bun install, скрипты запуска,
+# комплект дисциплины. Падение reset/bun/скриптов = код возвращается из .bak,
+# скрипты запуска остаются прежними, ненулевой код.
 switch_to() {
   rm -rf $REPO_DIR.bak; cp -a $REPO_DIR $REPO_DIR.bak
   if g reset -q --hard "\$1" \\
-     && runuser -u $SERVICE_USER -- bash -lc "cd '$PLUGIN_DIR' && ~/.bun/bin/bun install --silent"; then
+     && runuser -u $SERVICE_USER -- bash -lc "cd '$PLUGIN_DIR' && ~/.bun/bin/bun install --silent" \\
+     && launch; then
     # Комплект дисциплины лежит КОПИЯМИ в ~/.claude, а не читается из
     # репозитория — без этого прогона новые гейты и реестры доезжают
     # до кода, но не до агента. Скрипт идемпотентен и не трогает
@@ -1346,7 +1327,10 @@ usage() {
   exit 2
 }
 case "\${1:-}" in
-  restart)       exec systemctl restart $UNIT ;;
+  restart)       # /update из чата двигает код без root и кончается этим restart:
+                 # скрипты запуска подтягиваем здесь. Не встали -- старт на прежних.
+                 launch || echo "скрипты запуска не обновились -- перезапускаю на прежних" >&2
+                 exec systemctl restart $UNIT ;;
   status)        exec systemctl status $UNIT --no-pager ;;
   logs)          n="\${2:-100}"; [[ "\$n" =~ ^[0-9]{1,5}\$ ]] || exit 2
                  exec journalctl -u $UNIT -n "\$n" --no-pager ;;
@@ -1365,7 +1349,9 @@ case "\${1:-}" in
                  if [[ -n "\$d" && "\${2:-}" != force ]]; then echo "DIRTY \$d"; exit 3; fi
                  g fetch -q --depth 30 origin $BRANCH || { echo NOFETCH; exit 5; }
                  n="\$(g rev-list --count HEAD..FETCH_HEAD)"
-                 [[ "\$n" == 0 ]] && { echo UPTODATE; exit 0; }
+                 # Код свежий, а скрипты запуска могли остаться от установки: сверяем
+                 # и ставим (сработают со следующего старта, рестарт не нужен).
+                 [[ "\$n" == 0 ]] && { launch || echo "скрипты запуска не обновились" >&2; echo UPTODATE; exit 0; }
                  from="\$(g rev-parse HEAD)"
                  switch_to FETCH_HEAD || { echo ROLLBACK; exit 4; }
                  g update-ref --create-reflog -m update "\$PREV" "\$from" || echo "точка отката не сохранилась" >&2
