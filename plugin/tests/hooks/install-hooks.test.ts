@@ -468,6 +468,86 @@ describe('applyPatch (pure) — channel reminder', () => {
   })
 })
 
+// Lena 01.11.2026: a rerun left channel-reminder twice — an UNMARKED entry with
+// the very same command next to the freshly added marked one. An unmarked hook
+// whose command is byte-identical to one we install is ours: it is adopted
+// (replaced by the marked entry). Different commands and foreign hooks stay.
+describe('applyPatch (pure) — unmarked copies of our own hooks', () => {
+  type Hooks = Record<string, Array<{ marker?: string; matcher?: string; hooks: Array<{ type: 'command'; command: string; timeout?: number }> }>>
+  const opts = {
+    settingsPath: '/tmp/x', chatId: '1', webhookUrl: 'http://127.0.0.1:8093/hooks/agent',
+    helperPath: '/p/scripts/post-hook.ts', reminderHelperPath: '/p/scripts/channel-reminder.ts',
+    reminderStateDir: '/home/u/.claude/channels/dashi-telegram-canary',
+    permissionGateHelperPath: '/p/scripts/permission-gate-hook.ts',
+  }
+  const fresh = applyPatch({}, opts) as { hooks: Hooks }
+  const cmdOf = (ev: string, marker: string): string =>
+    fresh.hooks[ev]!.find((e) => e.marker === marker)!.hooks[0]!.command
+  const reminderCmd = cmdOf('UserPromptSubmit', 'dashi-channel-reminder-hook')
+  const gateCmd = cmdOf('PreToolUse', 'dashi-permission-gate-hook')
+  const count = (h: Hooks, ev: string, cmd: string): number =>
+    (h[ev] ?? []).flatMap((e) => e.hooks).filter((x) => x.command === cmd).length
+
+  test('unmarked identical reminder entries are replaced by one marked entry', () => {
+    const before = { hooks: { UserPromptSubmit: [
+      { hooks: [{ type: 'command' as const, command: reminderCmd }] },
+      { matcher: '', hooks: [{ type: 'command' as const, command: reminderCmd }] },
+    ] } }
+    const out = applyPatch(before, opts) as { hooks: Hooks }
+    expect(count(out.hooks, 'UserPromptSubmit', reminderCmd)).toBe(1)
+    const owner = out.hooks.UserPromptSubmit!.find((e) => e.hooks.some((x) => x.command === reminderCmd))
+    expect(owner!.marker).toBe('dashi-channel-reminder-hook')
+    // and a second rerun keeps it at one
+    const again = applyPatch(out, opts) as { hooks: Hooks }
+    expect(count(again.hooks, 'UserPromptSubmit', reminderCmd)).toBe(1)
+  })
+
+  test('unmarked identical gate entry is adopted too, gate stays first', () => {
+    const before = { hooks: { PreToolUse: [
+      { matcher: 'Bash', hooks: [{ type: 'command' as const, command: '/h/block-dangerous.sh', timeout: 5 }] },
+      { matcher: '.*', hooks: [{ type: 'command' as const, command: gateCmd }] },
+    ] } }
+    const out = applyPatch(before, opts) as { hooks: Hooks }
+    expect(count(out.hooks, 'PreToolUse', gateCmd)).toBe(1)
+    expect(out.hooks.PreToolUse![0]!.marker).toBe('dashi-permission-gate-hook')
+    expect(count(out.hooks, 'PreToolUse', '/h/block-dangerous.sh')).toBe(1)
+  })
+
+  test('a foreign hook sharing the entry with our copy is left in place', () => {
+    const before = { hooks: { UserPromptSubmit: [
+      { matcher: '', hooks: [
+        { type: 'command' as const, command: '/h/owner-clock.sh', timeout: 5 },
+        { type: 'command' as const, command: reminderCmd },
+      ] },
+    ] } }
+    const out = applyPatch(before, opts) as { hooks: Hooks }
+    expect(count(out.hooks, 'UserPromptSubmit', reminderCmd)).toBe(1)
+    const foreign = out.hooks.UserPromptSubmit!.find((e) => e.hooks.some((x) => x.command === '/h/owner-clock.sh'))
+    expect(foreign).toEqual({ matcher: '', hooks: [{ type: 'command', command: '/h/owner-clock.sh', timeout: 5 }] })
+  })
+
+  test('different commands stay: another channel-reminder, foreign duplicates, other events', () => {
+    const otherReminder = "CHAT_ID='1' bun '/old/place/scripts/channel-reminder.ts'"
+    const ovRepo = '/repo/scripts/memory/ov-recall.py'
+    const ovKit = '/usr/bin/python3 /home/u/.claude/hooks/ov-recall.py'
+    const before = { hooks: {
+      UserPromptSubmit: [
+        { hooks: [{ type: 'command' as const, command: otherReminder }] },
+        { matcher: '', hooks: [{ type: 'command' as const, command: ovRepo, timeout: 8 }] },
+        { matcher: '', hooks: [{ type: 'command' as const, command: ovKit, timeout: 8 }] },
+        { matcher: '', hooks: [{ type: 'command' as const, command: ovKit, timeout: 8 }] },
+      ],
+      // our reminder command on an event we do not install it on is not ours to touch
+      Stop: [{ hooks: [{ type: 'command' as const, command: reminderCmd }] }],
+    } }
+    const out = applyPatch(before, opts) as { hooks: Hooks }
+    expect(count(out.hooks, 'UserPromptSubmit', otherReminder)).toBe(1)
+    expect(count(out.hooks, 'UserPromptSubmit', ovRepo)).toBe(1)
+    expect(count(out.hooks, 'UserPromptSubmit', ovKit)).toBe(2)
+    expect(count(out.hooks, 'Stop', reminderCmd)).toBe(1)
+  })
+})
+
 // ─────────────────────────────────────────────────────────────────────
 // Review fix-loop 2026-07-09 SHOULD — wide-feeder narrowing detection
 // ─────────────────────────────────────────────────────────────────────
