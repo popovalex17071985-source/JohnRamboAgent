@@ -330,6 +330,19 @@ if [[ "$est_b" =~ ^[0-9]+$ && "$free_b" =~ ^[0-9]+$ ]]; then
   fi
 fi
 
+# Files the agent cannot read drop out of the archive (tar: Permission denied). The
+# usual cause is root: the OpenViking container ran as root before 01.11.2026 and left
+# root:600 files in ~/.openviking (Smith), a root fix by hand does the same. Give the
+# home back through the agent's own fix-owner (sudoers allows exactly that) first.
+CTL="${DASHI_CTL:-/usr/local/bin/dashi-ctl-$AGENT}"
+if [[ $EUID -ne 0 ]] && find "$AGENT_HOME" -xdev ! -readable -print -quit 2>/dev/null | grep -q .; then
+  if [[ -x "$CTL" ]] && sudo -n "$CTL" fix-owner >/dev/null 2>>"$LOG"; then
+    log "в домашке были файлы, которые агент не мог прочитать (чужой владелец) -- вернул себе через fix-owner"
+  else
+    log "WARN: в домашке есть нечитаемые файлы, а fix-owner не сработал -- они не попадут в архив"
+  fi
+fi
+
 # --ignore-failed-read: live dirs change under us, and the OpenViking container
 # leaves root-owned files in ~/.openviking; neither may cost the whole night.
 # Excludes come BEFORE -C: in GNU tar they apply to the names that follow them.

@@ -170,6 +170,26 @@ grep -q 'btrfs/zfs/контейнер?' <<<"$out" && fail "при сбое св�
 [[ -e "$T/swapfile" ]] && fail "после сбоя свопа файл остался"
 echo "✓ своп: mkswap без -q, порог $SWAP_MIN_RAM_KB кБ, настоящая ошибка на экране"
 
+# ── 5. OpenViking container runs as the agent, not root (Smith 01.11.2026) ────
+# A root container on the bind mount left root:600 files in ~agent/.openviking, and the
+# agent's nightly backup could not read them. Every `docker run` of it is evaluated with
+# a docker stub: the --user it gets must be the agent's uid:gid.
+mkdir -p "$T/dk"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s/docker.args"\n' "$T" > "$T/dk/docker"; chmod +x "$T/dk/docker"
+me="$(id -un)"; want="--user $(id -u):$(id -g)"
+n_runs=0
+for f in "$S" "$MEM"; do
+  while IFS= read -r cmd; do
+    n_runs=$((n_runs + 1)); : > "$T/docker.args"
+    ( die() { :; }; SERVICE_USER="$me" OWNER="$me" OV_DIR="$T/ov" OPENVIKING_IMAGE=img OV_IMAGE=img
+      PATH="$T/dk:$PATH"; eval "$cmd" ) >/dev/null 2>&1 || true
+    grep -qF -- "$want " "$T/docker.args" \
+      || fail "$(basename "$f"): контейнер памяти запускается не под агентом ($want): $(cat "$T/docker.args")"
+  done < <(awk '/docker run .*--name openviking/{c=1} c{l=l $0; if ($0 ~ /\\$/) sub(/\\$/, "", l); else {print l; l=""; c=0}}' "$f")
+done
+(( n_runs >= 2 )) || fail "нашёл $n_runs запусков контейнера памяти, ждал 2 (установщик + setup-memory)"
+echo "✓ контейнер памяти: $n_runs запуска, все под пользователем агента"
+
 # umask 022 right after `set -euo pipefail`, before anything installs (Smith 19.10: an
 # inherited 077 left Claude Code unreadable for the agent user).
 awk '/^set -euo pipefail/{if(!s)s=NR} /^umask 022$/{if(!u)u=NR} /^(apt_get|install_node|NODE_MAJOR)/{if(!f)f=NR} END{exit !(s && u && u>s && u<f)}' \

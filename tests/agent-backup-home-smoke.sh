@@ -450,6 +450,42 @@ grep -q '^deletefile ' "$FRLOG" && fail "облако не сказало про
 grep -q '^copy ' "$FRLOG" || fail "облако не сказало про место -- заливка пропала"
 ok "облако без about: ничего не удаляем, заливаем как раньше"
 
+# ── 4b. files the agent cannot read (Smith 01.11.2026) ──────────────────────
+# The OpenViking container ran as root and left root:600 files in ~/.openviking;
+# tar skipped them («Permission denied») and memory silently fell out of the archive.
+# The backup gives ownership back through the agent's own fix-owner first.
+if [[ $EUID -ne 0 ]]; then
+  SQ="$H/.openviking/appdata/bot/studio.sqlite3"
+  mkdir -p "$(dirname "$SQ")"; echo sqlite >"$SQ"; chmod 000 "$SQ"
+  CTL="$box/dashi-ctl-$AGENT"; printf '#!/bin/sh\nexit 0\n' >"$CTL"; chmod +x "$CTL"
+  cat >"$SHIM/sudo" <<EOF
+#!/bin/sh
+echo "\$*" >>"$box/sudo.args"
+[ -f "$box/sudo.deny" ] && { echo "sudo: a password is required" >&2; exit 1; }
+[ "\$1 \$2 \$3" = "-n $CTL fix-owner" ] && chmod 600 "$SQ"
+exit 0
+EOF
+  chmod +x "$SHIM/sudo"
+  run_fix() { : >"$WS/logs/backup.log"; rm -f "$box/sudo.args"; DASHI_CTL="$CTL" run_backup >/dev/null; }
+  run_fix
+  grep -qxF -- "-n $CTL fix-owner" "$box/sudo.args" 2>/dev/null \
+    || fail "нечитаемый файл в домашке -- бэкап не вернул владельца: $(cat "$box/sudo.args" 2>/dev/null)"
+  grep -q 'не смог прочитать' "$WS/logs/backup.log" && fail "после fix-owner tar всё равно не прочитал: $(grep 'не смог' "$WS/logs/backup.log")"
+  gpg --batch --quiet --passphrase-file "$WS/secrets/backup.pass" -d "$(newest)" | tar tzf - \
+    | grep -qxF "${SQ#/}" || fail "файл памяти root:600 не попал в архив"
+  grep -q 'вернул себе' "$WS/logs/backup.log" || fail "в журнале нет строки о возврате владельца"
+  run_fix
+  [[ -s "$box/sudo.args" ]] && fail "всё читается -- а бэкап всё равно зовёт sudo: $(cat "$box/sudo.args")"
+  # no right to fix-owner: the night still goes on, the warning names the files
+  chmod 000 "$SQ"; touch "$box/sudo.deny"; run_fix; rm -f "$box/sudo.deny"
+  grep -q 'не смог прочитать 1 файл' "$WS/logs/backup.log" || fail "без права fix-owner: нет WARN про нечитаемый файл"
+  [[ -n "$(newest)" ]] || fail "без права fix-owner бэкап не записан"
+  chmod 600 "$SQ"; rm -f "$SHIM/sudo"
+  ok "нечитаемые файлы: бэкап сам возвращает владельца (fix-owner), иначе WARN и копия всё равно пишется"
+else
+  echo "· под root любой файл читается -- ветку нечитаемых файлов пропускаю"
+fi
+
 # ── 5. the installer wires all of it ────────────────────────────────────────
 I="$PLUGIN/scripts/install-agent.sh"
 grep -q 'backup-offsite-watch.sh' "$I" || fail "установщик не ставит сторожа облачной копии в крон"

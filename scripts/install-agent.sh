@@ -1842,8 +1842,11 @@ EOF
     # appdata -> /app/data обязательно: без него вся память живёт внутри
     # контейнера и пропадает при его пересоздании (обновление образа). Так же
     # монтирует agent-kit/scripts/setup-memory.sh и контейнер у Jarvis.
+    # --user = агент, не root: root-контейнер клал в ~/.openviking файлы root:600,
+    # и ночной бэкап агента их не читал (Смит, 01.11.2026; образ под uid агента проверен).
     as_agent "mkdir -p '$OV_DIR/appdata'"
     docker run -d --name openviking --network host --restart unless-stopped \
+      --user "$(id -u "$SERVICE_USER"):$(id -g "$SERVICE_USER")" \
       -v "$OV_DIR:/app/.openviking" -v "$OV_DIR/appdata:/app/data" \
       -e OPENVIKING_CONFIG_FILE=/app/.openviking/ov.conf \
       -e OPENVIKING_SERVER_HOST=127.0.0.1 \
