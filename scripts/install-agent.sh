@@ -377,26 +377,41 @@ fi
 # python3-yaml: хук мультичата без PyYAML запрещает все команды (fail-safe deny)
 apt_get install -y -qq git unzip tmux curl jq python3 python3-yaml
 
-# На 1 ГБ памяти сборка и Claude Code упираются в потолок и падают молча.
-# Ставим своп — дешевле, чем объяснять человеку OOM.
-mem_kb=$(awk '/MemTotal/{print $2}' /proc/meminfo)
-if (( mem_kb < 1800000 )) && ! swapon --show --noheadings | grep -q .; then
-  make_swap() {  # make_swap fallocate|dd — файл, права, mkswap, swapon; любой сбой = false
-    rm -f /swapfile
-    if [[ "$1" == fallocate ]]; then fallocate -l 2G /swapfile 2>/dev/null
-    else dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none 2>/dev/null; fi \
-      && chmod 600 /swapfile && mkswap -q /swapfile 2>/dev/null && swapon /swapfile 2>/dev/null
-  }
+# На маленькой памяти сборка и Claude Code упираются в потолок и падают молча.
+# Ставим своп — дешевле, чем объяснять человеку OOM. Порог 3 ГБ: на 2 ГБ (Смит,
+# 01.11.2026) проверку типов плагина прибило по OOM рядом с Claude и OpenViking.
+SWAP_MIN_RAM_KB=3000000
+SWAP_SIZE_MB=2048
+SWAP_FILE=/swapfile
+SWAP_FSTAB_DEFAULT=/etc/fstab
+SWAP_MEMINFO_DEFAULT=/proc/meminfo
+make_swap() {  # make_swap fallocate|dd ERRFILE — файл, права, mkswap, swapon; любой сбой = false
+  rm -f "$SWAP_FILE"
+  if [[ "$1" == fallocate ]]; then fallocate -l "${SWAP_SIZE_MB}M" "$SWAP_FILE" 2>>"$2"
+  else dd if=/dev/zero of="$SWAP_FILE" bs=1M count="$SWAP_SIZE_MB" status=none 2>>"$2"; fi \
+    && chmod 600 "$SWAP_FILE" 2>>"$2" \
+    && mkswap "$SWAP_FILE" >/dev/null 2>>"$2" \
+    && swapon "$SWAP_FILE" 2>>"$2"
+  # NB: no `mkswap -q` -- util-linux 2.37 (Ubuntu 22.04) has no -q, it failed every box
+}
+ensure_swap() {
+  local mem_kb err fstab="${FSTAB:-$SWAP_FSTAB_DEFAULT}"
+  mem_kb=$(awk '/MemTotal/{print $2}' "${MEMINFO:-$SWAP_MEMINFO_DEFAULT}")
+  (( mem_kb < SWAP_MIN_RAM_KB )) || return 0
+  swapon --show --noheadings 2>/dev/null | grep -q . && return 0
+  err="$(mktemp)"
   # На btrfs/zfs fallocate проходит, а swapon отказывает («дырявый» файл) —
   # раньше set -e ронял всю установку; пробуем dd, не вышло — идём без свопа.
-  if make_swap fallocate || make_swap dd; then
-    grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  if make_swap fallocate "$err" || make_swap dd "$err"; then
+    grep -q "^$SWAP_FILE " "$fstab" 2>/dev/null || echo "$SWAP_FILE none swap sw 0 0" >> "$fstab"
     ok "своп 2 ГБ (памяти всего $(( mem_kb / 1024 )) МБ)"
   else
-    rm -f /swapfile
-    warn "своп не поднялся (btrfs/zfs/контейнер?) — продолжаю без него; памяти $(( mem_kb / 1024 )) МБ, Claude может падать по OOM"
+    rm -f "$SWAP_FILE"
+    warn "своп не поднялся: $(tail -n 1 "$err" 2>/dev/null) — продолжаю без него; памяти $(( mem_kb / 1024 )) МБ, Claude может падать по OOM"
   fi
-fi
+  rm -f "$err"
+}
+ensure_swap
 
 # Журнал systemd без потолка за месяцы съедает гигабайты на маленьком VPS
 mkdir -p /etc/systemd/journald.conf.d
