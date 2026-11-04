@@ -2914,6 +2914,42 @@
         <Akb>95</Akb>
       </Ad>
 
+      <Ad>
+        <Id>1905316937</Id>
+        <DateBegin>2023-03-01</DateBegin>
+        <DateEnd>2033-03-31</DateEnd>
+        <ListingFee>Package</ListingFee>
+        <AdStatus>Free</AdStatus>
+        
+        <ManagerName>Тимофей</ManagerName>
+        <ContactPhone>+73422140020</ContactPhone>
+        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
+        <GoodsType>Наушники</GoodsType>
+        <AdType>Товар приобретен на продажу</AdType>
+        <Category>Аудио и видео</Category>
+        <Title>Apple AirPods 4 ANC бу</Title>
+        <Description><![CDATA[<p>Apple AirPods 4 ANC бу</p>
+<p>✅Комплект: устройство  + коробка                                                                          ✅Состояние отличное</p>
+<p>✅Гарантия 180 дней!</p>
+<p>👍🏼 ГАРАНТИЯ ЛУЧШЕЙ ЦЕНЫ!</p>
+<p>⬇️ СДЕЛАЕМ СКИДКУ НА ПРЕДЛОЖЕНИЯ КОНКУРЕНТА!</p>
+<p>🥇РАБОТАЕМ ДЛЯ ВАС С 2008 ГОДА И ОЧЕНЬ ДОРОЖИМ СВОЕЙ РЕПУТАЦИЕЙ!</p>
+<p>☝🏼Вся Б/У техника является ОРИГИНАЛЬНОЙ, НЕ ВОССТАНОВЛЕННОЙ.</p>
+<p>Арт. CH6D6</p>]]></Description>
+        <Price>8990</Price>
+        
+        
+        <Images>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/8057/3239731065/IMG_5616.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/8065/3239731073/IMG_5617.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/8073/3239731081/IMG_5619.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/8081/3239731089/IMG_5621.jpg"/>
+        </Images>
+        <Category>Аудио и видео</Category>
+        
+        <Condition>Б/у</Condition>
+      </Ad>
+
 <Ad>
         <Id>426971203</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4655,7 +4691,7 @@
         <Condition>новое</Condition>
         <MemorySize>256 ГБ</MemorySize>
         <AdType>Товар приобретен на продажу</AdType>
-      <Revalidate>2989651</Revalidate></Ad>
+      <Revalidate>2989657</Revalidate></Ad>
 <Ad>
         <Id>496127545</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4853,7 +4889,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2989651</Revalidate></Ad>
+      <Revalidate>2989657</Revalidate></Ad>
 <Ad>
         <Id>1640714561</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -5003,7 +5039,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2989651</Revalidate></Ad>
+      <Revalidate>2989657</Revalidate></Ad>
 <Ad>
         <Id>1640726593</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -5153,7 +5189,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2989651</Revalidate></Ad>
+      <Revalidate>2989657</Revalidate></Ad>
 <Ad>
         <Id>1640736641</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -5753,7 +5789,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2989651</Revalidate></Ad>
+      <Revalidate>2989657</Revalidate></Ad>
 <Ad>
         <Id>1642060329</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -5853,7 +5889,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2989651</Revalidate></Ad>
+      <Revalidate>2989657</Revalidate></Ad>
 <Ad>
         <Id>1642061641</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -6153,7 +6189,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2989651</Revalidate></Ad>
+      <Revalidate>2989657</Revalidate></Ad>
 <Ad>
         <Id>1645613473</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -6303,7 +6339,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2989651</Revalidate></Ad>
+      <Revalidate>2989657</Revalidate></Ad>
 <Ad>
         <Id>1645614297</Id>
         <DateBegin>2023-03-01</DateBegin>
