@@ -386,7 +386,7 @@ while :; do
     if [ -n "\$PHOTO" ]; then
       FP=\$(curl -s "\$API/getFile?file_id=\$PHOTO" | jq -r '.result.file_path // empty')
       if [ -n "\$FP" ] && curl -sf -o "\$WORKDIR/photo.jpg" "https://api.telegram.org/file/bot\$TELEGRAM_TOKEN/\$FP"; then
-        IMGARG="--image \$WORKDIR/photo.jpg"
+        IMGARG="--image=\$WORKDIR/photo.jpg"  # «=»: --image берёт несколько файлов и съедал текст сообщения
         [ -z "\$TEXT" ] && TEXT=\$(upd '.message.caption // empty')
         [ -z "\$TEXT" ] && TEXT="Что на фото? Опиши и скажи, что с этим делать."
       else log "фото не скачалось"; fi
