@@ -303,42 +303,6 @@
       </Ad>
 
       <Ad>
-        <Id>1870730905</Id>
-        <DateBegin>2023-03-01</DateBegin>
-        <DateEnd>2033-03-31</DateEnd>
-        <ListingFee>Package</ListingFee>
-        <AdStatus>Free</AdStatus>
-        
-        <ManagerName>Тимофей</ManagerName>
-        <ContactPhone>+73422140020</ContactPhone>
-        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
-        <GoodsType>Моноблоки</GoodsType>
-        <AdType>Товар приобретен на продажу</AdType>
-        <Category>Настольные компьютеры</Category>
-        <Title>Apple iMac 21,5&quot; 2011 i5 4/512GB бу</Title>
-        <Description><![CDATA[<p>Apple iMac 21,5" 2011 intel i5 4/512GB бу</p>
-<p>✅Музейное состояние, технически исправен<br>✅Комплект: кабель питания, клавиатура, мышка<br>✅Без коробки<br>✅Гарантия от магазина 180 дней!</p>
-<p>🔥 Более 100 единиц проверенной бу техники всегда в наличии</p>
-<p>👍🏼 Гарантия лучшей стоимости</p>
-<p>💰Возможна покупка в кредит и по банковской карте</p>
-<p>🔄 Сдайте своё старое устройство по программе TRADE IN и получите скидку до 70% на это устройство</p>
-<p>⬇️ Сделаем скидку на предложение конкурента</p>
-<p>🥇Работаем для Вас с 2008 года и дорожим своей репутацией</p>
-<p>☝🏼Вся Б/У техника является ОРИГИНАЛЬНОЙ, проверена нашим сервисным центром по чек листу из 27 пунктов и является полноценно функционирующей</p>
-<p>Арт. 6dhjf</p>]]></Description>
-        <Price>16990</Price>
-        
-        
-        <Images>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/7201/3165551649/9BE259CD-0D0E-4F97-BE08-3ADB365481B9.PNG"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/7193/3165551641/D52554E4-2B3F-4AA5-B41E-438C60913E0B.PNG"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/7217/3165551665/B96C3771-50B8-4A33-AC28-E751845CC929.PNG"/>
-        </Images>
-        <Category>Настольные компьютеры</Category>
-        
-      <Condition>Б/у</Condition><GoodsSubType>Моноблоки</GoodsSubType></Ad>
-
-      <Ad>
         <Id>1881464169</Id>
         <DateBegin>2023-03-01</DateBegin>
         <DateEnd>2033-03-31</DateEnd>
@@ -4129,7 +4093,7 @@
         <Condition>новое</Condition>
         <MemorySize>256 ГБ</MemorySize>
         <AdType>Товар приобретен на продажу</AdType>
-      <Revalidate>2992519</Revalidate></Ad>
+      <Revalidate>2992525</Revalidate></Ad>
 <Ad>
         <Id>496127545</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4327,7 +4291,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2992519</Revalidate></Ad>
+      <Revalidate>2992525</Revalidate></Ad>
 <Ad>
         <Id>1640714561</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4477,7 +4441,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2992519</Revalidate></Ad>
+      <Revalidate>2992525</Revalidate></Ad>
 <Ad>
         <Id>1640726593</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4627,7 +4591,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2992519</Revalidate></Ad>
+      <Revalidate>2992525</Revalidate></Ad>
 <Ad>
         <Id>1640736641</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -5227,7 +5191,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2992519</Revalidate></Ad>
+      <Revalidate>2992525</Revalidate></Ad>
 <Ad>
         <Id>1642060329</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -5327,7 +5291,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2992519</Revalidate></Ad>
+      <Revalidate>2992525</Revalidate></Ad>
 <Ad>
         <Id>1642061641</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -5627,7 +5591,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2992519</Revalidate></Ad>
+      <Revalidate>2992525</Revalidate></Ad>
 <Ad>
         <Id>1645613473</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -5777,7 +5741,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2992519</Revalidate></Ad>
+      <Revalidate>2992525</Revalidate></Ad>
 <Ad>
         <Id>1645614297</Id>
         <DateBegin>2023-03-01</DateBegin>
