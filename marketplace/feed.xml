@@ -1,5 +1,37 @@
 <?xml version="1.0" encoding="utf-8" ?><Ads crm_version="InSalesAvitoModule" formatVersion="3" target="Avito.ru">
       <Ad>
+        <Id>261514780</Id>
+        <DateBegin>2023-03-01</DateBegin>
+        <DateEnd>2033-03-31</DateEnd>
+        <ListingFee>Package</ListingFee>
+        <AdStatus>Free</AdStatus>
+        
+        <ManagerName>Тимофей</ManagerName>
+        <ContactPhone>+73422140020</ContactPhone>
+        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
+        <GoodsType>Клавиатуры и мыши</GoodsType>
+        <AdType>Товар приобретен на продажу</AdType>
+        <Category>Товары для компьютера</Category>
+        <Title>Apple Smart Keyboard iPad Pro 9.7</Title>
+        <Description><![CDATA[<p>Apple Smart Keyboard iPad Pro 9.7</p>
+<p>✅Отличное состояние.<br>✅Гарантия от магазина 180 дней!</p>
+<p>👍🏼 ГАРАНТИЯ ЛУЧШЕЙ ЦЕНЫ!</p>
+<p>⬇️ СДЕЛАЕМ СКИДКУ НА ПРЕДЛОЖЕНИЯ КОНКУРЕНТА!</p>
+<p>🥇РАБОТАЕМ ДЛЯ ВАС С 2008 ГОДА И ОЧЕНЬ ДОРОЖИМ СВОЕЙ РЕПУТАЦИЕЙ!</p>
+<p>☝🏼Вся Б/У техника является, ОРИГИНАЛЬНОЙ, НЕ ВОССТАНОВЛЕННОЙ.</p>]]></Description>
+        <Price>4990</Price>
+        
+        
+        <Images>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/3566/852356590/IMG_8450.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/3567/852356591/IMG_8451.jpg"/>
+        </Images>
+        <Category>Товары для компьютера</Category>
+        
+        <Condition>Б/у</Condition>
+      <GoodsSubType>Клавиатуры</GoodsSubType></Ad>
+
+      <Ad>
         <Id>492618752</Id>
         <DateBegin>2023-03-01</DateBegin>
         <DateEnd>2033-03-31</DateEnd>
@@ -32,340 +64,6 @@
         <Condition>Б/у</Condition>
         <AdType>Товар приобретен на продажу</AdType>
       </Ad>
-
-      <Ad>
-        <Id>1650941753</Id>
-        <DateBegin>2023-03-01</DateBegin>
-        <DateEnd>2033-03-31</DateEnd>
-        <ListingFee>Package</ListingFee>
-        <AdStatus>Free</AdStatus>
-        
-        <ManagerName>Тимофей</ManagerName>
-        <ContactPhone>+73422140020</ContactPhone>
-        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
-        <GoodsType>Клавиатуры и мыши</GoodsType>
-        <AdType>Товар приобретен на продажу</AdType>
-        <Category>Товары для компьютера</Category>
-        <Title>Apple Smart Keyboard for iPad Pro 12,9&quot; White бу</Title>
-        <Description><![CDATA[<p>Apple Smart Keyboard for iPad Pro 12,9" White бу</p>
-<p>✅Хорошее состояние.<br>✅Гарантия от магазина 180 дней!</p>
-<p>👍🏼 ГАРАНТИЯ ЛУЧШЕЙ ЦЕНЫ!</p>
-<p>⬇️ СДЕЛАЕМ СКИДКУ НА ПРЕДЛОЖЕНИЯ КОНКУРЕНТА!</p>
-<p>🥇РАБОТАЕМ ДЛЯ ВАС С 2008 ГОДА И ОЧЕНЬ ДОРОЖИМ СВОЕЙ РЕПУТАЦИЕЙ!</p>
-<p>☝🏼Вся Б/У техника является, ОРИГИНАЛЬНОЙ, НЕ ВОССТАНОВЛЕННОЙ.</p>
-<p>Арт. 9xx1h</p>]]></Description>
-        <Price>13990</Price>
-        
-        
-        <Images>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/3865/2550845209/IMG_3949.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/3873/2550845217/IMG_3950.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/3881/2550845225/IMG_3951.jpg"/>
-        </Images>
-        <GoodsSubType>Клавиатуры</GoodsSubType>
-        <Category>Товары для компьютера</Category>
-        
-        <Condition>Б/у</Condition>
-      </Ad>
-
-      <Ad>
-        <Id>1805387785</Id>
-        <DateBegin>2023-03-01</DateBegin>
-        <DateEnd>2033-03-31</DateEnd>
-        <ListingFee>Package</ListingFee>
-        <AdStatus>Free</AdStatus>
-        
-        <ManagerName>Тимофей</ManagerName>
-        <ContactPhone>+73422140020</ContactPhone>
-        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
-        <GoodsType>Клавиатуры и мыши</GoodsType>
-        <AdType>Товар приобретен на продажу</AdType>
-        <Category>Товары для компьютера</Category>
-        <Title>Apple Smart Keyboard for iPad Pro 11&quot; M4 White бу</Title>
-        <Description><![CDATA[<p>Apple Smart Keyboard for iPad Pro 11" M4 White бу</p>
-<p>✅Отличное состояние.<br>✅Гарантия от магазина 180 дней!</p>
-<p>👍🏼 ГАРАНТИЯ ЛУЧШЕЙ ЦЕНЫ!</p>
-<p>⬇️ СДЕЛАЕМ СКИДКУ НА ПРЕДЛОЖЕНИЯ КОНКУРЕНТА!</p>
-<p>🥇РАБОТАЕМ ДЛЯ ВАС С 2008 ГОДА И ОЧЕНЬ ДОРОЖИМ СВОЕЙ РЕПУТАЦИЕЙ!</p>
-<p>☝🏼Вся Б/У техника является, ОРИГИНАЛЬНОЙ, НЕ ВОССТАНОВЛЕННОЙ.</p>
-<p>Арт. d9k9x</p>]]></Description>
-        <Price>19990</Price>
-        
-        
-        <Images>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/3897/3002322745/IMG_9427.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/3905/3002322753/IMG_9428.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/3913/3002322761/IMG_9429.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/3921/3002322769/IMG_9430.jpg"/>
-        </Images>
-        <GoodsSubType>Клавиатуры</GoodsSubType>
-        <Category>Товары для компьютера</Category>
-        
-        <Condition>Б/у</Condition>
-      </Ad>
-
-      <Ad>
-        <Id>1868865817</Id>
-        <DateBegin>2023-03-01</DateBegin>
-        <DateEnd>2033-03-31</DateEnd>
-        <ListingFee>Package</ListingFee>
-        <AdStatus>Free</AdStatus>
-        
-        <ManagerName>Тимофей</ManagerName>
-        <ContactPhone>+73422140020</ContactPhone>
-        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
-        <GoodsType>Клавиатуры и мыши</GoodsType>
-        <AdType>Товар приобретен на продажу</AdType>
-        <Category>Товары для компьютера</Category>
-        <Title>Apple Smart Keyboard iPad Pro 11&quot; Black бу</Title>
-        <Description><![CDATA[<p>Apple Smart Keyboard iPad Pro 11" Black бу</p>
-<p>✅Хорошее состояние.                                                                                               ✅Совместима с айпадами Air 4/5<br>✅Гарантия от магазина 180 дней!</p>
-<p>👍🏼 ГАРАНТИЯ ЛУЧШЕЙ ЦЕНЫ!</p>
-<p>⬇️ СДЕЛАЕМ СКИДКУ НА ПРЕДЛОЖЕНИЯ КОНКУРЕНТА!</p>
-<p>🥇РАБОТАЕМ ДЛЯ ВАС С 2008 ГОДА И ОЧЕНЬ ДОРОЖИМ СВОЕЙ РЕПУТАЦИЕЙ!</p>
-<p>☝🏼Вся Б/У техника является, ОРИГИНАЛЬНОЙ, НЕ ВОССТАНОВЛЕННОЙ.</p>
-<p>Арт. sln611</p>]]></Description>
-        <Price>8990</Price>
-        
-        
-        <Images>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/5465/3148871001/IMG_1672.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/5449/3148870985/IMG_1671.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/5481/3148871017/IMG_1673.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/5489/3148871025/IMG_1674.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/5497/3148871033/IMG_1675.jpg"/>
-        </Images>
-        <GoodsSubType>Клавиатуры</GoodsSubType>
-        <Category>Товары для компьютера</Category>
-        
-        <Condition>Б/у</Condition>
-      </Ad>
-
-      <Ad>
-        <Id>1901994929</Id>
-        <DateBegin>2023-03-01</DateBegin>
-        <DateEnd>2033-03-31</DateEnd>
-        <ListingFee>Package</ListingFee>
-        <AdStatus>Free</AdStatus>
-        
-        <ManagerName>Тимофей</ManagerName>
-        <ContactPhone>+73422140020</ContactPhone>
-        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
-        <GoodsType>Планшеты</GoodsType>
-        <AdType>Товар приобретен на продажу</AdType>
-        <Category>Планшеты и электронные книги</Category>
-        <Title>Apple iPad Pro 12,9&quot; 2018 1Tb Space Gray WiFi + LTE бу</Title>
-        <Description><![CDATA[<p>iPad Pro 12,9" 2018 1TB Space Gray WiFi + LTE бу</p>
-<p>✅Отличное состояние, общие следы эксплуатации, технически исправен <br>✅Комплект: устройство + коробка<br>✅Гарантия 180 дней</p>
-<p>🔥 Более 100 единиц проверенной бу техники всегда в наличии</p>
-<p>👍🏼 Гарантия лучшей стоимости</p>
-<p>💰Возможна покупка в кредит и по банковской карте</p>
-<p>🔄 Сдайте своё старое устройство по программе TRADE IN и получите скидку до 70%</p>
-<p>🥇Работаем для Вас с 2008 года и дорожим своей репутацией</p>
-<p>☝🏼Вся Б/У техника является ОРИГИНАЛЬНОЙ, проверена по чек-листу из 27 пунктов</p>
-<p>Арт. qkc6n</p>]]></Description>
-        <Price>42990</Price>
-        
-        <Model>iPad Pro 12.9 (3-го поколения) (2018)</Model>
-        <Images>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/5713/3237615185/tempImagectsac0.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/5721/3237615193/tempImageghtx4B.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/5737/3237615209/tempImagex0480C.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/5745/3237615217/tempImagehlP2M3.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/5753/3237615225/tempImageyP8Xqn.jpg"/>
-        </Images>
-        <Vendor>Apple</Vendor>
-        <Category>Планшеты и электронные книги</Category>
-        
-        <RamSize>6</RamSize>
-        
-        <Condition>Б/у</Condition>
-        <AdType>Товар приобретен на продажу</AdType>
-        <ProductsType>Планшет</ProductsType>
-        <Brand>Apple</Brand>
-        <SimSlot>Есть</SimSlot>
-        <Case_Condition>Мелкие царапины</Case_Condition>
-        <Screen_Condition>Без дефектов</Screen_Condition>
-        <Devicework>Включается</Devicework>
-        <ScreenCondition>Без дефектов</ScreenCondition>
-        <CaseCondition>Без дефектов</CaseCondition>
-        <Akb>75</Akb>
-      <MemorySize>1024</MemorySize><Color>Серый</Color></Ad>
-
-      <Ad>
-        <Id>1911199369</Id>
-        <DateBegin>2023-03-01</DateBegin>
-        <DateEnd>2033-03-31</DateEnd>
-        <ListingFee>Package</ListingFee>
-        <AdStatus>Free</AdStatus>
-        
-        <ManagerName>Тимофей</ManagerName>
-        <ContactPhone>+73422140020</ContactPhone>
-        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
-        <GoodsType>Моноблоки</GoodsType>
-        <AdType>Товар приобретен на продажу</AdType>
-        <Category>Настольные компьютеры</Category>
-        <Title>Apple iMac 24&quot; Retina 4,5K M1/8GB/256GB Green бу</Title>
-        <Description><![CDATA[<p>iMac 24" Retina 4,5K M1/8 ГБ/256 ГБ Зеленый бу</p>
-<p>✅Отличное состояние, технически исправен, включается<br>✅Комплект: устройство<br>✅Гарантия 180 дней</p>
-<p>🔥 Более 100 единиц проверенной бу техники всегда в наличии</p>
-<p>👍🏼 Гарантия лучшей стоимости</p>
-<p>💰Возможна покупка в кредит и по банковской карте</p>
-<p>🔄 Сдайте своё старое устройство по программе TRADE IN и получите скидку до 70%</p>
-<p>⬇️ Сделаем скидку на предложение конкурента</p>
-<p>🥇Работаем для Вас с 2008 года и дорожим своей репутацией</p>
-<p>☝🏼Вся Б/У техника является ОРИГИНАЛЬНОЙ, проверена по чек-листу из 27 пунктов</p>
-<p>Арт. l1254</p>]]></Description>
-        <Price>72990</Price>
-        
-        
-        <Images>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/1593/3270698553/IMG_3735.JPG"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/1609/3270698569/IMG_3736.JPG"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/5657/3270702617/IMG_3700.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/5665/3270702625/IMG_3701.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/5673/3270702633/IMG_3702.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/5713/3270702673/IMG_3703.jpg"/>
-        </Images>
-        <Category>Настольные компьютеры</Category>
-        
-        <Condition>Б/у</Condition>
-      <BoxSealed>Нет</BoxSealed><GoodsSubType>Моноблоки</GoodsSubType></Ad>
-
-      <Ad>
-        <Id>1919111129</Id>
-        <DateBegin>2023-03-01</DateBegin>
-        <DateEnd>2033-03-31</DateEnd>
-        <ListingFee>Package</ListingFee>
-        <AdStatus>Free</AdStatus>
-        
-        <ManagerName>Тимофей</ManagerName>
-        <ContactPhone>+73422140020</ContactPhone>
-        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
-        <GoodsType>Смарт-часы и фитнес-браслеты</GoodsType>
-        <AdType>Товар приобретен на продажу</AdType>
-        <Category>Телефоны</Category>
-        <Title>Apple Watch SE 2022 44mm Silver White Sport Band бу (без фото)</Title>
-        <Description><![CDATA[<p>Watch SE 2022 44mm Серебристый Белый Sport Band бу</p>
-<p>✅Хорошее состояние, технически исправен<br>✅Аккумулятор 90%<br>⚠️ Косметика: дисплей царапины; корпус потертости<br>✅Комплект: устройство<br>✅Гарантия 180 дней</p>
-<p>🔥 Более 100 единиц проверенной бу техники всегда в наличии</p>
-<p>👍🏼 Гарантия лучшей стоимости</p>
-<p>💰Возможна покупка в кредит и по банковской карте</p>
-<p>🔄 Сдайте своё старое устройство по программе TRADE IN и получите скидку до 70%</p>
-<p>🥇Работаем для Вас с 2008 года и дорожим своей репутацией</p>
-<p>☝🏼Вся Б/У техника является ОРИГИНАЛЬНОЙ, проверена по чек-листу из 27 пунктов</p>
-<p>Арт. rdh21</p>]]></Description>
-        <Price>13990</Price>
-        
-        <Model>Apple Watch SE</Model>
-        <Images>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/673/3370910369/IMG_3428.jpeg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/681/3370910377/IMG_3429.jpeg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/689/3370910385/IMG_3430.jpeg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/697/3370910393/IMG_3431.jpeg"/>
-        </Images>
-        <Color>Серебряный</Color>
-        <Category>Телефоны</Category>
-        
-        
-        <ProductType>Смарт-часы или браслет</ProductType>
-        <Condition>Б/у</Condition>
-        <AdType>Товар приобретен на продажу</AdType>
-        <Case_Condition>Без дефектов</Case_Condition>
-        <Screen_Condition>Без дефектов</Screen_Condition>
-        <Brand>Apple</Brand>
-        <ProductSubType>смарт-часы</ProductSubType>
-        <Gender>унисекс</Gender>
-        <StrapType>Полиуретановый</StrapType>
-        <AkbH>Больше 30 минут</AkbH>
-        <DeviceWork>Включается</DeviceWork>
-        <Akb>90</Akb>
-        <ScreenFlaws>Без дефектов</ScreenFlaws>
-        <CaseFlaws>Без дефектов</CaseFlaws>
-      <ScreenCondition>Без дефектов</ScreenCondition><CaseCondition>Без дефектов</CaseCondition><Devicework>Включается</Devicework><GoodsSubType>Смарт-часы</GoodsSubType></Ad>
-
-      <Ad>
-        <Id>1920983753</Id>
-        <DateBegin>2023-03-01</DateBegin>
-        <DateEnd>2033-03-31</DateEnd>
-        <ListingFee>Package</ListingFee>
-        <AdStatus>Free</AdStatus>
-        
-        <ManagerName>Тимофей</ManagerName>
-        <ContactPhone>+73422140020</ContactPhone>
-        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
-        <GoodsType>Смарт-часы и фитнес-браслеты</GoodsType>
-        <AdType>Товар приобретен на продажу</AdType>
-        <Category>Телефоны</Category>
-        <Title>Apple Watch SE 2022 44mm Midnight Sport Loop бу (без фото)</Title>
-        <Description><![CDATA[<p>Watch SE 2022 44mm Midnight Sport Loop бу</p>
-<p>✅Хорошее состояние, технически исправен<br>✅Аккумулятор 100%<br>⚠️ Косметика: паца царапок на дисплее<br>✅Комплект: устройство<br>✅Гарантия 180 дней</p>
-<p>🔥 Более 100 единиц проверенной бу техники всегда в наличии</p>
-<p>👍🏼 Гарантия лучшей стоимости</p>
-<p>💰Возможна покупка в кредит и по банковской карте</p>
-<p>🔄 Сдайте своё старое устройство по программе TRADE IN и получите скидку до 70%</p>
-<p>🥇Работаем для Вас с 2008 года и дорожим своей репутацией</p>
-<p>☝🏼Вся Б/У техника является ОРИГИНАЛЬНОЙ, проверена по чек-листу из 27 пунктов</p>
-<p>Арт. ny62w</p>]]></Description>
-        <Price>12990</Price>
-        
-        <Model>Apple Watch SE</Model>
-        <Images>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/8041/3370909545/IMG_3423.jpeg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/8049/3370909553/IMG_3424.jpeg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/8057/3370909561/IMG_3425.jpeg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/8065/3370909569/IMG_3426.jpeg"/>
-        </Images>
-        <Category>Телефоны</Category>
-        
-        
-        <ProductType>Смарт-часы или браслет</ProductType>
-        <Condition>Б/у</Condition>
-        <AdType>Товар приобретен на продажу</AdType>
-        <Case_Condition>Без дефектов</Case_Condition>
-        <Screen_Condition>Без дефектов</Screen_Condition>
-        <Brand>Apple</Brand>
-        <ProductSubType>смарт-часы</ProductSubType>
-        <Gender>унисекс</Gender>
-        <StrapType>Полиуретановый</StrapType>
-        <AkbH>Больше 30 минут</AkbH>
-        <DeviceWork>Включается</DeviceWork>
-        <Akb>100</Akb>
-        <ScreenFlaws>Без дефектов</ScreenFlaws>
-        <CaseFlaws>Без дефектов</CaseFlaws>
-      <ScreenCondition>Без дефектов</ScreenCondition><CaseCondition>Без дефектов</CaseCondition><Devicework>Включается</Devicework><GoodsSubType>Смарт-часы</GoodsSubType><Color>черный</Color></Ad>
-
-      <Ad>
-        <Id>261514780</Id>
-        <DateBegin>2023-03-01</DateBegin>
-        <DateEnd>2033-03-31</DateEnd>
-        <ListingFee>Package</ListingFee>
-        <AdStatus>Free</AdStatus>
-        
-        <ManagerName>Тимофей</ManagerName>
-        <ContactPhone>+73422140020</ContactPhone>
-        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
-        <GoodsType>Клавиатуры и мыши</GoodsType>
-        <AdType>Товар приобретен на продажу</AdType>
-        <Category>Товары для компьютера</Category>
-        <Title>Apple Smart Keyboard iPad Pro 9.7</Title>
-        <Description><![CDATA[<p>Apple Smart Keyboard iPad Pro 9.7</p>
-<p>✅Отличное состояние.<br>✅Гарантия от магазина 180 дней!</p>
-<p>👍🏼 ГАРАНТИЯ ЛУЧШЕЙ ЦЕНЫ!</p>
-<p>⬇️ СДЕЛАЕМ СКИДКУ НА ПРЕДЛОЖЕНИЯ КОНКУРЕНТА!</p>
-<p>🥇РАБОТАЕМ ДЛЯ ВАС С 2008 ГОДА И ОЧЕНЬ ДОРОЖИМ СВОЕЙ РЕПУТАЦИЕЙ!</p>
-<p>☝🏼Вся Б/У техника является, ОРИГИНАЛЬНОЙ, НЕ ВОССТАНОВЛЕННОЙ.</p>]]></Description>
-        <Price>4990</Price>
-        
-        
-        <Images>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/3566/852356590/IMG_8450.jpg"/>
-          <Image url="https://cdn.insales-shop.ru/images/products/1/3567/852356591/IMG_8451.jpg"/>
-        </Images>
-        <Category>Товары для компьютера</Category>
-        
-        <Condition>Б/у</Condition>
-      <GoodsSubType>Клавиатуры</GoodsSubType></Ad>
 
       <Ad>
         <Id>1646875313</Id>
@@ -451,6 +149,41 @@
       </Ad>
 
       <Ad>
+        <Id>1650941753</Id>
+        <DateBegin>2023-03-01</DateBegin>
+        <DateEnd>2033-03-31</DateEnd>
+        <ListingFee>Package</ListingFee>
+        <AdStatus>Free</AdStatus>
+        
+        <ManagerName>Тимофей</ManagerName>
+        <ContactPhone>+73422140020</ContactPhone>
+        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
+        <GoodsType>Клавиатуры и мыши</GoodsType>
+        <AdType>Товар приобретен на продажу</AdType>
+        <Category>Товары для компьютера</Category>
+        <Title>Apple Smart Keyboard for iPad Pro 12,9&quot; White бу</Title>
+        <Description><![CDATA[<p>Apple Smart Keyboard for iPad Pro 12,9" White бу</p>
+<p>✅Хорошее состояние.<br>✅Гарантия от магазина 180 дней!</p>
+<p>👍🏼 ГАРАНТИЯ ЛУЧШЕЙ ЦЕНЫ!</p>
+<p>⬇️ СДЕЛАЕМ СКИДКУ НА ПРЕДЛОЖЕНИЯ КОНКУРЕНТА!</p>
+<p>🥇РАБОТАЕМ ДЛЯ ВАС С 2008 ГОДА И ОЧЕНЬ ДОРОЖИМ СВОЕЙ РЕПУТАЦИЕЙ!</p>
+<p>☝🏼Вся Б/У техника является, ОРИГИНАЛЬНОЙ, НЕ ВОССТАНОВЛЕННОЙ.</p>
+<p>Арт. 9xx1h</p>]]></Description>
+        <Price>13990</Price>
+        
+        
+        <Images>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/3865/2550845209/IMG_3949.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/3873/2550845217/IMG_3950.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/3881/2550845225/IMG_3951.jpg"/>
+        </Images>
+        <GoodsSubType>Клавиатуры</GoodsSubType>
+        <Category>Товары для компьютера</Category>
+        
+        <Condition>Б/у</Condition>
+      </Ad>
+
+      <Ad>
         <Id>1730301473</Id>
         <DateBegin>2023-03-01</DateBegin>
         <DateEnd>2033-03-31</DateEnd>
@@ -495,6 +228,42 @@
         <Case_Condition>Мелкие царапины</Case_Condition>
         <Screen_Condition>1–2 мелкие царапины</Screen_Condition>
       <ScreenCondition>1–2 мелкие царапины</ScreenCondition><CaseCondition>Мелкие царапины</CaseCondition><Devicework>Включается</Devicework><Akb>85</Akb></Ad>
+
+      <Ad>
+        <Id>1805387785</Id>
+        <DateBegin>2023-03-01</DateBegin>
+        <DateEnd>2033-03-31</DateEnd>
+        <ListingFee>Package</ListingFee>
+        <AdStatus>Free</AdStatus>
+        
+        <ManagerName>Тимофей</ManagerName>
+        <ContactPhone>+73422140020</ContactPhone>
+        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
+        <GoodsType>Клавиатуры и мыши</GoodsType>
+        <AdType>Товар приобретен на продажу</AdType>
+        <Category>Товары для компьютера</Category>
+        <Title>Apple Smart Keyboard for iPad Pro 11&quot; M4 White бу</Title>
+        <Description><![CDATA[<p>Apple Smart Keyboard for iPad Pro 11" M4 White бу</p>
+<p>✅Отличное состояние.<br>✅Гарантия от магазина 180 дней!</p>
+<p>👍🏼 ГАРАНТИЯ ЛУЧШЕЙ ЦЕНЫ!</p>
+<p>⬇️ СДЕЛАЕМ СКИДКУ НА ПРЕДЛОЖЕНИЯ КОНКУРЕНТА!</p>
+<p>🥇РАБОТАЕМ ДЛЯ ВАС С 2008 ГОДА И ОЧЕНЬ ДОРОЖИМ СВОЕЙ РЕПУТАЦИЕЙ!</p>
+<p>☝🏼Вся Б/У техника является, ОРИГИНАЛЬНОЙ, НЕ ВОССТАНОВЛЕННОЙ.</p>
+<p>Арт. d9k9x</p>]]></Description>
+        <Price>19990</Price>
+        
+        
+        <Images>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/3897/3002322745/IMG_9427.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/3905/3002322753/IMG_9428.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/3913/3002322761/IMG_9429.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/3921/3002322769/IMG_9430.jpg"/>
+        </Images>
+        <GoodsSubType>Клавиатуры</GoodsSubType>
+        <Category>Товары для компьютера</Category>
+        
+        <Condition>Б/у</Condition>
+      </Ad>
 
       <Ad>
         <Id>1816301785</Id>
@@ -546,6 +315,43 @@
       </Ad>
 
       <Ad>
+        <Id>1868865817</Id>
+        <DateBegin>2023-03-01</DateBegin>
+        <DateEnd>2033-03-31</DateEnd>
+        <ListingFee>Package</ListingFee>
+        <AdStatus>Free</AdStatus>
+        
+        <ManagerName>Тимофей</ManagerName>
+        <ContactPhone>+73422140020</ContactPhone>
+        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
+        <GoodsType>Клавиатуры и мыши</GoodsType>
+        <AdType>Товар приобретен на продажу</AdType>
+        <Category>Товары для компьютера</Category>
+        <Title>Apple Smart Keyboard iPad Pro 11&quot; Black бу</Title>
+        <Description><![CDATA[<p>Apple Smart Keyboard iPad Pro 11" Black бу</p>
+<p>✅Хорошее состояние.                                                                                               ✅Совместима с айпадами Air 4/5<br>✅Гарантия от магазина 180 дней!</p>
+<p>👍🏼 ГАРАНТИЯ ЛУЧШЕЙ ЦЕНЫ!</p>
+<p>⬇️ СДЕЛАЕМ СКИДКУ НА ПРЕДЛОЖЕНИЯ КОНКУРЕНТА!</p>
+<p>🥇РАБОТАЕМ ДЛЯ ВАС С 2008 ГОДА И ОЧЕНЬ ДОРОЖИМ СВОЕЙ РЕПУТАЦИЕЙ!</p>
+<p>☝🏼Вся Б/У техника является, ОРИГИНАЛЬНОЙ, НЕ ВОССТАНОВЛЕННОЙ.</p>
+<p>Арт. sln611</p>]]></Description>
+        <Price>8990</Price>
+        
+        
+        <Images>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/5465/3148871001/IMG_1672.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/5449/3148870985/IMG_1671.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/5481/3148871017/IMG_1673.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/5489/3148871025/IMG_1674.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/5497/3148871033/IMG_1675.jpg"/>
+        </Images>
+        <GoodsSubType>Клавиатуры</GoodsSubType>
+        <Category>Товары для компьютера</Category>
+        
+        <Condition>Б/у</Condition>
+      </Ad>
+
+      <Ad>
         <Id>1881464169</Id>
         <DateBegin>2023-03-01</DateBegin>
         <DateEnd>2033-03-31</DateEnd>
@@ -591,6 +397,57 @@
         <Case_Condition>Без дефектов</Case_Condition>
         <Screen_Condition>Без дефектов</Screen_Condition>
       <ScreenCondition>Без дефектов</ScreenCondition><CaseCondition>Без дефектов</CaseCondition><Devicework>Включается</Devicework><Akb>100</Akb></Ad>
+
+      <Ad>
+        <Id>1901994929</Id>
+        <DateBegin>2023-03-01</DateBegin>
+        <DateEnd>2033-03-31</DateEnd>
+        <ListingFee>Package</ListingFee>
+        <AdStatus>Free</AdStatus>
+        
+        <ManagerName>Тимофей</ManagerName>
+        <ContactPhone>+73422140020</ContactPhone>
+        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
+        <GoodsType>Планшеты</GoodsType>
+        <AdType>Товар приобретен на продажу</AdType>
+        <Category>Планшеты и электронные книги</Category>
+        <Title>Apple iPad Pro 12,9&quot; 2018 1Tb Space Gray WiFi + LTE бу</Title>
+        <Description><![CDATA[<p>iPad Pro 12,9" 2018 1TB Space Gray WiFi + LTE бу</p>
+<p>✅Отличное состояние, общие следы эксплуатации, технически исправен <br>✅Комплект: устройство + коробка<br>✅Гарантия 180 дней</p>
+<p>🔥 Более 100 единиц проверенной бу техники всегда в наличии</p>
+<p>👍🏼 Гарантия лучшей стоимости</p>
+<p>💰Возможна покупка в кредит и по банковской карте</p>
+<p>🔄 Сдайте своё старое устройство по программе TRADE IN и получите скидку до 70%</p>
+<p>🥇Работаем для Вас с 2008 года и дорожим своей репутацией</p>
+<p>☝🏼Вся Б/У техника является ОРИГИНАЛЬНОЙ, проверена по чек-листу из 27 пунктов</p>
+<p>Арт. qkc6n</p>]]></Description>
+        <Price>42990</Price>
+        
+        <Model>iPad Pro 12.9 (3-го поколения) (2018)</Model>
+        <Images>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/5713/3237615185/tempImagectsac0.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/5721/3237615193/tempImageghtx4B.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/5737/3237615209/tempImagex0480C.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/5745/3237615217/tempImagehlP2M3.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/5753/3237615225/tempImageyP8Xqn.jpg"/>
+        </Images>
+        <Vendor>Apple</Vendor>
+        <Category>Планшеты и электронные книги</Category>
+        
+        <RamSize>6</RamSize>
+        
+        <Condition>Б/у</Condition>
+        <AdType>Товар приобретен на продажу</AdType>
+        <ProductsType>Планшет</ProductsType>
+        <Brand>Apple</Brand>
+        <SimSlot>Есть</SimSlot>
+        <Case_Condition>Мелкие царапины</Case_Condition>
+        <Screen_Condition>Без дефектов</Screen_Condition>
+        <Devicework>Включается</Devicework>
+        <ScreenCondition>Без дефектов</ScreenCondition>
+        <CaseCondition>Без дефектов</CaseCondition>
+        <Akb>75</Akb>
+      <MemorySize>1024</MemorySize><Color>Серый</Color></Ad>
 
       <Ad>
         <Id>1910181945</Id>
@@ -645,6 +502,46 @@
         <ScreenFlaws>Без дефектов</ScreenFlaws>
         <CaseFlaws>Царапины</CaseFlaws>
       <ScreenCondition>Без дефектов</ScreenCondition><CaseCondition>Мелкие царапины</CaseCondition><Devicework>Включается</Devicework><GoodsSubType>Смарт-часы</GoodsSubType></Ad>
+
+      <Ad>
+        <Id>1911199369</Id>
+        <DateBegin>2023-03-01</DateBegin>
+        <DateEnd>2033-03-31</DateEnd>
+        <ListingFee>Package</ListingFee>
+        <AdStatus>Free</AdStatus>
+        
+        <ManagerName>Тимофей</ManagerName>
+        <ContactPhone>+73422140020</ContactPhone>
+        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
+        <GoodsType>Моноблоки</GoodsType>
+        <AdType>Товар приобретен на продажу</AdType>
+        <Category>Настольные компьютеры</Category>
+        <Title>Apple iMac 24&quot; Retina 4,5K M1/8GB/256GB Green бу</Title>
+        <Description><![CDATA[<p>iMac 24" Retina 4,5K M1/8 ГБ/256 ГБ Зеленый бу</p>
+<p>✅Отличное состояние, технически исправен, включается<br>✅Комплект: устройство<br>✅Гарантия 180 дней</p>
+<p>🔥 Более 100 единиц проверенной бу техники всегда в наличии</p>
+<p>👍🏼 Гарантия лучшей стоимости</p>
+<p>💰Возможна покупка в кредит и по банковской карте</p>
+<p>🔄 Сдайте своё старое устройство по программе TRADE IN и получите скидку до 70%</p>
+<p>⬇️ Сделаем скидку на предложение конкурента</p>
+<p>🥇Работаем для Вас с 2008 года и дорожим своей репутацией</p>
+<p>☝🏼Вся Б/У техника является ОРИГИНАЛЬНОЙ, проверена по чек-листу из 27 пунктов</p>
+<p>Арт. l1254</p>]]></Description>
+        <Price>72990</Price>
+        
+        
+        <Images>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/1593/3270698553/IMG_3735.JPG"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/1609/3270698569/IMG_3736.JPG"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/5657/3270702617/IMG_3700.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/5665/3270702625/IMG_3701.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/5673/3270702633/IMG_3702.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/5713/3270702673/IMG_3703.jpg"/>
+        </Images>
+        <Category>Настольные компьютеры</Category>
+        
+        <Condition>Б/у</Condition>
+      <BoxSealed>Нет</BoxSealed><GoodsSubType>Моноблоки</GoodsSubType></Ad>
 
       <Ad>
         <Id>1912306161</Id>
@@ -795,6 +692,58 @@
       <ScreenCondition>Без дефектов</ScreenCondition><CaseCondition>Без дефектов</CaseCondition><Devicework>Включается</Devicework></Ad>
 
       <Ad>
+        <Id>1919111129</Id>
+        <DateBegin>2023-03-01</DateBegin>
+        <DateEnd>2033-03-31</DateEnd>
+        <ListingFee>Package</ListingFee>
+        <AdStatus>Free</AdStatus>
+        
+        <ManagerName>Тимофей</ManagerName>
+        <ContactPhone>+73422140020</ContactPhone>
+        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
+        <GoodsType>Смарт-часы и фитнес-браслеты</GoodsType>
+        <AdType>Товар приобретен на продажу</AdType>
+        <Category>Телефоны</Category>
+        <Title>Apple Watch SE 2022 44mm Silver White Sport Band бу (без фото)</Title>
+        <Description><![CDATA[<p>Watch SE 2022 44mm Серебристый Белый Sport Band бу</p>
+<p>✅Хорошее состояние, технически исправен<br>✅Аккумулятор 90%<br>⚠️ Косметика: дисплей царапины; корпус потертости<br>✅Комплект: устройство<br>✅Гарантия 180 дней</p>
+<p>🔥 Более 100 единиц проверенной бу техники всегда в наличии</p>
+<p>👍🏼 Гарантия лучшей стоимости</p>
+<p>💰Возможна покупка в кредит и по банковской карте</p>
+<p>🔄 Сдайте своё старое устройство по программе TRADE IN и получите скидку до 70%</p>
+<p>🥇Работаем для Вас с 2008 года и дорожим своей репутацией</p>
+<p>☝🏼Вся Б/У техника является ОРИГИНАЛЬНОЙ, проверена по чек-листу из 27 пунктов</p>
+<p>Арт. rdh21</p>]]></Description>
+        <Price>13990</Price>
+        
+        <Model>Apple Watch SE</Model>
+        <Images>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/673/3370910369/IMG_3428.jpeg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/681/3370910377/IMG_3429.jpeg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/689/3370910385/IMG_3430.jpeg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/697/3370910393/IMG_3431.jpeg"/>
+        </Images>
+        <Color>Серебряный</Color>
+        <Category>Телефоны</Category>
+        
+        
+        <ProductType>Смарт-часы или браслет</ProductType>
+        <Condition>Б/у</Condition>
+        <AdType>Товар приобретен на продажу</AdType>
+        <Case_Condition>Без дефектов</Case_Condition>
+        <Screen_Condition>Без дефектов</Screen_Condition>
+        <Brand>Apple</Brand>
+        <ProductSubType>смарт-часы</ProductSubType>
+        <Gender>унисекс</Gender>
+        <StrapType>Полиуретановый</StrapType>
+        <AkbH>Больше 30 минут</AkbH>
+        <DeviceWork>Включается</DeviceWork>
+        <Akb>90</Akb>
+        <ScreenFlaws>Без дефектов</ScreenFlaws>
+        <CaseFlaws>Без дефектов</CaseFlaws>
+      <ScreenCondition>Без дефектов</ScreenCondition><CaseCondition>Без дефектов</CaseCondition><Devicework>Включается</Devicework><GoodsSubType>Смарт-часы</GoodsSubType></Ad>
+
+      <Ad>
         <Id>1919941361</Id>
         <DateBegin>2023-03-01</DateBegin>
         <DateEnd>2033-03-31</DateEnd>
@@ -840,6 +789,57 @@
         <Screen_Condition>1–2 мелкие царапины</Screen_Condition>
         <Akb>82</Akb>
       <ScreenCondition>1–2 мелкие царапины</ScreenCondition><CaseCondition>Мелкие царапины</CaseCondition><Devicework>Включается</Devicework></Ad>
+
+      <Ad>
+        <Id>1920983753</Id>
+        <DateBegin>2023-03-01</DateBegin>
+        <DateEnd>2033-03-31</DateEnd>
+        <ListingFee>Package</ListingFee>
+        <AdStatus>Free</AdStatus>
+        
+        <ManagerName>Тимофей</ManagerName>
+        <ContactPhone>+73422140020</ContactPhone>
+        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
+        <GoodsType>Смарт-часы и фитнес-браслеты</GoodsType>
+        <AdType>Товар приобретен на продажу</AdType>
+        <Category>Телефоны</Category>
+        <Title>Apple Watch SE 2022 44mm Midnight Sport Loop бу (без фото)</Title>
+        <Description><![CDATA[<p>Watch SE 2022 44mm Midnight Sport Loop бу</p>
+<p>✅Хорошее состояние, технически исправен<br>✅Аккумулятор 100%<br>⚠️ Косметика: паца царапок на дисплее<br>✅Комплект: устройство<br>✅Гарантия 180 дней</p>
+<p>🔥 Более 100 единиц проверенной бу техники всегда в наличии</p>
+<p>👍🏼 Гарантия лучшей стоимости</p>
+<p>💰Возможна покупка в кредит и по банковской карте</p>
+<p>🔄 Сдайте своё старое устройство по программе TRADE IN и получите скидку до 70%</p>
+<p>🥇Работаем для Вас с 2008 года и дорожим своей репутацией</p>
+<p>☝🏼Вся Б/У техника является ОРИГИНАЛЬНОЙ, проверена по чек-листу из 27 пунктов</p>
+<p>Арт. ny62w</p>]]></Description>
+        <Price>12990</Price>
+        
+        <Model>Apple Watch SE</Model>
+        <Images>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/8041/3370909545/IMG_3423.jpeg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/8049/3370909553/IMG_3424.jpeg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/8057/3370909561/IMG_3425.jpeg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/8065/3370909569/IMG_3426.jpeg"/>
+        </Images>
+        <Category>Телефоны</Category>
+        
+        
+        <ProductType>Смарт-часы или браслет</ProductType>
+        <Condition>Б/у</Condition>
+        <AdType>Товар приобретен на продажу</AdType>
+        <Case_Condition>Без дефектов</Case_Condition>
+        <Screen_Condition>Без дефектов</Screen_Condition>
+        <Brand>Apple</Brand>
+        <ProductSubType>смарт-часы</ProductSubType>
+        <Gender>унисекс</Gender>
+        <StrapType>Полиуретановый</StrapType>
+        <AkbH>Больше 30 минут</AkbH>
+        <DeviceWork>Включается</DeviceWork>
+        <Akb>100</Akb>
+        <ScreenFlaws>Без дефектов</ScreenFlaws>
+        <CaseFlaws>Без дефектов</CaseFlaws>
+      <ScreenCondition>Без дефектов</ScreenCondition><CaseCondition>Без дефектов</CaseCondition><Devicework>Включается</Devicework><GoodsSubType>Смарт-часы</GoodsSubType><Color>черный</Color></Ad>
 
       <Ad>
         <Id>1921865649</Id>
@@ -2167,6 +2167,100 @@
         <Screen_Condition>1–2 мелкие царапины</Screen_Condition>
         <Akb>89</Akb>
       <ScreenCondition>1–2 мелкие царапины</ScreenCondition><CaseCondition>Без дефектов</CaseCondition><Devicework>Включается</Devicework></Ad>
+
+      <Ad>
+        <Id>1945756521</Id>
+        <DateBegin>2023-03-01</DateBegin>
+        <DateEnd>2033-03-31</DateEnd>
+        <ListingFee>Package</ListingFee>
+        <AdStatus>Free</AdStatus>
+        
+        <ManagerName>Тимофей</ManagerName>
+        <ContactPhone>+73422140020</ContactPhone>
+        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
+        <GoodsType>iPhone</GoodsType>
+        <AdType>Товар приобретен на продажу</AdType>
+        <Category>Телефоны</Category>
+        <Title>iPhone 17 Pro 256Gb Silver (e-sim) бу</Title>
+        <Description><![CDATA[<p>iPhone 17 Pro 256Gb Silver (e-sim) бу</p>
+<p>✅Хорошее состояние, на грани сверху маленькая вмятина в остально идеал, технически исправен<br>✅Комплект: коробка + устройство<br>✅Аккумулятор 93%<br>✅Гарантия 180 дней</p>
+<p>🔥 Более 100 единиц проверенной бу техники всегда в наличии</p>
+<p>👍🏼 Гарантия лучшей стоимости</p>
+<p>💰Возможна покупка в кредит и по банковской карте</p>
+<p>🔄 Сдайте своё старое устройство по программе TRADE IN и получите скидку до 70%</p>
+<p>⬇️ Сделаем скидку на предложение конкурента</p>
+<p>🥇Работаем для Вас с 2008 года и дорожим своей репутацией</p>
+<p>☝🏼Вся Б/У техника является ОРИГИНАЛЬНОЙ, проверена по чек-листу из 27 пунктов</p>
+<p>Арт. 28031</p>]]></Description>
+        <Price>81990</Price>
+        
+        <Model>iPhone 17 Pro</Model>
+        <Images>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/3713/3393908353/tempImageRa3DSi.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/3721/3393908361/tempImageLaSpas.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/3729/3393908369/tempImageEIACQP.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/3745/3393908385/tempImage3lR02M.jpg"/>
+        </Images>
+        <MemorySize>256 ГБ</MemorySize>
+        <Color>серебристый</Color>
+        <Vendor>Apple</Vendor>
+        <Category>Телефоны</Category>
+        
+        <RamSize>12 ГБ</RamSize>
+        
+        <Condition>отличное</Condition>
+        <AdType>Товар приобретен на продажу</AdType>
+        <Case_Condition>Мелкие царапины</Case_Condition>
+        <Screen_Condition>Без дефектов</Screen_Condition>
+        <Akb>93</Akb>
+      <ScreenCondition>Без дефектов</ScreenCondition><CaseCondition>Мелкие царапины</CaseCondition><Devicework>Включается</Devicework></Ad>
+
+      <Ad>
+        <Id>1949334489</Id>
+        <DateBegin>2023-03-01</DateBegin>
+        <DateEnd>2033-03-31</DateEnd>
+        <ListingFee>Package</ListingFee>
+        <AdStatus>Free</AdStatus>
+        
+        <ManagerName>Тимофей</ManagerName>
+        <ContactPhone>+73422140020</ContactPhone>
+        <Address>Россия, Пермь, улица Н. Островского 52, ЖК Премьер</Address>
+        <GoodsType>iPhone</GoodsType>
+        <AdType>Товар приобретен на продажу</AdType>
+        <Category>Телефоны</Category>
+        <Title>iPhone 17 Pro 256Gb Cosmic Orange (e-sim) бу</Title>
+        <Description><![CDATA[<p>iPhone 17 Pro 256Gb Cosmic Orange (e-sim) бу</p>
+<p>✅Отличное состояние, технически исправен<br>✅Комплект: коробка + устройство<br>✅Аккумулятор 94%<br>✅Гарантия 180 дней</p>
+<p>🔥 Более 100 единиц проверенной бу техники всегда в наличии</p>
+<p>👍🏼 Гарантия лучшей стоимости</p>
+<p>💰Возможна покупка в кредит и по банковской карте</p>
+<p>🔄 Сдайте своё старое устройство по программе TRADE IN и получите скидку до 70%</p>
+<p>⬇️ Сделаем скидку на предложение конкурента</p>
+<p>🥇Работаем для Вас с 2008 года и дорожим своей репутацией</p>
+<p>☝🏼Вся Б/У техника является ОРИГИНАЛЬНОЙ, проверена по чек-листу из 27 пунктов</p>
+<p>Арт. 80996</p>]]></Description>
+        <Price>81990</Price>
+        
+        <Model>iPhone 17 Pro</Model>
+        <Images>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/3241/3407957161/tempImaged5vqj0.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/3249/3407957169/tempImageLSxxMi.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/3257/3407957177/tempImageMf5myE.jpg"/>
+          <Image url="https://cdn.insales-shop.ru/images/products/1/3265/3407957185/tempImageyaFUEf.jpg"/>
+        </Images>
+        <MemorySize>256 ГБ</MemorySize>
+        <Color>оранжевый</Color>
+        <Vendor>Apple</Vendor>
+        <Category>Телефоны</Category>
+        
+        <RamSize>12 ГБ</RamSize>
+        
+        <Condition>отличное</Condition>
+        <AdType>Товар приобретен на продажу</AdType>
+        <Case_Condition>Без дефектов</Case_Condition>
+        <Screen_Condition>Без дефектов</Screen_Condition>
+        <Akb>94</Akb>
+      <ScreenCondition>Без дефектов</ScreenCondition><CaseCondition>Без дефектов</CaseCondition><Devicework>Включается</Devicework></Ad>
 
 <Ad>
         <Id>426971203</Id>
@@ -3857,7 +3951,7 @@
         <Condition>новое</Condition>
         <MemorySize>256 ГБ</MemorySize>
         <AdType>Товар приобретен на продажу</AdType>
-      <Revalidate>2992783</Revalidate></Ad>
+      <Revalidate>2992789</Revalidate></Ad>
 <Ad>
         <Id>496127545</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4055,7 +4149,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2992783</Revalidate></Ad>
+      <Revalidate>2992789</Revalidate></Ad>
 <Ad>
         <Id>1640714561</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4205,7 +4299,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2992783</Revalidate></Ad>
+      <Revalidate>2992789</Revalidate></Ad>
 <Ad>
         <Id>1640726593</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4355,7 +4449,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2992783</Revalidate></Ad>
+      <Revalidate>2992789</Revalidate></Ad>
 <Ad>
         <Id>1640736641</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -4955,7 +5049,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2992783</Revalidate></Ad>
+      <Revalidate>2992789</Revalidate></Ad>
 <Ad>
         <Id>1642060329</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -5055,7 +5149,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2992783</Revalidate></Ad>
+      <Revalidate>2992789</Revalidate></Ad>
 <Ad>
         <Id>1642061641</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -5355,7 +5449,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>SIM + eSIM</SimConfig>
-      <Revalidate>2992783</Revalidate></Ad>
+      <Revalidate>2992789</Revalidate></Ad>
 <Ad>
         <Id>1645613473</Id>
         <DateBegin>2023-03-01</DateBegin>
@@ -5505,7 +5599,7 @@
         <Condition>новое</Condition>
         <AdType>Товар приобретен на продажу</AdType>
         <SimConfig>Только eSIM</SimConfig>
-      <Revalidate>2992783</Revalidate></Ad>
+      <Revalidate>2992789</Revalidate></Ad>
 <Ad>
         <Id>1645614297</Id>
         <DateBegin>2023-03-01</DateBegin>
